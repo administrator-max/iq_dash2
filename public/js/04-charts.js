@@ -31,33 +31,49 @@ function revisionStatus(d) {
     return hasSubmit2 ? 'reapply' : 'active';
   }
 
-  // revType='complete': PERTEK already issued — determine if SPI also issued
-  // ── 1. Explicit SPI evidence: spiNo filled OR obtained cycle has a real SPI releaseDate ──
+  // revType='complete': PERTEK already issued — determine if SPI also issued.
+  //
+  // ── 1. Explicit pending — checked FIRST, highest priority ──────────────
+  // A company can have spiRef containing BOTH "SPI TERBIT" (original SPI) AND
+  // "SPI Perubahan belum terbit" (revision SPI not yet issued).
+  // e.g. MJU: "SPI TERBIT 05/01/26 (SPI Original) - SPI Perubahan belum terbit"
+  // The "belum" (not yet) must always win over the original SPI reference.
+  const explicitPending =
+    (d.revStatus && (d.revStatus.includes('SPI belum') || d.revStatus.includes('SPI Perubahan belum'))) ||
+    (d.spiRef    && (d.spiRef.includes('SPI Perubahan belum') || d.spiRef.includes('SPI belum terbit')));
+  if (explicitPending) return 'revpending';
+
+  // ── 2. Explicit SPI evidence: spiNo filled OR Obtained (Revision) cycle has releaseDate ──
+  // Only look at REVISION obtained cycles for companies with an active revision note,
+  // so original SPI dates don't falsely signal revision completion.
   const hasSpiNo = d.spiNo && d.spiNo.trim() !== '';
-  const obtainedCycle = (d.cycles||[]).find(c => /^obtained/i.test(c.type));
-  const spiReleaseDate = obtainedCycle && obtainedCycle.releaseDate &&
-    obtainedCycle.releaseDate !== 'TBA' && obtainedCycle.releaseDate.trim() !== '';
+
+  const hasRevision = d.revNote && d.revNote.trim() !== '';
+  const obtRevCycle = hasRevision
+    ? (d.cycles||[]).find(c => /obtained.*revision/i.test(c.type))   // Obtained (Revision #N)
+    : (d.cycles||[]).find(c => /^obtained/i.test(c.type));           // any Obtained (clean company)
+  const spiReleaseDate = obtRevCycle && obtRevCycle.releaseDate &&
+    obtRevCycle.releaseDate !== 'TBA' && obtRevCycle.releaseDate.trim() !== '';
+
+  // For spiRef/revStatus: only accept SPI Perubahan Terbit (not original SPI TERBIT)
+  // for revision companies — otherwise MJU's original "SPI TERBIT 05/01/26" falsely triggers.
   const spiRefHasSPI = d.spiRef && (
-    d.spiRef.includes('SPI TERBIT') || d.spiRef.includes('SPI Perubahan Terbit')
+    hasRevision
+      ? d.spiRef.includes('SPI Perubahan Terbit')          // revision: need SPI Perubahan
+      : (d.spiRef.includes('SPI TERBIT') || d.spiRef.includes('SPI Perubahan Terbit'))
   );
   const revStatusHasSPI = d.revStatus && (
-    d.revStatus.includes('SPI TERBIT') || d.revStatus.includes('SPI Perubahan Terbit') ||
+    d.revStatus.includes('SPI Perubahan Terbit') ||
+    (!hasRevision && d.revStatus.includes('SPI TERBIT')) ||
     d.revStatus.startsWith('✅ Done')
   );
 
   if (hasSpiNo || spiReleaseDate || spiRefHasSPI || revStatusHasSPI) return 'completed';
 
-  // ── 2. Explicit pending override ──
-  const explicitPending =
-    (d.revStatus && d.revStatus.includes('SPI belum')) ||
-    (d.revStatus && d.revStatus.includes('SPI Perubahan belum')) ||
-    (d.spiRef    && d.spiRef.includes('SPI Perubahan belum'));
-  if (explicitPending) return 'revpending';
-
   // ── 3. PERTEK only (no SPI evidence) → still pending ──
   const hasPertekOnly =
     d.spiRef && d.spiRef.includes('PERTEK TERBIT') &&
-    !d.spiRef.includes('SPI TERBIT') && !d.spiRef.includes('SPI Perubahan');
+    !d.spiRef.includes('SPI Perubahan Terbit');
   if (hasPertekOnly) return 'revpending';
 
   return 'revpending';

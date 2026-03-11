@@ -245,6 +245,7 @@ function rrSaveStatus(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
+  _persistRevFields(code);
   nsShowToast(`✓ ${code} revision status updated`);
 }
 
@@ -266,6 +267,7 @@ function rrMarkApproved(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
+  _persistRevFields(code);
   nsShowToast(`✓ ${code} revision marked as approved/complete`);
 }
 
@@ -294,6 +296,8 @@ function rrCancelRevision(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
+  _persistRevFields(code);
+  _saveCyclesToDB(code, co.cycles || []);
   nsShowToast(`✓ ${code} revision cancelled — original products restored`);
 }
 
@@ -303,6 +307,7 @@ function rrReopenRevision(code) {
   co.revType = 'active';
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
+  _persistRevFields(code);
   nsShowToast(`${code} revision re-opened as active`);
 }
 
@@ -331,17 +336,70 @@ function rrSaveReapply(code) {
   _refreshAfterRREdit();
   const co = getSPI(code);
   if (co) buildRevMgmtSection(co);
+  // Persist RA fields to DB via PATCH
+  const ra_final = getRA(code);
+  if (ra_final) {
+    fetch(`/api/company/${code}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ra: {
+        berat:             ra_final.berat,
+        obtained:          ra_final.obtained,
+        cargoArrived:      ra_final.cargoArrived,
+        realPct:           ra_final.realPct,
+        utilPct:           ra_final.utilPct ?? null,
+        reapplyStatus:     ra_final.reapplyStatus ?? null,
+        reapplySubmitDate: ra_final.reapplySubmitDate ?? null,
+        reapplyStage:      ra_final.reapplyStage ?? 1,
+        target:            ra_final.target ?? null,
+        pertek:            ra_final.pertek ?? null,
+        spi:               ra_final.spi ?? null,
+      }}),
+    }).catch(e => console.warn('rrSaveReapply DB persist failed:', e));
+  }
   nsShowToast(`✓ ${code} re-apply data updated`);
 }
 
-/* Shared refresh after any RR edit */
+/* Shared refresh after any RR edit — also persists rev fields to DB */
 function _refreshAfterRREdit() {
   buildRevList();
   buildRevDetailTable();
   renderSPI();
   renderMain();
   updateOverviewKPIs();
-  if (typeof autoSave === 'function') autoSave();
+  saveToStorage(); // localStorage fallback
+}
+
+/* Lightweight DB persist for revision-only field changes.
+   Called after rrSaveStatus / rrMarkApproved / rrCancelRevision / rrReopenRevision.
+   Does NOT touch cycles — only company-level rev* fields. */
+async function _persistRevFields(code) {
+  const co = getSPI(code);
+  if (!co) return;
+  const payload = {
+    revType:       co.revType,
+    revNote:       co.revNote       || '',
+    revSubmitDate: co.revSubmitDate || '',
+    revStatus:     co.revStatus     || '',
+    revMt:         co.revMT         ?? 0,
+    spiRef:        co.spiRef        || '',
+    remarks:       co.remarks       || '',
+  };
+  try {
+    const resp = await fetch(`/api/company/${code}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      console.warn(`Rev persist failed for ${code}:`, err.error || resp.statusText);
+      nsShowToast(`⚠️ ${code} saved locally — DB sync failed`);
+    }
+  } catch(e) {
+    console.warn('Rev persist network error:', e);
+    nsShowToast(`⚠️ ${code} saved locally — no DB connection`);
+  }
 }
 
 /* ── Save all fields — mutate live data — refresh every section ── */
