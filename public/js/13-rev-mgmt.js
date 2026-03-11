@@ -637,23 +637,23 @@ async function saveEdit() {
   const ra_final = RA.find(r => r.code === c);
 
   const payload = {
-    // ── Company core fields ──
-    revType:      co_final?.revType      ?? undefined,
-    revNote:      co_final?.revNote      ?? undefined,
-    revSubmitDate:co_final?.revSubmitDate?? undefined,
-    revStatus:    co_final?.revStatus    ?? undefined,
-    revMt:        co_final?.revMT        ?? undefined,
-    remarks:      co_final?.remarks      ?? undefined,
-    spiRef:       co_final?.spiRef       ?? undefined,
-    statusUpdate: co_final?.statusUpdate ?? undefined,
-    pertekNo:     co_final?.pertekNo     ?? undefined,
-    spiNo:        co_final?.spiNo        ?? undefined,
-    submit1:      co_final?.submit1      ?? undefined,
-    obtained:     co_final?.obtained     ?? undefined,
-    utilizationMt:    co_final?.utilizationMT    ?? undefined,
-    availableQuota:   co_final?.availableQuota   ?? undefined,
-    updatedBy:    co_final?.updatedBy    ?? undefined,
-    updatedDate:  co_final?.updatedDate  ?? undefined,
+    // ── Company core fields — keys must match server's camelCase mapping ──
+    revType:       co_final?.revType       ?? undefined,
+    revNote:       co_final?.revNote       ?? undefined,
+    revSubmitDate: co_final?.revSubmitDate ?? undefined,
+    revStatus:     co_final?.revStatus     ?? undefined,
+    revMt:         co_final?.revMT         ?? undefined,  // server maps rev_mt → revMt
+    remarks:       co_final?.remarks       ?? undefined,
+    spiRef:        co_final?.spiRef        ?? undefined,
+    statusUpdate:  co_final?.statusUpdate  ?? undefined,
+    pertekNo:      co_final?.pertekNo      ?? undefined,
+    spiNo:         co_final?.spiNo         ?? undefined,
+    submit1:       co_final?.submit1       ?? undefined,
+    obtained:      co_final?.obtained      ?? undefined,
+    utilizationMt: co_final?.utilizationMT ?? undefined,  // server maps utilization_mt → utilizationMt
+    availableQuota:co_final?.availableQuota?? undefined,
+    updatedBy:     co_final?.updatedBy     ?? undefined,
+    updatedDate:   co_final?.updatedDate   ?? undefined,
   };
 
   // ── Shipments (Sales / Ops) ──

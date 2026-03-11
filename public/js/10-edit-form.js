@@ -265,9 +265,13 @@ function ensureShipments(co) {
   const obtByProd = getObtainedByProd(co);
   Object.keys(obtByProd).forEach(p => {
     if (!co.shipments[p]) co.shipments[p] = [];
+    // Normalize existing lots: ensure lotNo is always set
+    co.shipments[p].forEach((l, i) => {
+      if (l.lotNo == null) l.lotNo = (l.lot != null ? l.lot : i + 1);
+    });
     // Ensure at least one lot exists
     if (co.shipments[p].length === 0) {
-      co.shipments[p].push({ lot: 1, utilMT: null, etaJKT: '', note: '', realMT: null, pibDate: '', arrived: false });
+      co.shipments[p].push({ lotNo: 1, utilMT: null, etaJKT: '', note: '', realMT: null, pibDate: '', arrived: false });
     }
   });
   return co.shipments;

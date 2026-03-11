@@ -288,7 +288,7 @@ function addSalesLot(prod) {
   if (!co.shipments[prod]) co.shipments[prod] = [];
 
   const lotNum = co.shipments[prod].length + 1;
-  co.shipments[prod].push({ lot: lotNum, utilMT: null, etaJKT: '', note: '', realMT: null, pibDate: '', arrived: false });
+  co.shipments[prod].push({ lotNo: lotNum, utilMT: null, etaJKT: '', note: '', realMT: null, pibDate: '', arrived: false });
 
   buildSalesOpsForm(co);   // rebuild both forms
   applyShipmentRoleLock();
@@ -303,7 +303,7 @@ function deleteSalesLot(prod, idx) {
 
   co.shipments[prod].splice(idx, 1);
   // Re-number lots
-  co.shipments[prod].forEach((l, i) => { l.lot = i + 1; });
+  co.shipments[prod].forEach((l, i) => { l.lotNo = i + 1; });
 
   buildSalesOpsForm(co);
   applyShipmentRoleLock();
@@ -577,6 +577,15 @@ function applyShipmentRoleLock() {
 function collectShipmentData(co) {
   if (!co) return;
   const obtByProd = getObtainedByProd(co);
+
+  // ── Normalize lot objects: ensure lotNo is always set (1-based) ──
+  if (co.shipments) {
+    Object.values(co.shipments).forEach(lots => {
+      lots.forEach((l, i) => {
+        if (l.lotNo == null) l.lotNo = (l.lot != null ? l.lot : i + 1);
+      });
+    });
+  }
 
   // Sales utilMT is written directly to co.shipments on each Apply click (incremental model).
   // Only collect ETA and Note fields here.
