@@ -289,6 +289,7 @@ app.patch('/api/company/:code', async (req, res) => {
       'rev_type','rev_note','rev_submit_date','rev_status','rev_mt',
       'remarks','spi_ref','status_update','pertek_no','spi_no',
       'utilization_mt','available_quota','updated_by','updated_date',
+      'submit1','obtained',
     ];
     const sets = []; const vals = []; let idx = 1;
     for (const f of allowed) {
@@ -388,7 +389,53 @@ app.patch('/api/company/:code', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// GET /api/company/:code  — single company detail
+// PUT /api/company/:code/cycles  — replace all cycles for a company
+// ═══════════════════════════════════════════════════════════════════
+app.put('/api/company/:code/cycles', async (req, res) => {
+  const { code } = req.params;
+  const { cycles } = req.body;
+  if (!Array.isArray(cycles)) return res.status(400).json({ error: 'cycles must be an array' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Delete existing cycles (cascade deletes cycle_products)
+    await client.query(`DELETE FROM cycles WHERE company_code = $1`, [code]);
+    // Re-insert
+    for (let i = 0; i < cycles.length; i++) {
+      const cy = cycles[i];
+      const { rows } = await client.query(
+        `INSERT INTO cycles
+           (company_code, cycle_type, mt, submit_type, submit_date, release_type, release_date, status, sort_order)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         RETURNING id`,
+        [code, cy.type, cy.mt != null ? String(cy.mt) : null,
+         cy.submitType||null, cy.submitDate||null,
+         cy.releaseType||null, cy.releaseDate||null,
+         cy.status||'', i]
+      );
+      const cycleId = rows[0].id;
+      // Insert per-product breakdown
+      if (cy.products && typeof cy.products === 'object') {
+        for (const [prod, mt] of Object.entries(cy.products)) {
+          await client.query(
+            `INSERT INTO cycle_products (cycle_id, product, mt) VALUES ($1,$2,$3)`,
+            [cycleId, prod, mt != null ? String(mt) : null]
+          );
+        }
+      }
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, code, cycleCount: cycles.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('PUT /cycles error:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+
 // ═══════════════════════════════════════════════════════════════════
 app.get('/api/company/:code', async (req, res) => {
   const { code } = req.params;

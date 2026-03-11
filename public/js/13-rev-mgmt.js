@@ -345,7 +345,7 @@ function _refreshAfterRREdit() {
 }
 
 /* ── Save all fields — mutate live data — refresh every section ── */
-function saveEdit() {
+async function saveEdit() {
   const c = gv('editCo');
   if (!c) return;
 
@@ -632,7 +632,83 @@ function saveEdit() {
     applyProductRenames(co);
   }
 
-  /* ── 4. Refresh ALL dashboard sections ── */
+  /* ── 4. Persist to PostgreSQL via API ──────────────────────────── */
+  const co_final = getSPI(c) || PENDING.find(p => p.code === c);
+  const ra_final = RA.find(r => r.code === c);
+
+  const payload = {
+    // ── Company core fields ──
+    revType:      co_final?.revType      ?? undefined,
+    revNote:      co_final?.revNote      ?? undefined,
+    revSubmitDate:co_final?.revSubmitDate?? undefined,
+    revStatus:    co_final?.revStatus    ?? undefined,
+    revMt:        co_final?.revMT        ?? undefined,
+    remarks:      co_final?.remarks      ?? undefined,
+    spiRef:       co_final?.spiRef       ?? undefined,
+    statusUpdate: co_final?.statusUpdate ?? undefined,
+    pertekNo:     co_final?.pertekNo     ?? undefined,
+    spiNo:        co_final?.spiNo        ?? undefined,
+    submit1:      co_final?.submit1      ?? undefined,
+    obtained:     co_final?.obtained     ?? undefined,
+    utilizationMt:    co_final?.utilizationMT    ?? undefined,
+    availableQuota:   co_final?.availableQuota   ?? undefined,
+    updatedBy:    co_final?.updatedBy    ?? undefined,
+    updatedDate:  co_final?.updatedDate  ?? undefined,
+  };
+
+  // ── Shipments (Sales / Ops) ──
+  if (co_final?.shipments && Object.keys(co_final.shipments).length > 0) {
+    payload.shipments = co_final.shipments;
+  }
+
+  // ── Reapply targets ──
+  if (co_final?.reapplyTargets && co_final.reapplyTargets.length > 0) {
+    payload.reapplyTargets = co_final.reapplyTargets;
+  }
+
+  // ── RA record ──
+  if (ra_final) {
+    payload.ra = {
+      berat:               ra_final.berat,
+      obtained:            ra_final.obtained,
+      cargoArrived:        ra_final.cargoArrived,
+      realPct:             ra_final.realPct,
+      utilPct:             ra_final.utilPct ?? null,
+      arrivalDate:         ra_final.arrivalDate ?? null,
+      etaJKT:              ra_final.etaJKT ?? null,
+      reapplyEst:          ra_final.reapplyEst ?? null,
+      reapplyStage:        ra_final.reapplyStage ?? 1,
+      reapplySubmitDate:   ra_final.reapplySubmitDate ?? null,
+      reapplyStatus:       ra_final.reapplyStatus ?? null,
+      target:              ra_final.target ?? null,
+      pertek:              ra_final.pertek ?? null,
+      spi:                 ra_final.spi ?? null,
+      catatan:             ra_final.catatan ?? null,
+    };
+  }
+
+  // ── Send to server ──
+  try {
+    const resp = await fetch(`/api/company/${c}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      console.error('Save failed:', err);
+      alert(`⚠️ Save failed: ${err.error || resp.statusText}\nChanges shown on screen but NOT saved to database.`);
+    }
+    // Also update cycles in DB if submit/obtained MT changed
+    if (newSubmitMT != null || newObtainedMT != null || hasPERTEK || hasSPI) {
+      await _saveCyclesToDB(c, co_final?.cycles || []);
+    }
+  } catch (netErr) {
+    console.error('Network error saving to API:', netErr);
+    alert('⚠️ Network error — changes shown on screen but NOT saved to database.');
+  }
+
+  /* ── 5. Refresh ALL dashboard sections ── */
   showSaveToast(saveToStorage());
   updateStorageStatus();
   cancelEdit();
@@ -650,6 +726,19 @@ function saveEdit() {
   buildAvailableQuota();
   updateOverviewStats();
   updateOverviewKPIs();
+}
+
+/* ── Helper: persist cycle array to DB via dedicated endpoint ── */
+async function _saveCyclesToDB(code, cycles) {
+  try {
+    await fetch(`/api/company/${code}/cycles`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cycles }),
+    });
+  } catch(e) {
+    console.warn('Cycle save failed (non-critical):', e);
+  }
 }
 /* ══════════════════════════════════════════════════════════════════════
    EXPORT EXECUTIVE PDF — Management Summary (A4 Portrait)
