@@ -392,7 +392,22 @@ function buildRevDetailTable() {
         </td>
         <td>${buildRevChgHtml(co)}</td>
         <td class="t-r t-mono">${co.revMT ? co.revMT.toLocaleString() : '—'}</td>
-        <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${co.revStatus}</span></td>
+        <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${(() => {
+          // Derive approval stage from hard doc numbers first — avoids stale revStatus text
+          const hasSpiNo    = co.spiNo    && co.spiNo.trim()    !== '';
+          const hasPertekNo = co.pertekNo && co.pertekNo.trim() !== '';
+          if (rs === 'completed' || rs === 'clean') {
+            const obtCy = (co.cycles||[]).find(c => /^obtained/i.test(c.type));
+            const spiDate = (obtCy && obtCy.releaseDate && obtCy.releaseDate !== 'TBA') ? obtCy.releaseDate : '';
+            if (hasSpiNo) return 'SPI TERBIT' + (spiDate ? ' ' + spiDate : '');
+            if (hasPertekNo) {
+              const pertekCy = (co.cycles||[]).find(c => /^submit\s*#?1/i.test(c.type));
+              const pertekDate = (pertekCy && pertekCy.releaseDate && pertekCy.releaseDate !== 'TBA') ? pertekCy.releaseDate : '';
+              return 'PERTEK TERBIT' + (pertekDate ? ' ' + pertekDate : '') + ' — SPI belum terbit';
+            }
+          }
+          return co.revStatus || '—';
+        })()}</span></td>
         <td style="font-size:11px;color:var(--txt3)">${co.revSubmitDate}</td>`;
       tbody.appendChild(tr);
     });

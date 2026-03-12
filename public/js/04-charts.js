@@ -85,10 +85,14 @@ function statusBadge(d) {
   if (rs === 'revpending') return '<span class="badge b-revpending">⏳ PENDING — PERTEK Terbit, SPI Belum</span>';
 
   if (rs === 'completed') {
+    // hasBothDocs = pertekNo AND spiNo both filled (hard document numbers — most reliable)
+    const hasBothDocs = d.pertekNo && d.pertekNo.trim() !== '' &&
+                        d.spiNo    && d.spiNo.trim()    !== '';
+    // wasRevision = company had an active product/tonnage revision (revNote set, not a PENDING promotion)
     const wasRevision = d.revNote && d.revNote.trim() !== '' && !d.revNote.includes('PERTEK TERBIT');
-    return wasRevision
-      ? '<span class="badge b-revdone">✅ COMPLETE — SPI Terbit</span>'
-      : '<span class="badge b-spi">✅ SPI Issued</span>';
+    // Show COMPLETE if either hard docs confirm it OR a true revision was completed
+    if (hasBothDocs || wasRevision) return '<span class="badge b-revdone">✅ COMPLETE — SPI Terbit</span>';
+    return '<span class="badge b-spi">✅ SPI Issued</span>';
   }
 
   // rs === 'clean' (revType='none') — normal SPI company
