@@ -26,40 +26,39 @@ const chips = prods => prods.map(p => `<span class="chip" style="background:${pc
 function revisionStatus(d) {
   if (d.revType === 'none')   return 'clean';
   if (d.revType === 'active') {
-    // Distinguish Re-Apply (Submit #2 — additional quota) from Revision (product/tonnage change)
     const hasSubmit2 = (d.cycles||[]).some(c => /^submit\s*#[2-9]/i.test(c.type));
     return hasSubmit2 ? 'reapply' : 'active';
   }
 
   // revType='complete': PERTEK already issued — determine if SPI also issued.
   //
-  // ── 1. Explicit pending — checked FIRST, highest priority ──────────────
+  // ── 0. Hard document number wins over ALL text — checked first ──────────
+  // spiNo is set by CorpSec manually entering the physical SPI document number.
+  // It is the most reliable signal that SPI has actually been issued.
+  // It must override any stale spiRef/revStatus text (e.g. old 'SPI belum terbit').
+  const hasSpiNo = d.spiNo && d.spiNo.trim() !== '';
+  if (hasSpiNo) return 'completed';
+
+  // ── 1. Explicit pending — checked before SPI text detection ─────────────
   // A company can have spiRef containing BOTH "SPI TERBIT" (original SPI) AND
   // "SPI Perubahan belum terbit" (revision SPI not yet issued).
   // e.g. MJU: "SPI TERBIT 05/01/26 (SPI Original) - SPI Perubahan belum terbit"
-  // The "belum" (not yet) must always win over the original SPI reference.
   const explicitPending =
     (d.revStatus && (d.revStatus.includes('SPI belum') || d.revStatus.includes('SPI Perubahan belum'))) ||
     (d.spiRef    && (d.spiRef.includes('SPI Perubahan belum') || d.spiRef.includes('SPI belum terbit')));
   if (explicitPending) return 'revpending';
 
-  // ── 2. Explicit SPI evidence: spiNo filled OR Obtained (Revision) cycle has releaseDate ──
-  // Only look at REVISION obtained cycles for companies with an active revision note,
-  // so original SPI dates don't falsely signal revision completion.
-  const hasSpiNo = d.spiNo && d.spiNo.trim() !== '';
-
+  // ── 2. SPI evidence from cycle dates or text ─────────────────────────────
   const hasRevision = d.revNote && d.revNote.trim() !== '';
   const obtRevCycle = hasRevision
-    ? (d.cycles||[]).find(c => /obtained.*revision/i.test(c.type))   // Obtained (Revision #N)
-    : (d.cycles||[]).find(c => /^obtained/i.test(c.type));           // any Obtained (clean company)
+    ? (d.cycles||[]).find(c => /obtained.*revision/i.test(c.type))
+    : (d.cycles||[]).find(c => /^obtained/i.test(c.type));
   const spiReleaseDate = obtRevCycle && obtRevCycle.releaseDate &&
     obtRevCycle.releaseDate !== 'TBA' && obtRevCycle.releaseDate.trim() !== '';
 
-  // For spiRef/revStatus: only accept SPI Perubahan Terbit (not original SPI TERBIT)
-  // for revision companies — otherwise MJU's original "SPI TERBIT 05/01/26" falsely triggers.
   const spiRefHasSPI = d.spiRef && (
     hasRevision
-      ? d.spiRef.includes('SPI Perubahan Terbit')          // revision: need SPI Perubahan
+      ? d.spiRef.includes('SPI Perubahan Terbit')
       : (d.spiRef.includes('SPI TERBIT') || d.spiRef.includes('SPI Perubahan Terbit'))
   );
   const revStatusHasSPI = d.revStatus && (
@@ -68,7 +67,7 @@ function revisionStatus(d) {
     d.revStatus.startsWith('✅ Done')
   );
 
-  if (hasSpiNo || spiReleaseDate || spiRefHasSPI || revStatusHasSPI) return 'completed';
+  if (spiReleaseDate || spiRefHasSPI || revStatusHasSPI) return 'completed';
 
   // ── 3. PERTEK only (no SPI evidence) → still pending ──
   const hasPertekOnly =
@@ -84,16 +83,28 @@ function statusBadge(d) {
   if (rs === 'reapply')    return '<span class="badge b-reapply">📨 Re-Apply Submit #2</span>';
   if (rs === 'active')     return '<span class="badge b-rev">🔄 Under Revision</span>';
   if (rs === 'revpending') return '<span class="badge b-revpending">⏳ PENDING — PERTEK Terbit, SPI Belum</span>';
-  // 'completed' = SPI confirmed. Show "SPI Issued" for companies that came via
-  // PENDING→SPI path (revType='complete' but started as new submission, not revision).
-  // Show "COMPLETE — SPI Terbit" only for true revision completions (had revType='active' before).
+
   if (rs === 'completed') {
     const wasRevision = d.revNote && d.revNote.trim() !== '' && !d.revNote.includes('PERTEK TERBIT');
     return wasRevision
       ? '<span class="badge b-revdone">✅ COMPLETE — SPI Terbit</span>'
       : '<span class="badge b-spi">✅ SPI Issued</span>';
   }
+
+  // rs === 'clean' (revType='none') — normal SPI company
+  // Hard doc numbers are the most reliable signal — spiNo overrides stale spiRef text
+  const hasSpiNo   = d.spiNo    && d.spiNo.trim()    !== '';
+  const hasPertekNo = d.pertekNo && d.pertekNo.trim() !== '';
+
+  // Both docs filled → fully complete
+  if (hasPertekNo && hasSpiNo) return '<span class="badge b-revdone">✅ COMPLETE — SPI Terbit</span>';
+
+  // PERTEK only (SPI not yet)
+  if (hasPertekNo) return '<span class="badge b-pertek">✓ Pertek</span>';
+
+  // Legacy spiRef text fallback (no doc numbers saved yet)
   if (d.spiRef && d.spiRef.includes('PERTEK TERBIT')) return '<span class="badge b-pertek">✓ Pertek</span>';
+
   return '<span class="badge b-spi">✅ SPI Issued</span>';
 }
 

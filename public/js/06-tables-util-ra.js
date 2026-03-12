@@ -166,6 +166,20 @@ function renderUtilTable() {
   arrivedRows.sort(sortFn);
   waitingFlat.sort(sortFn);
 
+  // Recompute _isFirst/_isSub after sort — flags baked in pre-sort may be wrong
+  // if products sort into a different order than they appeared in obtByProd.
+  [inShipRows, arrivedRows, waitingFlat].forEach(arr => {
+    let lastCode = null;
+    const codeCounts = {};
+    arr.forEach(r => { codeCounts[r.code] = (codeCounts[r.code] || 0) + 1; });
+    arr.forEach(r => {
+      r._isFirst  = r.code !== lastCode;
+      r._isSub    = r.code === lastCode;
+      r._subCount = codeCounts[r.code] || 1;
+      lastCode    = r.code;
+    });
+  });
+
   const waitingCos = [...new Set(waitingFlat.map(r => r.code))].length;
   const gw = document.getElementById('gaugeWaiting');
   if (gw) gw.textContent = waitingCos;

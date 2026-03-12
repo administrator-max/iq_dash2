@@ -35,6 +35,23 @@ async function loadData() {
     SPI     = data.spi     || [];
     PENDING = data.pending || [];
     RA      = data.ra      || [];
+    // Recompute utilizationByProd / availableByProd from shipment lots —
+    // overrides stale stats table values so chart always matches the shipment table.
+    SPI.forEach(co => {
+      if (!co.shipments || !Object.keys(co.shipments).length) return;
+      const obtByProd = getObtainedByProd(co);
+      co.utilizationByProd = {};
+      co.availableByProd   = {};
+      let totalUtil = 0;
+      Object.entries(obtByProd).forEach(([prod, obtMT]) => {
+        const used = (co.shipments[prod] || []).reduce((s, lot) => s + (lot.utilMT || 0), 0);
+        co.utilizationByProd[prod] = used;
+        co.availableByProd[prod]   = Math.max(0, obtMT - used);
+        totalUtil += used;
+      });
+      co.utilizationMT  = totalUtil;
+      co.availableQuota = Math.max(0, (co.obtained || 0) - totalUtil);
+    });
     _dataLoaded = true;
   } catch(err) {
     console.error('Failed to load data from API:', err);

@@ -435,7 +435,18 @@ function refreshUtilDrill() {
 
   const totalUtil  = rows.reduce((s,r) => s+r.utilMT, 0);
   const totalAvail = rows.reduce((s,r) => s+r.availMT, 0);
-  const totalObt   = filteredSPI().reduce((s,co) => s+(co.obtained||0), 0);
+  // Match KPI2: sum Obtained #N cycle MTs (same logic as updateOverviewKPIs)
+  let totalObt = 0;
+  filteredSPI().forEach(co => {
+    const allCycles = co.cycles || [];
+    allCycles.forEach(c => {
+      if (!/^obtained #/i.test(c.type)) return;
+      const mt = typeof c.mt === 'number' ? c.mt : 0;
+      if (mt <= 0) return;
+      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
+      if (!PERIOD.active || inPd(pertekTerbit)) totalObt += mt;
+    });
+  });
   const avgUtil    = totalObt > 0 ? (totalUtil/totalObt*100).toFixed(1) : '—';
 
   document.getElementById('utilDrillSubtitle').textContent =

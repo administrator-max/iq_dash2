@@ -517,6 +517,8 @@ async function saveEdit() {
         const subCy = (p.cycles||[]).find(cy => /^submit/i.test(cy.type));
         if (subCy && newSubmitDate) subCy.submitDate = newSubmitDate;
         if (subCy && newSubmitMT != null) subCy.mt = newSubmitMT;
+        // Keep cycle status in sync with statusUpdate so CURRENT STATUS ONLY column stays fresh
+        if (subCy && newStatusUpdate) subCy.status = newStatusUpdate;
         // Write per-product submit MT into pending cycle.products
         if (subCy && canSubmit && Object.keys(newSubmitProds).length > 0) {
           subCy.products = { ...subCy.products, ...newSubmitProds };
