@@ -245,7 +245,17 @@ function buildOUChart() {
   const filtered    = getFilteredOUData(allRecords);
 
   /* ── KPI Summary Strip ── */
-  const totalObtained = allRecords.reduce((s, r) => s + r.obtained, 0);
+  // Total Obtained: sum Obtained #N cycle MTs across ALL filteredSPI — matches KPI2
+  let totalObtained = 0;
+  filteredSPI().forEach(co => {
+    (co.cycles || []).forEach(c => {
+      if (!/^obtained #/i.test(c.type)) return;
+      const mt = typeof c.mt === 'number' ? c.mt : 0;
+      if (mt <= 0) return;
+      const pertekTerbit = getPertekTerbitForObtained(c, co.cycles);
+      if (!PERIOD.active || inPd(pertekTerbit)) totalObtained += mt;
+    });
+  });
   const totalUtilized = allRecords.reduce((s, r) => s + r.utilized, 0);
   const totalRemain   = allRecords.reduce((s, r) => s + r.remaining, 0);
   const overdueCount  = allRecords.filter(r => r.leadStatus === 'overdue').length;

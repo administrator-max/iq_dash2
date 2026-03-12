@@ -668,8 +668,17 @@ function buildFlowKPIStrip() {
   const arrived   = fRa.filter(r => r.cargoArrived);
   const inShip    = fRa.filter(r => !r.cargoArrived);
 
-  // ① Obtained — total from ALL SPI companies (not just RA subset)
-  const totalObtained = filteredSPI().reduce((s, co) => s + (co.obtained || 0), 0);
+  // ① Obtained — sum Obtained #N cycle MTs, same logic as KPI2 (updateOverviewKPIs)
+  let totalObtained = 0;
+  filteredSPI().forEach(co => {
+    (co.cycles || []).forEach(c => {
+      if (!/^obtained #/i.test(c.type)) return;
+      const mt = typeof c.mt === 'number' ? c.mt : 0;
+      if (mt <= 0) return;
+      const pertekTerbit = getPertekTerbitForObtained(c, co.cycles);
+      if (!PERIOD.active || inPd(pertekTerbit)) totalObtained += mt;
+    });
+  });
   // ② Utilized — sum of utilizationByProd across ALL SPI companies
   //    This is the SINGLE source of truth: same data used by Detail — Company & Product Level
   const totalUtilized = filteredSPI().reduce((s, co) => {
