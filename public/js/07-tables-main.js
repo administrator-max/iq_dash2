@@ -109,9 +109,19 @@ function renderMain() {
   }
 
   /* ── Cell builders ──────────────────────────────────────────── */
-  const mkNumCell = (val, col) => val > 0
-    ? `<span style="color:${col};font-weight:600;font-family:'DM Mono',monospace">${val.toLocaleString()}</span>`
-    : '<span style="color:var(--txt3)">—</span>';
+  const mkNumCell = (val, col, breakdown) => {
+    const main = val > 0
+      ? `<span style="color:${col};font-weight:600;font-family:'DM Mono',monospace">${_fmtMT(val)}</span>`
+      : '<span style="color:var(--txt3)">—</span>';
+    if (!breakdown || !breakdown.length) return main;
+    const rows = breakdown.map(([prod, mt]) =>
+      `<div style="display:flex;justify-content:space-between;gap:8px;font-size:9.5px;line-height:1.6">
+        <span style="color:var(--txt3);white-space:nowrap">${prod}</span>
+        <span style="font-family:'DM Mono',monospace;color:${col};font-weight:600">${_fmtMT(mt)}</span>
+      </div>`
+    ).join('');
+    return `<div>${main}<div style="margin-top:3px;padding-top:3px;border-top:1px dashed var(--border)">${rows}</div></div>`;
+  };
 
   const mkPctCell = (pct, isUtilMode) => {
     if (pct == null) return '<span style="color:var(--txt3)">—</span>';
@@ -211,8 +221,16 @@ function renderMain() {
         <td>${chips(d.products)}</td>
         <td class="t-r t-mono">${N(d.submit1)}</td>
         <td class="t-r t-mono" style="color:${d.obtained>0?'var(--teal)':'var(--txt3)'}">${d.obtained>0?N(d.obtained):'—'}</td>
-        <td class="t-r">${mkNumCell(d.utilMT,'var(--blue)')}</td>
-        <td class="t-r">${mkNumCell(d.berat,'var(--green)')}</td>
+        <td class="t-r">${mkNumCell(d.utilMT,'var(--blue)',
+          d.products.length > 1
+            ? Object.entries(d.utilizationByProd||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])
+            : null
+        )}</td>
+        <td class="t-r">${mkNumCell(d.berat,'var(--green)',
+          d.products.length > 1 && d.realizationByProd && Object.keys(d.realizationByProd).length
+            ? Object.entries(d.realizationByProd||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])
+            : null
+        )}</td>
         <td style="min-width:90px">${mkPctCell(dispPct, d.realPct==null && d.utilPct!=null)}</td>
         <td class="t-r">${mkAvqCell(d.availMT, d.rowType==='PENDING')}</td>
         <td>${eligHtml}</td>

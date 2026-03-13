@@ -238,24 +238,35 @@ function applyRolePermissions() {
 function getObtainedByProd(co) {
   const result = {};
   if (!co) return result;
-  // First: use availableByProd if set (respects manual overrides)
-  if (co.availableByProd && Object.keys(co.availableByProd).length) {
-    // availableByProd is what's left; we need total obtained per prod
-  }
-  // Primary: Obtained #1 cycle products
+
+  // Sum ALL Obtained #N cycles (covers #1 + #2 re-apply cycles)
   const cycles = co.cycles || [];
-  const obtCy = cycles.find(cy => /^obtained\s*#?1/i.test(cy.type))
-             || cycles.find(cy => /^obtained/i.test(cy.type));
-  if (obtCy && obtCy.products) {
-    Object.entries(obtCy.products).forEach(([p, v]) => {
-      if (typeof v === 'number' && v > 0) result[p] = v;
+  cycles.forEach(cy => {
+    if (!/^obtained/i.test(cy.type)) return;
+    if (!cy.products) return;
+    Object.entries(cy.products).forEach(([p, v]) => {
+      const n = typeof v === 'number' ? v : parseFloat(v);
+      if (!isNaN(n) && n > 0) result[p] = (result[p] || 0) + n;
     });
+  });
+
+  // Per-product fallback: for products in co.products that aren't in any cycle,
+  // distribute the remaining co.obtained evenly among them
+  const covered  = Object.keys(result);
+  const missing  = (co.products || []).filter(p => !covered.includes(p));
+  if (missing.length) {
+    const coveredTotal = covered.reduce((s, p) => s + result[p], 0);
+    const remainder    = Math.max(0, (co.obtained || 0) - coveredTotal);
+    const share        = remainder > 0 ? Math.round(remainder / missing.length) : 0;
+    missing.forEach(p => { if (share > 0) result[p] = share; });
   }
-  // Fallback: use co products list with co.obtained total split evenly
+
+  // Last resort: if nothing found at all, split co.obtained evenly
   if (!Object.keys(result).length && co.products && co.obtained) {
     const n = co.products.length;
     co.products.forEach(p => { result[p] = Math.round(co.obtained / n); });
   }
+
   return result;
 }
 

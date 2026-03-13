@@ -70,6 +70,14 @@ function showDataError() {
   </div>`;
 }
 
+/* ── _fmtMT: format float MT values with up to 2 decimal places, no trailing zeros ── */
+function _fmtMT(val) {
+  if (val == null || isNaN(val)) return '0';
+  const n = Number(val);
+  const dec = n % 1 === 0 ? '' : ('.' + n.toFixed(2).split('.')[1].replace(/0+$/, ''));
+  return Math.floor(n).toLocaleString() + dec;
+}
+
 /* ── PRODUCT COLORS: solid, high-contrast, clearly distinguishable ── */
 const PROD_COLORS = {
   'GL BORON':     {solid:'#0369a1', light:'#e0f2fe', text:'#0369a1'},

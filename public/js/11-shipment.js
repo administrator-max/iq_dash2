@@ -4,22 +4,21 @@
    collectShipmentData, reapply table
 ═══════════════════════════════════════ */
 
-/* Format a float MT value: show up to 2 decimal places, strip trailing zeros,
-   add thousands separator on the integer part. e.g. 1234.5 → "1,234.5" */
-function _fmtMT(val) {
-  if (val == null || isNaN(val)) return '0';
-  const n = Number(val);
-  // Up to 2 decimal places, no trailing zeros
-  const dec = n % 1 === 0 ? '' : ('.' + n.toFixed(2).split('.')[1].replace(/0+$/, ''));
-  return Math.floor(n).toLocaleString() + dec;
-}
-
 function buildSalesOpsForm(co) {
   if (!co) return;
 
   const shipments = ensureShipments(co);
   const obtByProd = getObtainedByProd(co);
   const products  = Object.keys(obtByProd);
+
+  /* Build a stable prod→pid map: index-based so special chars (≤ > etc.)
+     never collide. Stored on window so buildSalesRow / buildOpsRow can access it. */
+  window._prodPidMap = {};
+  products.forEach((p, i) => {
+    // Safe prefix from alphanumeric chars + index to guarantee uniqueness
+    const safePrefix = p.replace(/[^a-zA-Z0-9]/g,'_').slice(0, 20);
+    window._prodPidMap[p] = `p${i}_${safePrefix}`;
+  });
 
   if (!products.length) {
     g('salesFormWrap').innerHTML = '<div class="pmt-note">No products with obtained quota found.</div>';
@@ -44,7 +43,7 @@ function buildSalesOpsForm(co) {
           <span class="sprod-hdr-name">${prod}</span>
           <span class="sprod-quota-badge">PERTEK: ${obtMT.toLocaleString()} MT</span>
         </div>
-        <span class="sprod-avail-badge${availMT < 0 ? ' warn' : ''}" id="sales-avail-${prod.replace(/[^a-zA-Z0-9]/g,'_')}">
+        <span class="sprod-avail-badge${availMT < 0 ? ' warn' : ''}" id="sales-avail-${prodPid(prod)}">
           Available: ${availMT.toLocaleString()} MT
         </span>
       </div>
@@ -59,16 +58,16 @@ function buildSalesOpsForm(co) {
             <th style="width:24px"></th>
           </tr>
         </thead>
-        <tbody id="sales-tbody-${prod.replace(/[^a-zA-Z0-9]/g,'_')}">
+        <tbody id="sales-tbody-${prodPid(prod)}">
           ${lots.map((lot, idx) => buildSalesRow(prod, idx, lot, obtMT)).join('')}
         </tbody>
       </table>
 
       <div class="add-ship-row">
-        <button class="add-ship-btn" onclick="addSalesLot('${prod}')" id="sales-addbtn-${prod.replace(/[^a-zA-Z0-9]/g,'_')}">
+        <button class="add-ship-btn" onclick="addSalesLot('${prod}')" id="sales-addbtn-${prodPid(prod)}">
           + Add Shipment Lot
         </button>
-        <div class="sprod-total-val" id="sales-total-${prod.replace(/[^a-zA-Z0-9]/g,'_')}">
+        <div class="sprod-total-val" id="sales-total-${prodPid(prod)}">
           ${usedMT.toLocaleString()} / ${obtMT.toLocaleString()} MT used
         </div>
       </div>
@@ -105,7 +104,7 @@ function buildSalesOpsForm(co) {
           <span class="sprod-hdr-name">${prod}</span>
           <span class="sprod-quota-badge">PERTEK: ${obtMT.toLocaleString()} MT</span>
         </div>
-        <span class="sprod-avail-badge" id="ops-real-${prod.replace(/[^a-zA-Z0-9]/g,'_')}">
+        <span class="sprod-avail-badge" id="ops-real-${prodPid(prod)}">
           Realized: ${totalReal.toLocaleString()} MT
         </span>
       </div>
@@ -121,7 +120,7 @@ function buildSalesOpsForm(co) {
             <th style="width:24px"></th>
           </tr>
         </thead>
-        <tbody id="ops-tbody-${prod.replace(/[^a-zA-Z0-9]/g,'_')}">
+        <tbody id="ops-tbody-${prodPid(prod)}">
           ${lots.map((lot, idx) => buildOpsRow(prod, idx, lot)).join('')}
         </tbody>
       </table>
@@ -130,7 +129,7 @@ function buildSalesOpsForm(co) {
         <div style="font-size:9.5px;color:var(--txt3);font-style:italic">
           Realization synced from Sales shipment lots. PIB Date and Actual MT updated by Operations.
         </div>
-        <div class="sprod-total-val" id="ops-total-${prod.replace(/[^a-zA-Z0-9]/g,'_')}">
+        <div class="sprod-total-val" id="ops-total-${prodPid(prod)}">
           ${totalReal.toLocaleString()} / ${obtMT.toLocaleString()} MT realized
         </div>
       </div>
@@ -152,9 +151,18 @@ function buildSalesOpsForm(co) {
   applyShipmentRoleLock();
 }
 
-/* ── Build a Sales shipment row ── */
+/* ── prodPid: collision-free DOM id prefix for a product name ── */
+function prodPid(prod) {
+  // Use the pre-built map if available (set during buildSalesOpsForm)
+  if (window._prodPidMap && window._prodPidMap[prod] !== undefined) {
+    return window._prodPidMap[prod];
+  }
+  // Fallback: safe prefix only (may collide for ≤/> products, but acceptable outside form context)
+  return prodPid(prod);
+}
+
 function buildSalesRow(prod, idx, lot, obtMT) {
-  const pid    = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid    = prodPid(prod);
   const lotNo  = idx + 1;
   const curMT  = lot.utilMT != null ? lot.utilMT : 0;
   const eta    = lot.etaJKT || '';
@@ -201,7 +209,8 @@ function buildSalesRow(prod, idx, lot, obtMT) {
           <span class="util-cur-lbl">Current</span>
           <span class="util-cur-val" id="util-cur-${pid}-${idx}">${_fmtMT(curMT)} MT</span>
           <button class="util-direct-edit-btn" title="Directly edit current utilization MT"
-            onclick="directEditUtil('${prod}',${idx})" style="margin-left:6px;background:none;border:none;cursor:pointer;font-size:11px;color:var(--txt3);padding:0 2px" ${curMT === 0 ? 'style="display:none"' : ''}>✏️</button>
+            onclick="directEditUtil('${prod}',${idx})"
+            style="margin-left:6px;background:none;border:none;cursor:pointer;font-size:11px;color:var(--txt3);padding:0 2px;${curMT === 0 ? 'display:none' : ''}">✏️</button>
         </div>
         <div class="util-add-row">
           <span class="util-add-lbl">+</span>
@@ -243,61 +252,91 @@ function buildSalesRow(prod, idx, lot, obtMT) {
   </tr>`;
 }
 
-/* ── Build an Ops shipment row ── */
+/* ── Migrate legacy single realMT/pibDate → realizations[] array ── */
+function ensureRealizations(lot) {
+  if (!lot.realizations) {
+    lot.realizations = [];
+    // Migrate existing single entry if present
+    if (lot.realMT != null || lot.pibDate) {
+      lot.realizations.push({ realMT: lot.realMT || 0, pibDate: lot.pibDate || '' });
+    } else {
+      lot.realizations.push({ realMT: 0, pibDate: '' });
+    }
+  }
+  if (!lot.realizations.length) lot.realizations.push({ realMT: 0, pibDate: '' });
+  // Keep aggregate in sync
+  lot.realMT   = lot.realizations.reduce((s, r) => s + (r.realMT || 0), 0);
+  lot.pibDate  = lot.realizations.map(r => r.pibDate).filter(Boolean).join(', ');
+  lot.arrived  = lot.realMT > 0;
+}
+
+/* ── Build an Ops shipment row (supports multiple realizations per lot) ── */
 function buildOpsRow(prod, idx, lot) {
-  const pid    = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  ensureRealizations(lot);
+  const pid    = prodPid(prod);
   const lotNo  = idx + 1;
   const util   = lot.utilMT  != null ? lot.utilMT  : null;
-  const real   = lot.realMT  != null ? lot.realMT  : '';
-  const pib    = lot.pibDate || '';
   const obtMT  = (getObtainedByProd(getCurrentEditCo() || {}))[prod] || 0;
   const base   = obtMT > 0 ? obtMT : (util > 0 ? util : 1);
-  const realPct = lot.realMT != null
-    ? Math.min(100, Math.round(lot.realMT / base * 100))
-    : 0;
-  const barColor = realPct >= 60 ? '#16a34a' : realPct >= 30 ? '#d97706' : '#94a3b8';
-  const pibStatus = pib
-    ? `<span class="pib-pill pib-done">✓ ${pib}</span>`
-    : `<span class="pib-pill pib-none">—</span>`;
 
-  return `
-  <tr id="ops-row-${pid}-${idx}" data-prod="${prod}" data-idx="${idx}">
-    <td class="t-c"><span class="lot-badge">${lotNo}</span></td>
-    <td class="t-r" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--txt2)">
-      ${util != null ? _fmtMT(Number(util)) + ' MT' : '<span style="color:var(--txt3)">—</span>'}
-    </td>
-    <td>
-      <input type="text" inputmode="decimal"
-        class="ship-inp ops-real-inp"
-        data-prod="${prod}" data-idx="${idx}"
-        value="${real !== '' ? _fmtMT(Number(real)) : ''}"
-        placeholder="0"
-        oninput="onOpsRealChange(this)"
-        title="Actual arrived MT for Lot ${lotNo} · Cannot exceed Obtained MT">
-      <div class="val-err" id="real-err-${pid}-${idx}"></div>
-    </td>
-    <td>
-      <input type="text"
-        class="ship-txt-inp ops-pib-inp"
-        data-prod="${prod}" data-idx="${idx}"
-        value="${pib}"
-        placeholder="DD/MM/YYYY"
-        oninput="onOpsPibChange(this)">
-    </td>
-    <td>
-      <div class="real-bar-wrap">
-        <div class="real-bar-bg">
-          <div class="real-bar-fill" id="real-bar-${pid}-${idx}"
-            style="width:${realPct}%;background:${barColor}"></div>
+  // Build one sub-row per realization entry
+  const realRows = lot.realizations.map((r, rIdx) => {
+    const rMT  = r.realMT || 0;
+    const rPib = r.pibDate || '';
+    const realPct  = rMT > 0 ? Math.min(100, Math.round(rMT / base * 100)) : 0;
+    const barColor = realPct >= 60 ? '#16a34a' : realPct >= 30 ? '#d97706' : '#94a3b8';
+    const canDel   = lot.realizations.length > 1;
+    return `
+    <tr class="ops-real-row" id="ops-real-row-${pid}-${idx}-${rIdx}" data-prod="${prod}" data-lot="${idx}" data-ridx="${rIdx}">
+      <td class="t-c" style="padding-left:24px;color:var(--txt3);font-size:10px">${rIdx === 0 ? `<span class="lot-badge">${lotNo}</span>` : `<span style="color:var(--txt3);font-size:10px">↳</span>`}</td>
+      <td class="t-r" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--txt2)">
+        ${rIdx === 0 ? (util != null ? _fmtMT(Number(util)) + ' MT' : '<span style="color:var(--txt3)">—</span>') : ''}
+      </td>
+      <td>
+        <input type="text" inputmode="decimal"
+          class="ship-inp ops-real-inp"
+          data-prod="${prod}" data-idx="${idx}" data-ridx="${rIdx}"
+          value="${rMT > 0 ? _fmtMT(rMT) : ''}"
+          placeholder="0"
+          oninput="onOpsRealChange(this)"
+          title="Actual arrived MT · Cannot exceed Obtained MT">
+        <div class="val-err" id="real-err-${pid}-${idx}-${rIdx}"></div>
+      </td>
+      <td>
+        <input type="text"
+          class="ship-txt-inp ops-pib-inp"
+          data-prod="${prod}" data-idx="${idx}" data-ridx="${rIdx}"
+          value="${rPib}"
+          placeholder="DD/MM/YYYY"
+          oninput="onOpsPibChange(this)">
+      </td>
+      <td>
+        <div class="real-bar-wrap">
+          <div class="real-bar-bg">
+            <div class="real-bar-fill" id="real-bar-${pid}-${idx}-${rIdx}"
+              style="width:${realPct}%;background:${barColor}"></div>
+          </div>
+          <span class="real-pct-lbl" id="real-pct-${pid}-${idx}-${rIdx}"
+            style="color:${barColor}">${realPct > 0 ? realPct + '%' : '—'}</span>
         </div>
-        <span class="real-pct-lbl" id="real-pct-${pid}-${idx}"
-          style="color:${barColor}">${realPct > 0 ? realPct + '%' : '—'}</span>
-      </div>
-    </td>
-    <td>
-      <button class="del-ship-btn" title="Cannot delete — synced from Sales" disabled>✕</button>
-    </td>
-  </tr>`;
+      </td>
+      <td>
+        <button class="del-ship-btn" title="Remove this realization entry"
+          onclick="deleteOpsReal('${prod}',${idx},${rIdx})" ${canDel ? '' : 'disabled'}>✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // + Add Realization row
+  const addRow = `
+    <tr class="ops-add-real-row" id="ops-add-row-${pid}-${idx}">
+      <td colspan="6" style="padding:3px 8px 6px 24px">
+        <button class="add-ship-btn ops-add-real-btn" style="font-size:10px;padding:3px 10px;opacity:.75"
+          onclick="addOpsReal('${prod}',${idx})">+ Add Realization Date</button>
+      </td>
+    </tr>`;
+
+  return realRows + addRow;
 }
 
 /* ── Add a new Sales lot for a product ── */
@@ -350,7 +389,7 @@ function editHistEntry(prod, idx, hIdx) {
   const lot = co.shipments[prod] && co.shipments[prod][idx];
   if (!lot || !lot.utilHistory || !lot.utilHistory[hIdx]) return;
   const h   = lot.utilHistory[hIdx];
-  const pid = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid = prodPid(prod);
   const rowEl = g(`util-hist-row-${pid}-${idx}-${hIdx}`);
   if (!rowEl) return;
 
@@ -383,7 +422,7 @@ function saveHistEdit(prod, idx, hIdx) {
   if (!co) return;
   const lot = co.shipments[prod] && co.shipments[prod][idx];
   if (!lot || !lot.utilHistory) return;
-  const pid      = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid      = prodPid(prod);
   const newDelta = parseFloat((g(`hist-edit-delta-${pid}-${idx}-${hIdx}`)?.value||'').replace(/,/g,''));
   const newNote  = g(`hist-edit-note-${pid}-${idx}-${hIdx}`)?.value.trim() || '';
   if (isNaN(newDelta) || newDelta <= 0) { alert('Delta MT must be a positive number.'); return; }
@@ -471,7 +510,7 @@ function directEditUtil(prod, idx) {
 
 /* ── Rebuild all Sales rows for one product (after history edits) ── */
 function _rebuildSalesProduct(co, prod) {
-  const pid     = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid     = prodPid(prod);
   const obtMT   = (getObtainedByProd(co))[prod] || 0;
   const lots    = co.shipments[prod] || [];
   const usedMT  = totalUtilForProd(co.shipments, prod);
@@ -516,7 +555,7 @@ function onSalesAddChange(inp) {
   if (!co) return;
 
   ensureShipments(co);
-  const pid    = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid    = prodPid(prod);
   const rawVal = inp.value.replace(/,/g,'');
   const addVal = rawVal === '' ? 0 : parseFloat(rawVal);
 
@@ -554,7 +593,7 @@ function applySalesUtil(prod, idx) {
   if (!co) return;
   ensureShipments(co);
 
-  const pid    = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid    = prodPid(prod);
   const addInp = g(`util-add-${pid}-${idx}`);
   if (!addInp) return;
 
@@ -640,46 +679,54 @@ function applySalesUtil(prod, idx) {
 
 /* ── Sync Ops read-only Util MT column when Sales changes ── */
 function syncOpsUtilDisplay(co, prod) {
-  const pid  = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid  = prodPid(prod);
   const lots = (co.shipments || {})[prod] || [];
   lots.forEach((lot, idx) => {
-    const row = g(`ops-row-${pid}-${idx}`);
+    // First realization row carries the Util MT cell (rIdx=0)
+    const row = g(`ops-real-row-${pid}-${idx}-0`);
     if (!row) return;
     const utilCell = row.querySelectorAll('td')[1];
     if (utilCell) {
       utilCell.innerHTML = lot.utilMT != null
-        ? `<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--txt2)">${Number(lot.utilMT).toLocaleString()} MT</span>`
+        ? `<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--txt2)">${_fmtMT(Number(lot.utilMT))} MT</span>`
         : `<span style="color:var(--txt3)">—</span>`;
     }
-    // Re-validate real MT against new util
-    const realInp = row.querySelector(`.ops-real-inp[data-idx="${idx}"]`);
-    if (realInp && realInp.value) onOpsRealChange(realInp);
+    // Re-validate real MT inputs for this lot
+    const tbody = g(`ops-tbody-${pid}`);
+    if (tbody) {
+      tbody.querySelectorAll(`.ops-real-inp[data-idx="${idx}"]`).forEach(inp => {
+        if (inp.value) onOpsRealChange(inp);
+      });
+    }
   });
 }
 
-/* ── Ops: Real MT changed → validate ≤ util + update bar ── */
+/* ── Ops: Real MT changed → validate + update bar + sync aggregate ── */
 function onOpsRealChange(inp) {
   fmtFloatInline(inp);
   const prod = inp.dataset.prod;
   const idx  = parseInt(inp.dataset.idx);
+  const rIdx = parseInt(inp.dataset.ridx || '0');
   const co   = getCurrentEditCo();
   if (!co) return;
 
   ensureShipments(co);
+  const lot = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot) return;
+  ensureRealizations(lot);
+
   const rawVal = inp.value.replace(/,/g,'');
-  const newVal = rawVal === '' ? null : parseFloat(rawVal);
+  const newVal = rawVal === '' ? 0 : parseFloat(rawVal);
 
-  if (co.shipments[prod] && co.shipments[prod][idx] !== undefined) {
-    co.shipments[prod][idx].realMT   = newVal;
-    co.shipments[prod][idx].arrived  = newVal != null && newVal > 0;
-  }
+  lot.realizations[rIdx].realMT = isNaN(newVal) ? 0 : newVal;
 
-  const utilMT  = co.shipments[prod][idx].utilMT || 0;
-  const obtMT   = (getObtainedByProd(co))[prod] || 0;
-  const pid     = prod.replace(/[^a-zA-Z0-9]/g,'_');
-  const errEl   = g(`real-err-${pid}-${idx}`);
+  const obtMT  = (getObtainedByProd(co))[prod] || 0;
+  const pid    = prodPid(prod);
+  const errEl  = g(`real-err-${pid}-${idx}-${rIdx}`);
 
-  if (newVal != null && newVal > obtMT) {
+  // Validate: sum of all realizations must not exceed obtMT
+  const totalForLot = lot.realizations.reduce((s, r) => s + (r.realMT || 0), 0);
+  if (totalForLot > obtMT) {
     inp.classList.add('err');
     if (errEl) { errEl.textContent = `Cannot exceed Obtained MT (${_fmtMT(obtMT)} MT)`; errEl.classList.add('show'); }
   } else {
@@ -687,35 +734,20 @@ function onOpsRealChange(inp) {
     if (errEl) errEl.classList.remove('show');
   }
 
-  // Update realization bar — base is obtMT so >100% util is still visible
-  const base     = obtMT > 0 ? obtMT : (utilMT > 0 ? utilMT : 1);
-  const realPct  = newVal != null ? Math.min(100, Math.round(newVal / base * 100)) : 0;
+  // Update aggregate on lot
+  lot.realMT  = totalForLot;
+  lot.arrived = totalForLot > 0;
+
+  // Update bar for this entry
+  const base     = obtMT > 0 ? obtMT : 1;
+  const realPct  = newVal > 0 ? Math.min(100, Math.round(newVal / base * 100)) : 0;
   const barColor = realPct >= 60 ? '#16a34a' : realPct >= 30 ? '#d97706' : '#94a3b8';
-  const barEl    = g(`real-bar-${pid}-${idx}`);
-  const pctEl    = g(`real-pct-${pid}-${idx}`);
+  const barEl    = g(`real-bar-${pid}-${idx}-${rIdx}`);
+  const pctEl    = g(`real-pct-${pid}-${idx}-${rIdx}`);
   if (barEl) { barEl.style.width = realPct + '%'; barEl.style.background = barColor; }
   if (pctEl) { pctEl.textContent = realPct > 0 ? realPct + '%' : '—'; pctEl.style.color = barColor; }
 
-  // Update product total
-  const lots     = co.shipments[prod] || [];
-  const totalReal = lots.reduce((s, l) => s + (l.realMT || 0), 0);
-  const totalEl  = g(`ops-total-${pid}`);
-  if (totalEl) totalEl.textContent = `${totalReal.toLocaleString()} / ${_fmtMT(obtMT)} MT realized`;
-
-  // Update ops badge
-  const badge = g(`ops-real-${pid}`);
-  if (badge) badge.textContent = `Realized: ${totalReal.toLocaleString()} MT`;
-
-  // Update grand total
-  const grandEl = g('ops-grand-total');
-  if (grandEl && co.shipments) {
-    const obtByProd = getObtainedByProd(co);
-    const gr = Object.keys(co.shipments).reduce((s, p) =>
-      s + (co.shipments[p] || []).reduce((ss, l) => ss + (l.realMT || 0), 0), 0);
-    const go = Object.values(obtByProd).reduce((s, v) => s + v, 0);
-    grandEl.textContent = `${gr.toLocaleString()} / ${go.toLocaleString()} MT`;
-  }
-
+  _refreshOpsTotals(co, prod);
   livePreview();
 }
 
@@ -723,14 +755,68 @@ function onOpsRealChange(inp) {
 function onOpsPibChange(inp) {
   const prod = inp.dataset.prod;
   const idx  = parseInt(inp.dataset.idx);
+  const rIdx = parseInt(inp.dataset.ridx || '0');
   const co   = getCurrentEditCo();
   if (!co) return;
   ensureShipments(co);
-  if (co.shipments[prod] && co.shipments[prod][idx] !== undefined) {
-    co.shipments[prod][idx].pibDate = inp.value.trim();
-    co.shipments[prod][idx].arrived = inp.value.trim() !== '';
-  }
+  const lot = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot) return;
+  ensureRealizations(lot);
+  lot.realizations[rIdx].pibDate = inp.value.trim();
+  lot.pibDate = lot.realizations.map(r => r.pibDate).filter(Boolean).join(', ');
   livePreview();
+}
+
+/* ── Add a new realization entry to an Ops lot ── */
+function addOpsReal(prod, idx) {
+  const co = getCurrentEditCo();
+  if (!co) return;
+  ensureShipments(co);
+  const lot = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot) return;
+  ensureRealizations(lot);
+  lot.realizations.push({ realMT: 0, pibDate: '' });
+  buildSalesOpsForm(co);
+  applyShipmentRoleLock();
+  livePreview();
+}
+
+/* ── Delete a realization entry from an Ops lot ── */
+function deleteOpsReal(prod, idx, rIdx) {
+  const co = getCurrentEditCo();
+  if (!co) return;
+  const lot = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot || !lot.realizations || lot.realizations.length <= 1) return;
+  lot.realizations.splice(rIdx, 1);
+  lot.realMT  = lot.realizations.reduce((s, r) => s + (r.realMT || 0), 0);
+  lot.pibDate = lot.realizations.map(r => r.pibDate).filter(Boolean).join(', ');
+  lot.arrived = lot.realMT > 0;
+  buildSalesOpsForm(co);
+  applyShipmentRoleLock();
+  livePreview();
+}
+
+/* ── Refresh Ops product totals + grand total ── */
+function _refreshOpsTotals(co, prod) {
+  const pid       = prodPid(prod);
+  const obtByProd = getObtainedByProd(co);
+  const obtMT     = obtByProd[prod] || 0;
+  const lots      = co.shipments[prod] || [];
+  const totalReal = lots.reduce((s, l) => s + (l.realMT || 0), 0);
+
+  const totalEl = g(`ops-total-${pid}`);
+  if (totalEl) totalEl.textContent = `${_fmtMT(totalReal)} / ${_fmtMT(obtMT)} MT realized`;
+
+  const badge = g(`ops-real-${pid}`);
+  if (badge) badge.textContent = `Realized: ${_fmtMT(totalReal)} MT`;
+
+  const grandEl = g('ops-grand-total');
+  if (grandEl && co.shipments) {
+    const gr = Object.values(co.shipments).reduce((s, ls) =>
+      s + ls.reduce((ss, l) => ss + (l.realMT || 0), 0), 0);
+    const go = Object.values(obtByProd).reduce((s, v) => s + v, 0);
+    grandEl.textContent = `${_fmtMT(gr)} / ${_fmtMT(go)} MT`;
+  }
 }
 
 /* ── Apply role lock to new shipment inputs ── */
@@ -741,11 +827,19 @@ function applyShipmentRoleLock() {
   const canSales = allowed.includes('salesShipTable');
   const canOps   = allowed.includes('opsShipTable');
 
-  document.querySelectorAll('.sales-util-add-inp,.sales-util-apply-btn,.sales-eta-inp,.sales-note-inp,.add-ship-btn').forEach(el => {
+  document.querySelectorAll('.sales-util-add-inp,.sales-util-apply-btn,.sales-eta-inp,.sales-note-inp,.add-ship-btn:not(.ops-add-real-btn)').forEach(el => {
     el.disabled = !canSales;
   });
+  document.querySelectorAll('.ops-add-real-btn').forEach(el => {
+    el.disabled = !canOps;
+  });
   document.querySelectorAll('.del-ship-btn').forEach(btn => {
-    // del buttons: only enable if canSales AND not the first lot
+    // Ops realization delete buttons follow Ops permissions
+    if (btn.closest('.ops-real-row')) {
+      btn.disabled = !canOps || btn.hasAttribute('disabled') && btn.getAttribute('disabled') === '';
+      return;
+    }
+    // Sales del buttons: only enable if canSales AND not the only lot
     const idx = parseInt(btn.closest('tr')?.dataset?.idx ?? '0');
     btn.disabled = !canSales || idx === 0;
   });
@@ -785,22 +879,28 @@ function collectShipmentData(co) {
     if (co.shipments[prod] && co.shipments[prod][idx]) co.shipments[prod][idx].note = inp.value.trim();
   });
 
-  // Collect Ops inputs
+  // Collect Ops inputs — write into realizations[] array
   document.querySelectorAll('.ops-real-inp').forEach(inp => {
     const prod = inp.dataset.prod;
     const idx  = parseInt(inp.dataset.idx);
-    if (co.shipments && co.shipments[prod] && co.shipments[prod][idx]) {
-      const raw = inp.value.replace(/,/g,'');
-      co.shipments[prod][idx].realMT  = raw ? parseFloat(raw) : null;
-      co.shipments[prod][idx].arrived = raw && parseFloat(raw) > 0;
-    }
+    const rIdx = parseInt(inp.dataset.ridx || '0');
+    const lot  = co.shipments && co.shipments[prod] && co.shipments[prod][idx];
+    if (!lot) return;
+    ensureRealizations(lot);
+    const raw = inp.value.replace(/,/g,'');
+    lot.realizations[rIdx].realMT = raw ? parseFloat(raw) : 0;
+    lot.realMT  = lot.realizations.reduce((s, r) => s + (r.realMT || 0), 0);
+    lot.arrived = lot.realMT > 0;
   });
   document.querySelectorAll('.ops-pib-inp').forEach(inp => {
     const prod = inp.dataset.prod;
     const idx  = parseInt(inp.dataset.idx);
-    if (co.shipments && co.shipments[prod] && co.shipments[prod][idx]) {
-      co.shipments[prod][idx].pibDate = inp.value.trim();
-    }
+    const rIdx = parseInt(inp.dataset.ridx || '0');
+    const lot  = co.shipments && co.shipments[prod] && co.shipments[prod][idx];
+    if (!lot) return;
+    ensureRealizations(lot);
+    lot.realizations[rIdx].pibDate = inp.value.trim();
+    lot.pibDate = lot.realizations.map(r => r.pibDate).filter(Boolean).join(', ');
   });
 
   // Collect re-apply per-product targets
@@ -841,7 +941,7 @@ function buildReapplyTable(co) {
     const dot    = prodDot(p);
     const obtMT  = obtByProd[p] || 0;
     const val    = existing[p] != null ? existing[p] : '';
-    const pid    = p.replace(/[^a-zA-Z0-9]/g,'_');
+    const pid    = prodPid(p);
     return `<tr>
       <td>
         <div class="pmt-prod-chip">
