@@ -420,14 +420,19 @@ tr:hover td { background:#f9fafb }
 .util-hist-btn:hover { text-decoration:underline }
 .util-hist-panel { display:none; background:var(--bg); border:1px solid var(--border); border-radius:var(--r); padding:6px 9px; margin-top:5px }
 .util-hist-panel.open { display:block }
-.util-hist-hd    { display:grid; grid-template-columns:82px 52px 52px 60px 1fr; gap:5px; font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--txt3); padding-bottom:4px; border-bottom:1px solid var(--border); margin-bottom:3px }
-.util-hist-row   { display:grid; grid-template-columns:82px 52px 52px 60px 1fr; gap:5px; align-items:center; padding:3px 0; border-bottom:1px solid var(--border); font-size:10px }
+.util-hist-hd    { display:grid; grid-template-columns:82px 52px 52px 60px 1fr 52px; gap:5px; font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--txt3); padding-bottom:4px; border-bottom:1px solid var(--border); margin-bottom:3px }
+.util-hist-row   { display:grid; grid-template-columns:82px 52px 52px 60px 1fr 52px; gap:5px; align-items:center; padding:3px 0; border-bottom:1px solid var(--border); font-size:10px }
 .util-hist-row:last-child { border-bottom:none }
 .util-hist-date  { color:var(--txt3); font-family:'DM Mono',monospace }
 .util-hist-prev  { color:var(--txt3); font-family:'DM Mono',monospace; text-align:right }
 .util-hist-delta { color:var(--green); font-weight:700; font-family:'DM Mono',monospace; text-align:right }
 .util-hist-total { color:var(--txt); font-weight:700; font-family:'DM Mono',monospace; text-align:right }
 .util-hist-note  { color:var(--txt3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.util-hist-actions { display:flex; gap:3px; justify-content:flex-end }
+.hist-act-btn    { background:none; border:none; cursor:pointer; font-size:11px; padding:0 2px; opacity:.6; line-height:1 }
+.hist-act-btn:hover { opacity:1 }
+.hist-edit-btn   { color:var(--blue) }
+.hist-del-btn    { color:var(--red2) }
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width:5px; height:5px }
 ::-webkit-scrollbar-track { background:var(--bg) }

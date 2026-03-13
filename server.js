@@ -360,6 +360,32 @@ app.patch('/api/company/:code', async (req, res) => {
       }
     }
 
+    // Handle revision_changes (revFrom / revTo product change pairs)
+    if (body.revFrom !== undefined || body.revTo !== undefined) {
+      // Full replace: delete existing then re-insert
+      await client.query(`DELETE FROM revision_changes WHERE company_code = $1`, [code]);
+      const fromRows = body.revFrom || [];
+      const toRows   = body.revTo   || [];
+      for (let i = 0; i < fromRows.length; i++) {
+        const f = fromRows[i];
+        if (!f.prod) continue;
+        await client.query(
+          `INSERT INTO revision_changes (company_code, direction, product, mt, label, sort_order)
+           VALUES ($1,'from',$2,$3,$4,$5)`,
+          [code, f.prod, f.mt ?? null, f.label || '', i]
+        );
+      }
+      for (let i = 0; i < toRows.length; i++) {
+        const t = toRows[i];
+        if (!t.prod) continue;
+        await client.query(
+          `INSERT INTO revision_changes (company_code, direction, product, mt, label, sort_order)
+           VALUES ($1,'to',$2,$3,$4,$5)`,
+          [code, t.prod, t.mt ?? null, t.label || '', i]
+        );
+      }
+    }
+
     // Handle RA record update
     if (body.ra) {
       const r = body.ra;

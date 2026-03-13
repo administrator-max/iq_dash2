@@ -384,6 +384,8 @@ async function _persistRevFields(code) {
     revMt:         co.revMT         ?? 0,
     spiRef:        co.spiRef        || '',
     remarks:       co.remarks       || '',
+    revFrom:       co.revFrom       || [],
+    revTo:         co.revTo         || [],
   };
   try {
     const resp = await fetch(`/api/company/${code}`, {
@@ -724,6 +726,12 @@ async function saveEdit() {
   // ── Reapply targets ──
   if (co_final?.reapplyTargets && co_final.reapplyTargets.length > 0) {
     payload.reapplyTargets = co_final.reapplyTargets;
+  }
+
+  // ── Revision product change pairs ──
+  if (co_final?.revFrom !== undefined || co_final?.revTo !== undefined) {
+    payload.revFrom = co_final.revFrom || [];
+    payload.revTo   = co_final.revTo   || [];
   }
 
   // ── RA record ──

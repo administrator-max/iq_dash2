@@ -370,6 +370,19 @@ function fmtThousandInline(el) {
   if (stEl) stEl.textContent = st.toLocaleString() + ' MT';
 }
 
+/* Float-aware inline formatter for shipment MT inputs.
+   Allows digits, one decimal point, up to 2 decimal places.
+   Formats the integer part with thousands separators while typing. */
+function fmtFloatInline(el) {
+  const raw = el.value;
+  // Allow digits, one dot, up to 2 decimal places — strip everything else
+  const cleaned = raw.replace(/[^0-9.]/g, '').replace(/^(\d*\.?\d{0,2}).*$/, '$1');
+  const [intPart, decPart] = cleaned.split('.');
+  const fmtInt = intPart ? Number(intPart).toLocaleString() : '';
+  // Preserve trailing dot and decimals while typing
+  el.value = decPart !== undefined ? fmtInt + '.' + decPart : fmtInt;
+}
+
 function updateObtainedTotal() {
   let tot = 0;
   document.querySelectorAll('.pmt-obtained-inp').forEach(i => {

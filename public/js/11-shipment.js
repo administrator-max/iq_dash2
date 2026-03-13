@@ -4,6 +4,16 @@
    collectShipmentData, reapply table
 ═══════════════════════════════════════ */
 
+/* Format a float MT value: show up to 2 decimal places, strip trailing zeros,
+   add thousands separator on the integer part. e.g. 1234.5 → "1,234.5" */
+function _fmtMT(val) {
+  if (val == null || isNaN(val)) return '0';
+  const n = Number(val);
+  // Up to 2 decimal places, no trailing zeros
+  const dec = n % 1 === 0 ? '' : ('.' + n.toFixed(2).split('.')[1].replace(/0+$/, ''));
+  return Math.floor(n).toLocaleString() + dec;
+}
+
 function buildSalesOpsForm(co) {
   if (!co) return;
 
@@ -154,13 +164,19 @@ function buildSalesRow(prod, idx, lot, obtMT) {
   // History HTML
   let histHTML = '';
   if (hist.length) {
-    const rows = hist.map(h => `
-      <div class="util-hist-row">
+    const rows = hist.map((h, hIdx) => `
+      <div class="util-hist-row" id="util-hist-row-${pid}-${idx}-${hIdx}">
         <span class="util-hist-date">${h.date || '—'}</span>
         <span class="util-hist-prev">${(h.prev||0).toLocaleString()}</span>
         <span class="util-hist-delta">+${(h.delta||0).toLocaleString()}</span>
         <span class="util-hist-total">${(h.total||0).toLocaleString()}</span>
         <span class="util-hist-note">${h.note || ''}</span>
+        <span class="util-hist-actions">
+          <button class="hist-act-btn hist-edit-btn" title="Edit this entry"
+            onclick="editHistEntry('${prod}',${idx},${hIdx})">✏️</button>
+          <button class="hist-act-btn hist-del-btn" title="Remove this entry"
+            onclick="removeHistEntry('${prod}',${idx},${hIdx})">🗑</button>
+        </span>
       </div>`).join('');
     histHTML = `
       <button class="util-hist-btn" onclick="toggleUtilHist('${pid}',${idx})">
@@ -170,7 +186,7 @@ function buildSalesRow(prod, idx, lot, obtMT) {
         <div class="util-hist-hd">
           <span>Date</span><span style="text-align:right">Prev MT</span>
           <span style="text-align:right">+Add MT</span><span style="text-align:right">Total MT</span>
-          <span>Note</span>
+          <span>Note</span><span></span>
         </div>
         ${rows}
       </div>`;
@@ -183,11 +199,13 @@ function buildSalesRow(prod, idx, lot, obtMT) {
       <div class="util-inc-wrap">
         <div class="util-cur-row">
           <span class="util-cur-lbl">Current</span>
-          <span class="util-cur-val" id="util-cur-${pid}-${idx}">${curMT.toLocaleString()} MT</span>
+          <span class="util-cur-val" id="util-cur-${pid}-${idx}">${_fmtMT(curMT)} MT</span>
+          <button class="util-direct-edit-btn" title="Directly edit current utilization MT"
+            onclick="directEditUtil('${prod}',${idx})" style="margin-left:6px;background:none;border:none;cursor:pointer;font-size:11px;color:var(--txt3);padding:0 2px" ${curMT === 0 ? 'style="display:none"' : ''}>✏️</button>
         </div>
         <div class="util-add-row">
           <span class="util-add-lbl">+</span>
-          <input type="text" inputmode="numeric"
+          <input type="text" inputmode="decimal"
             class="util-add-inp sales-util-add-inp"
             id="util-add-${pid}-${idx}"
             data-prod="${prod}" data-idx="${idx}"
@@ -232,8 +250,10 @@ function buildOpsRow(prod, idx, lot) {
   const util   = lot.utilMT  != null ? lot.utilMT  : null;
   const real   = lot.realMT  != null ? lot.realMT  : '';
   const pib    = lot.pibDate || '';
-  const realPct = (util && util > 0 && lot.realMT != null)
-    ? Math.min(100, Math.round(lot.realMT / util * 100))
+  const obtMT  = (getObtainedByProd(getCurrentEditCo() || {}))[prod] || 0;
+  const base   = obtMT > 0 ? obtMT : (util > 0 ? util : 1);
+  const realPct = lot.realMT != null
+    ? Math.min(100, Math.round(lot.realMT / base * 100))
     : 0;
   const barColor = realPct >= 60 ? '#16a34a' : realPct >= 30 ? '#d97706' : '#94a3b8';
   const pibStatus = pib
@@ -244,16 +264,16 @@ function buildOpsRow(prod, idx, lot) {
   <tr id="ops-row-${pid}-${idx}" data-prod="${prod}" data-idx="${idx}">
     <td class="t-c"><span class="lot-badge">${lotNo}</span></td>
     <td class="t-r" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--txt2)">
-      ${util != null ? Number(util).toLocaleString() + ' MT' : '<span style="color:var(--txt3)">—</span>'}
+      ${util != null ? _fmtMT(Number(util)) + ' MT' : '<span style="color:var(--txt3)">—</span>'}
     </td>
     <td>
-      <input type="text" inputmode="numeric"
+      <input type="text" inputmode="decimal"
         class="ship-inp ops-real-inp"
         data-prod="${prod}" data-idx="${idx}"
-        value="${real !== '' ? Number(real).toLocaleString() : ''}"
+        value="${real !== '' ? _fmtMT(Number(real)) : ''}"
         placeholder="0"
         oninput="onOpsRealChange(this)"
-        title="Actual arrived MT for Lot ${lotNo} · Cannot exceed Util MT">
+        title="Actual arrived MT for Lot ${lotNo} · Cannot exceed Obtained MT">
       <div class="val-err" id="real-err-${pid}-${idx}"></div>
     </td>
     <td>
@@ -323,9 +343,173 @@ function toggleUtilHist(pid, idx) {
   if (panel) panel.classList.toggle('open');
 }
 
+/* ── Edit a history entry (inline) ── */
+function editHistEntry(prod, idx, hIdx) {
+  const co = getCurrentEditCo();
+  if (!co) return;
+  const lot = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot || !lot.utilHistory || !lot.utilHistory[hIdx]) return;
+  const h   = lot.utilHistory[hIdx];
+  const pid = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const rowEl = g(`util-hist-row-${pid}-${idx}-${hIdx}`);
+  if (!rowEl) return;
+
+  // Replace row with inline edit form
+  rowEl.innerHTML = `
+    <span class="util-hist-date" style="color:var(--txt3);font-size:9.5px">${h.date||'—'}</span>
+    <span class="util-hist-prev">${(h.prev||0).toLocaleString()}</span>
+    <span class="util-hist-delta">
+      <input type="text" inputmode="decimal" value="${h.delta}"
+        id="hist-edit-delta-${pid}-${idx}-${hIdx}"
+        style="width:60px;font-size:11px;font-family:'DM Mono',monospace;text-align:right;border:1px solid var(--blue);border-radius:3px;padding:1px 4px">
+    </span>
+    <span class="util-hist-total" style="color:var(--txt3);font-size:9.5px">recalc</span>
+    <span class="util-hist-note">
+      <input type="text" value="${h.note||''}"
+        id="hist-edit-note-${pid}-${idx}-${hIdx}"
+        style="width:100%;font-size:11px;border:1px solid var(--blue);border-radius:3px;padding:1px 4px">
+    </span>
+    <span class="util-hist-actions">
+      <button class="hist-act-btn" style="color:var(--green);font-weight:700"
+        onclick="saveHistEdit('${prod}',${idx},${hIdx})">✓</button>
+      <button class="hist-act-btn"
+        onclick="cancelHistEdit('${prod}',${idx})">✕</button>
+    </span>`;
+}
+
+/* ── Save an edited history entry ── */
+function saveHistEdit(prod, idx, hIdx) {
+  const co = getCurrentEditCo();
+  if (!co) return;
+  const lot = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot || !lot.utilHistory) return;
+  const pid      = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const newDelta = parseFloat((g(`hist-edit-delta-${pid}-${idx}-${hIdx}`)?.value||'').replace(/,/g,''));
+  const newNote  = g(`hist-edit-note-${pid}-${idx}-${hIdx}`)?.value.trim() || '';
+  if (isNaN(newDelta) || newDelta <= 0) { alert('Delta MT must be a positive number.'); return; }
+
+  // Recalculate all totals from prev[0] forward
+  lot.utilHistory[hIdx].delta = newDelta;
+  lot.utilHistory[hIdx].note  = newNote;
+  _recalcHistTotals(lot);
+
+  // Update utilMT = last entry's total
+  const last = lot.utilHistory[lot.utilHistory.length - 1];
+  lot.utilMT = last ? last.total : 0;
+
+  _rebuildSalesProduct(co, prod);
+  livePreview();
+}
+
+/* ── Cancel history edit — just rebuild ── */
+function cancelHistEdit(prod, idx) {
+  const co = getCurrentEditCo();
+  if (co) _rebuildSalesProduct(co, prod);
+}
+
+/* ── Remove a history entry and recalculate ── */
+function removeHistEntry(prod, idx, hIdx) {
+  const co = getCurrentEditCo();
+  if (!co) return;
+  const lot = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot || !lot.utilHistory) return;
+
+  const h = lot.utilHistory[hIdx];
+  if (!confirm(`Remove entry: +${(h.delta||0).toLocaleString()} MT on ${h.date||'?'}?\nThis will subtract ${(h.delta||0).toLocaleString()} MT from this lot's utilization.`)) return;
+
+  lot.utilHistory.splice(hIdx, 1);
+  _recalcHistTotals(lot);
+
+  const last = lot.utilHistory[lot.utilHistory.length - 1];
+  lot.utilMT = last ? last.total : 0;
+
+  _rebuildSalesProduct(co, prod);
+  livePreview();
+}
+
+/* ── Recalculate prev/total chain after an edit or removal ── */
+function _recalcHistTotals(lot) {
+  let running = 0;
+  (lot.utilHistory || []).forEach(h => {
+    h.prev  = running;
+    h.total = running + (h.delta || 0);
+    running = h.total;
+  });
+}
+
+/* ── Directly set utilMT on a lot (bypassing increment flow) ── */
+function directEditUtil(prod, idx) {
+  const co = getCurrentEditCo();
+  if (!co) return;
+  const lot    = co.shipments[prod] && co.shipments[prod][idx];
+  if (!lot) return;
+  const curMT  = lot.utilMT || 0;
+  const obtMT  = (getObtainedByProd(co))[prod] || 0;
+  const otherMT = totalUtilForProd(co.shipments, prod) - curMT;
+
+  const input = prompt(
+    `Lot ${idx+1} — ${prod}\nCurrent: ${curMT.toLocaleString()} MT\nMax allowed: ${(obtMT - otherMT).toLocaleString()} MT\n\nEnter new total utilization MT:`,
+    curMT
+  );
+  if (input === null) return; // cancelled
+  const newMT = parseFloat(String(input).replace(/,/g,''));
+  if (isNaN(newMT) || newMT < 0) { alert('Invalid value.'); return; }
+  if (otherMT + newMT > obtMT) {
+    alert(`Cannot set ${newMT.toLocaleString()} MT — exceeds PERTEK quota.\nMax for this lot: ${(obtMT - otherMT).toLocaleString()} MT.`);
+    return;
+  }
+
+  const now     = new Date();
+  const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+  if (!lot.utilHistory) lot.utilHistory = [];
+  lot.utilHistory.push({ date: dateStr, prev: curMT, delta: newMT - curMT, total: newMT, note: '(direct edit)' });
+  lot.utilMT = newMT;
+
+  _rebuildSalesProduct(co, prod);
+  livePreview();
+}
+
+/* ── Rebuild all Sales rows for one product (after history edits) ── */
+function _rebuildSalesProduct(co, prod) {
+  const pid     = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const obtMT   = (getObtainedByProd(co))[prod] || 0;
+  const lots    = co.shipments[prod] || [];
+  const usedMT  = totalUtilForProd(co.shipments, prod);
+  const availMT = obtMT - usedMT;
+
+  const tbody = g(`sales-tbody-${pid}`);
+  if (tbody) {
+    tbody.innerHTML = lots.map((l, i) => buildSalesRow(prod, i, l, obtMT)).join('');
+    // Re-open history panel if it was open
+    lots.forEach((_, i) => {
+      const panel = g(`util-hist-${pid}-${i}`);
+      if (panel) panel.classList.add('open');
+    });
+  }
+
+  const badge = g(`sales-avail-${pid}`);
+  if (badge) {
+    badge.textContent = `Available: ${availMT.toLocaleString()} MT`;
+    badge.className   = `sprod-avail-badge${availMT < 0 ? ' warn' : ''}`;
+  }
+  const totalEl = g(`sales-total-${pid}`);
+  if (totalEl) totalEl.textContent = `${usedMT.toLocaleString()} / ${obtMT.toLocaleString()} MT used`;
+
+  const grandEl = g('sales-grand-total');
+  if (grandEl && co.shipments) {
+    const obtByProd = getObtainedByProd(co);
+    const gt = Object.keys(co.shipments).reduce((s, p) => s + totalUtilForProd(co.shipments, p), 0);
+    const go = Object.values(obtByProd).reduce((s, v) => s + v, 0);
+    grandEl.textContent = `${gt.toLocaleString()} / ${go.toLocaleString()} MT`;
+  }
+
+  syncOpsUtilDisplay(co, prod);
+  applyShipmentRoleLock();
+}
+
 /* ── Sales: +Add input changed → validate only, don't write yet ── */
 function onSalesAddChange(inp) {
-  fmtThousandInline(inp);
+  fmtFloatInline(inp);
   const prod   = inp.dataset.prod;
   const idx    = parseInt(inp.dataset.idx);
   const co     = getCurrentEditCo();
@@ -411,7 +595,7 @@ function applySalesUtil(prod, idx) {
 
   // Update current display
   const curDisp = g(`util-cur-${pid}-${idx}`);
-  if (curDisp) curDisp.textContent = `${newMT.toLocaleString()} MT`;
+  if (curDisp) curDisp.textContent = `${_fmtMT(newMT)} MT`;
 
   // Disable apply btn
   const applyBtn = g(`util-apply-${pid}-${idx}`);
@@ -475,7 +659,7 @@ function syncOpsUtilDisplay(co, prod) {
 
 /* ── Ops: Real MT changed → validate ≤ util + update bar ── */
 function onOpsRealChange(inp) {
-  fmtThousandInline(inp);
+  fmtFloatInline(inp);
   const prod = inp.dataset.prod;
   const idx  = parseInt(inp.dataset.idx);
   const co   = getCurrentEditCo();
@@ -491,19 +675,21 @@ function onOpsRealChange(inp) {
   }
 
   const utilMT  = co.shipments[prod][idx].utilMT || 0;
+  const obtMT   = (getObtainedByProd(co))[prod] || 0;
   const pid     = prod.replace(/[^a-zA-Z0-9]/g,'_');
   const errEl   = g(`real-err-${pid}-${idx}`);
 
-  if (newVal != null && utilMT > 0 && newVal > utilMT) {
+  if (newVal != null && newVal > obtMT) {
     inp.classList.add('err');
-    if (errEl) { errEl.textContent = `Cannot exceed Util MT (${utilMT.toLocaleString()} MT)`; errEl.classList.add('show'); }
+    if (errEl) { errEl.textContent = `Cannot exceed Obtained MT (${_fmtMT(obtMT)} MT)`; errEl.classList.add('show'); }
   } else {
     inp.classList.remove('err');
     if (errEl) errEl.classList.remove('show');
   }
 
-  // Update realization bar
-  const realPct  = (utilMT > 0 && newVal != null) ? Math.min(100, Math.round(newVal / utilMT * 100)) : 0;
+  // Update realization bar — base is obtMT so >100% util is still visible
+  const base     = obtMT > 0 ? obtMT : (utilMT > 0 ? utilMT : 1);
+  const realPct  = newVal != null ? Math.min(100, Math.round(newVal / base * 100)) : 0;
   const barColor = realPct >= 60 ? '#16a34a' : realPct >= 30 ? '#d97706' : '#94a3b8';
   const barEl    = g(`real-bar-${pid}-${idx}`);
   const pctEl    = g(`real-pct-${pid}-${idx}`);
@@ -513,9 +699,8 @@ function onOpsRealChange(inp) {
   // Update product total
   const lots     = co.shipments[prod] || [];
   const totalReal = lots.reduce((s, l) => s + (l.realMT || 0), 0);
-  const obtMT    = (getObtainedByProd(co))[prod] || 0;
   const totalEl  = g(`ops-total-${pid}`);
-  if (totalEl) totalEl.textContent = `${totalReal.toLocaleString()} / ${obtMT.toLocaleString()} MT realized`;
+  if (totalEl) totalEl.textContent = `${totalReal.toLocaleString()} / ${_fmtMT(obtMT)} MT realized`;
 
   // Update ops badge
   const badge = g(`ops-real-${pid}`);
@@ -666,7 +851,7 @@ function buildReapplyTable(co) {
       </td>
       <td class="pmt-ref-mt">${obtMT.toLocaleString()} MT</td>
       <td style="width:140px">
-        <input type="text" inputmode="numeric"
+        <input type="text" inputmode="decimal"
           class="pmt-mt-inp reapply-prod-inp"
           data-prod="${p}"
           value="${val !== '' ? Number(val).toLocaleString() : ''}"
