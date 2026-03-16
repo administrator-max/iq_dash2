@@ -162,9 +162,16 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
 // ═══════════════════════════════════════════════════════════════════
 app.get('/api/data', async (req, res) => {
   try {
-    const { rows: companies } = await pool.query(
+    const { rows: _rawCompanies } = await pool.query(
       `SELECT * FROM companies ORDER BY section, code`
     );
+    // Deduplicate by code — keep first occurrence (safeguard against duplicate DB rows)
+    const _seenCodes = new Set();
+    const companies = _rawCompanies.filter(c => {
+      if (_seenCodes.has(c.code)) return false;
+      _seenCodes.add(c.code);
+      return true;
+    });
     const codes = companies.map(c => c.code);
     if (!codes.length) return res.json({ spi: [], pending: [], ra: [] });
 

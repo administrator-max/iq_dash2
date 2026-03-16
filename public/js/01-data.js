@@ -32,8 +32,12 @@ async function loadData() {
   try {
     const res  = await fetch('/api/data');
     const data = await res.json();
-    SPI     = data.spi     || [];
-    PENDING = data.pending || [];
+    const _dedup = (arr) => {
+      const seen = new Set();
+      return arr.filter(c => { if (seen.has(c.code)) return false; seen.add(c.code); return true; });
+    };
+    SPI     = _dedup(data.spi     || []);
+    PENDING = _dedup(data.pending || []);
     RA      = data.ra      || [];
     // Recompute utilizationByProd / availableByProd from shipment lots —
     // overrides stale stats table values so chart always matches the shipment table.

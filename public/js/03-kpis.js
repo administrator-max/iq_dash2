@@ -1134,17 +1134,26 @@ function refreshObtainedDrill() {
     });
   });
 
+  // Deduplicate: same company + same cycle type should never appear twice
+  const _seenKey = new Set();
+  const dedupedRows = rows.filter(r => {
+    const key = `${r.code}||${r.cycle}`;
+    if (_seenKey.has(key)) return false;
+    _seenKey.add(key);
+    return true;
+  });
+
   // Sort: by PERTEK Terbit date asc, then company code
-  rows.sort((a, b) => {
+  dedupedRows.sort((a, b) => {
     if (a.pertekTerbit && b.pertekTerbit) return a.pertekTerbit - b.pertekTerbit;
     if (a.pertekTerbit) return -1;
     if (b.pertekTerbit) return 1;
     return a.code.localeCompare(b.code);
   });
 
-  const totalMT    = rows.filter(r => r.mt > 0).reduce((s, r) => s + r.mt, 0);
-  const coCount    = new Set(rows.map(r => r.code)).size;
-  const cycleCount = rows.length;
+  const totalMT    = dedupedRows.filter(r => r.mt > 0).reduce((s, r) => s + r.mt, 0);
+  const coCount    = new Set(dedupedRows.map(r => r.code)).size;
+  const cycleCount = dedupedRows.length;
   const periodLabel = PERIOD.active ? PERIOD.label : 'All Time';
 
   // Modal header
@@ -1182,13 +1191,13 @@ function refreshObtainedDrill() {
   const fmtDate = d => d ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
   const body = document.getElementById('drillBody');
 
-  if (!rows.length) {
+  if (!dedupedRows.length) {
     body.innerHTML = `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--txt3)">No obtained cycles found with PERTEK Terbit in ${periodLabel}</td></tr>`;
     return;
   }
 
   let lastCode = '';
-  body.innerHTML = rows.map(r => {
+  body.innerHTML = dedupedRows.map(r => {
     const stripe = r.code !== lastCode && lastCode !== '' ? ';background:var(--bg2)' : '';
     lastCode = r.code;
     const cycleLabel = r.cycle
