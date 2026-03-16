@@ -85,7 +85,10 @@ async function getCyclesFor(codes) {
   const byCode = {};
   cRows.forEach(c => {
     if (!byCode[c.company_code]) byCode[c.company_code] = [];
-    byCode[c.company_code].push({
+    // Deduplicate: skip if a cycle with same type already exists for this company
+    const existing = byCode[c.company_code];
+    if (existing.some(e => e.type === c.cycle_type)) return;
+    existing.push({
       type:        c.cycle_type,
       mt:          isNaN(c.mt) ? c.mt : Number(c.mt),
       submitType:  c.submit_type,

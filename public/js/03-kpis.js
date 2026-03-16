@@ -30,7 +30,10 @@ function updateOverviewKPIs() {
      refers to: "which PERTEK was officially issued in November 2025?"
   ─────────────────────────────────────────────────────────────────────── */
   let totalObtainedMT = 0, obtCoSet = new Set();
+  const _obtSeenCo = new Set();
   SPI.forEach(co => {
+    if (_obtSeenCo.has(co.code)) return;   // skip duplicate company rows
+    _obtSeenCo.add(co.code);
     const allCycles = co.cycles || [];
     allCycles.forEach(c => {
       // Only count Obtained #N cycles — exclude ALL Revision obtained cycles.
@@ -437,7 +440,10 @@ function refreshUtilDrill() {
   const totalAvail = rows.reduce((s,r) => s+r.availMT, 0);
   // Match KPI2: sum Obtained #N cycle MTs (same logic as updateOverviewKPIs)
   let totalObt = 0;
+  const _utilSeenCo = new Set();
   filteredSPI().forEach(co => {
+    if (_utilSeenCo.has(co.code)) return;
+    _utilSeenCo.add(co.code);
     const allCycles = co.cycles || [];
     allCycles.forEach(c => {
       if (!/^obtained #/i.test(c.type)) return;
@@ -1089,7 +1095,10 @@ function refreshObtainedDrill() {
      PERTEK Terbit = releaseDate of the Submit #N / Revision #N cycle.
   ─────────────────────────────────────────────────────────────────────── */
   const rows = [];
+  const _drillSeenCo = new Set();
   SPI.forEach(co => {
+    if (_drillSeenCo.has(co.code)) return;
+    _drillSeenCo.add(co.code);
     const allCycles = co.cycles || [];
     allCycles.forEach(c => {
       // Only show Obtained #N cycles — exclude ALL Revision obtained cycles.

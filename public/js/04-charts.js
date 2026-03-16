@@ -674,7 +674,10 @@ function buildFlowKPIStrip() {
 
   // ① Obtained — sum Obtained #N cycle MTs, same logic as KPI2 (updateOverviewKPIs)
   let totalObtained = 0;
+  const _flowSeenCo = new Set();
   filteredSPI().forEach(co => {
+    if (_flowSeenCo.has(co.code)) return;
+    _flowSeenCo.add(co.code);
     (co.cycles || []).forEach(c => {
       if (!/^obtained #/i.test(c.type)) return;
       const mt = typeof c.mt === 'number' ? c.mt : 0;

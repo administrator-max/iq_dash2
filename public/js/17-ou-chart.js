@@ -76,8 +76,11 @@ function setOUOvStatus(mode, el) {
 /** Build per-company-product records for the OU chart */
 function buildOUData() {
   const records = [];
+  const _ouSeenCo = new Set();
 
   filteredSPI().forEach(co => {
+    if (_ouSeenCo.has(co.code)) return;
+    _ouSeenCo.add(co.code);
     const pertekDate = getPertekDateForCo(co);
     const obtByProd  = getObtainedByProd(co);
 
