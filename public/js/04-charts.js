@@ -26,56 +26,29 @@ const chips = prods => prods.map(p => `<span class="chip" style="background:${pc
 function revisionStatus(d) {
   if (d.revType === 'none')   return 'clean';
   if (d.revType === 'active') {
+    // Distinguish Re-Apply (Submit #2 — additional quota) from Revision (product/tonnage change)
     const hasSubmit2 = (d.cycles||[]).some(c => /^submit\s*#[2-9]/i.test(c.type));
     return hasSubmit2 ? 'reapply' : 'active';
   }
-
-  // revType='complete': PERTEK already issued — determine if SPI also issued.
-  //
-  // ── 0. Hard document number wins over ALL text — checked first ──────────
-  // spiNo is set by CorpSec manually entering the physical SPI document number.
-  // It is the most reliable signal that SPI has actually been issued.
-  // It must override any stale spiRef/revStatus text (e.g. old 'SPI belum terbit').
-  const hasSpiNo = d.spiNo && d.spiNo.trim() !== '';
-  if (hasSpiNo) return 'completed';
-
-  // ── 1. Explicit pending — checked before SPI text detection ─────────────
-  // A company can have spiRef containing BOTH "SPI TERBIT" (original SPI) AND
-  // "SPI Perubahan belum terbit" (revision SPI not yet issued).
-  // e.g. MJU: "SPI TERBIT 05/01/26 (SPI Original) - SPI Perubahan belum terbit"
+  // revType='complete': PERTEK already issued — check if SPI Perubahan also issued
+  // Explicit override: if revStatus/spiRef says 'SPI Perubahan belum terbit' → PENDING
   const explicitPending =
-    (d.revStatus && (d.revStatus.includes('SPI belum') || d.revStatus.includes('SPI Perubahan belum'))) ||
-    (d.spiRef    && (d.spiRef.includes('SPI Perubahan belum') || d.spiRef.includes('SPI belum terbit')));
+    (d.revStatus && d.revStatus.includes('SPI Perubahan belum')) ||
+    (d.spiRef    && d.spiRef.includes('SPI Perubahan belum'));
   if (explicitPending) return 'revpending';
-
-  // ── 2. SPI evidence from cycle dates or text ─────────────────────────────
-  const hasRevision = d.revNote && d.revNote.trim() !== '';
-  const obtRevCycle = hasRevision
-    ? (d.cycles||[]).find(c => /obtained.*revision/i.test(c.type))
-    : (d.cycles||[]).find(c => /^obtained/i.test(c.type));
-  const spiReleaseDate = obtRevCycle && obtRevCycle.releaseDate &&
-    obtRevCycle.releaseDate !== 'TBA' && obtRevCycle.releaseDate.trim() !== '';
-
-  const spiRefHasSPI = d.spiRef && (
-    hasRevision
-      ? d.spiRef.includes('SPI Perubahan Terbit')
-      : (d.spiRef.includes('SPI TERBIT') || d.spiRef.includes('SPI Perubahan Terbit'))
-  );
-  const revStatusHasSPI = d.revStatus && (
-    d.revStatus.includes('SPI Perubahan Terbit') ||
-    (!hasRevision && d.revStatus.includes('SPI TERBIT')) ||
-    d.revStatus.startsWith('✅ Done')
-  );
-
-  if (spiReleaseDate || spiRefHasSPI || revStatusHasSPI) return 'completed';
-
-  // ── 3. PERTEK only (no SPI evidence) → still pending ──
+  // Otherwise: SPI Perubahan issued if spiRef or revStatus contains 'SPI Perubahan Terbit' or starts with '✅ Done'
+  // Do NOT count 'SPI TERBIT' alone — that may be the original SPI, not the revision SPI
+  const spiPerubahanIssued =
+    (d.spiRef    && d.spiRef.includes('SPI Perubahan Terbit')) ||
+    (d.revStatus && d.revStatus.includes('SPI Perubahan Terbit')) ||
+    (d.revStatus && d.revStatus.startsWith('✅ Done'));
+  // Special case: companies that went via Pertek route (no separate SPI Perubahan)
+  // spiRef only has PERTEK — check it does NOT contain any SPI reference
   const hasPertekOnly =
     d.spiRef && d.spiRef.includes('PERTEK TERBIT') &&
-    !d.spiRef.includes('SPI Perubahan Terbit');
+    !d.spiRef.includes('SPI TERBIT') && !d.spiRef.includes('SPI Perubahan');
   if (hasPertekOnly) return 'revpending';
-
-  return 'revpending';
+  return spiPerubahanIssued ? 'completed' : 'revpending';
 }
 
 function statusBadge(d) {
@@ -83,32 +56,8 @@ function statusBadge(d) {
   if (rs === 'reapply')    return '<span class="badge b-reapply">📨 Re-Apply Submit #2</span>';
   if (rs === 'active')     return '<span class="badge b-rev">🔄 Under Revision</span>';
   if (rs === 'revpending') return '<span class="badge b-revpending">⏳ PENDING — PERTEK Terbit, SPI Belum</span>';
-
-  if (rs === 'completed') {
-    // hasBothDocs = pertekNo AND spiNo both filled (hard document numbers — most reliable)
-    const hasBothDocs = d.pertekNo && d.pertekNo.trim() !== '' &&
-                        d.spiNo    && d.spiNo.trim()    !== '';
-    // wasRevision = company had an active product/tonnage revision (revNote set, not a PENDING promotion)
-    const wasRevision = d.revNote && d.revNote.trim() !== '' && !d.revNote.includes('PERTEK TERBIT');
-    // Show COMPLETE if either hard docs confirm it OR a true revision was completed
-    if (hasBothDocs || wasRevision) return '<span class="badge b-revdone">✅ COMPLETE — SPI Terbit</span>';
-    return '<span class="badge b-spi">✅ SPI Issued</span>';
-  }
-
-  // rs === 'clean' (revType='none') — normal SPI company
-  // Hard doc numbers are the most reliable signal — spiNo overrides stale spiRef text
-  const hasSpiNo   = d.spiNo    && d.spiNo.trim()    !== '';
-  const hasPertekNo = d.pertekNo && d.pertekNo.trim() !== '';
-
-  // Both docs filled → fully complete
-  if (hasPertekNo && hasSpiNo) return '<span class="badge b-revdone">✅ COMPLETE — SPI Terbit</span>';
-
-  // PERTEK only (SPI not yet)
-  if (hasPertekNo) return '<span class="badge b-pertek">✓ Pertek</span>';
-
-  // Legacy spiRef text fallback (no doc numbers saved yet)
+  if (rs === 'completed')  return '<span class="badge b-revdone">✅ COMPLETE — SPI Terbit</span>';
   if (d.spiRef && d.spiRef.includes('PERTEK TERBIT')) return '<span class="badge b-pertek">✓ Pertek</span>';
-
   return '<span class="badge b-spi">✅ SPI Issued</span>';
 }
 
@@ -283,38 +232,48 @@ function buildAvailableQuota() {
   filteredSPI().forEach(co => {
     const obtained = typeof co.obtained === 'number' ? co.obtained : 0;
     if (obtained <= 0) return;
-    const totalUtil = co.utilizationMT != null ? co.utilizationMT : 0;
+    const totalUtil = co.utilizationMT  != null ? co.utilizationMT  : 0;
+    // SOURCE OF TRUTH: always use company-level availableQuota (from companies.available_quota).
+    // availableByProd is used only for per-product DISPLAY breakdown, NOT for the total.
     const totalAvq  = co.availableQuota != null ? co.availableQuota : (obtained - totalUtil);
 
-    const aProd = co.availableByProd || {};
+    const aProd = co.availableByProd   || {};
     const uProd = co.utilizationByProd || {};
 
+    // Build cycle-level obtained-per-product map (used for display only)
+    const cycleProds = {};
+    (co.cycles || []).forEach(c => {
+      if (!/^obtained/i.test(c.type) || (typeof c.mt === 'number' && c.mt < 0)) return;
+      Object.entries(c.products || {}).forEach(([p, v]) => {
+        if (typeof v === 'number' && v > 0) cycleProds[p] = (cycleProds[p] || 0) + v;
+      });
+    });
+
     if (Object.keys(aProd).length > 0) {
-      // Use exact Excel per-product breakdown
-      // For each product in availableByProd, derive obtained portion from obtained cycles
-      const cycleProds = {};
-      (co.cycles || []).forEach(c => {
-        if (!/^obtained/i.test(c.type) || (typeof c.mt === 'number' && c.mt < 0)) return;
-        Object.entries(c.products || {}).forEach(([p, v]) => {
-          if (typeof v === 'number' && v > 0) cycleProds[p] = (cycleProds[p] || 0) + v;
-        });
-      });
-      Object.entries(aProd).forEach(([prod, avq]) => {
+      // Per-product breakdown available — use for display.
+      // BUT: normalise so that sum of per-product avq == totalAvq (company-level truth).
+      const rawSum = Object.values(aProd).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
+
+      Object.entries(aProd).forEach(([prod, avqRaw]) => {
         const utilForProd = uProd[prod] || 0;
-        const obtForProd  = cycleProds[prod] || (avq + utilForProd);
+        const obtForProd  = cycleProds[prod] || (avqRaw + utilForProd);
+        // Normalise per-product avq proportionally to match company-level total
+        const avq = rawSum > 0 ? Math.round(totalAvq * avqRaw / rawSum) : 0;
         rows.push({
-          code:        co.code,
-          product:     prod,
-          obtained:    obtForProd,
-          utilMT:      utilForProd,
-          avq:         avq,
-          updatedBy:   co.updatedBy   || '',
-          updatedDate: co.updatedDate || '',
+          code: co.code, product: prod,
+          obtained: obtForProd, utilMT: utilForProd, avq,
+          updatedBy: co.updatedBy || '', updatedDate: co.updatedDate || '',
         });
       });
-      // Also add products that are fully utilized (avail=0) but had utilization
+      // Correct last product's rounding so sum is exactly totalAvq
+      const pushed = rows.filter(r => r.code === co.code && Object.keys(aProd).includes(r.product));
+      if (pushed.length > 0) {
+        const sumSoFar = pushed.reduce((s, r) => s + r.avq, 0);
+        pushed[pushed.length - 1].avq += (totalAvq - sumSoFar);
+      }
+      // Also add fully-utilized products (avail=0 but had utilization, not in aProd)
       Object.entries(uProd).forEach(([prod, util]) => {
-        if (aProd[prod] != null) return; // already covered above
+        if (aProd[prod] != null) return;
         const obtForProd = cycleProds[prod] || util;
         rows.push({
           code: co.code, product: prod,
@@ -323,21 +282,16 @@ function buildAvailableQuota() {
         });
       });
     } else {
-      // No per-product data: company has full quota available (util=0)
-      // Use product list from obtained cycles
-      const cycleProds = {};
-      (co.cycles || []).forEach(c => {
-        if (!/^obtained/i.test(c.type) || (typeof c.mt === 'number' && c.mt < 0)) return;
-        Object.entries(c.products || {}).forEach(([p, v]) => {
-          if (typeof v === 'number' && v > 0) cycleProds[p] = (cycleProds[p] || 0) + v;
-        });
-      });
+      // No per-product data — split totalAvq proportionally across cycle products
       const prodEntries = Object.entries(cycleProds);
       if (prodEntries.length > 0) {
-        const cycleTotal = prodEntries.reduce((s,[,v]) => s+v, 0);
-        prodEntries.forEach(([prod, mt]) => {
-          const share = cycleTotal > 0 ? Math.round(totalAvq * mt / cycleTotal) : 0;
+        const cycleTotal = prodEntries.reduce((s, [, v]) => s + v, 0);
+        let remaining = totalAvq;
+        prodEntries.forEach(([prod, mt], i) => {
+          const isLast = i === prodEntries.length - 1;
+          const share  = isLast ? remaining : (cycleTotal > 0 ? Math.round(totalAvq * mt / cycleTotal) : 0);
           const uShare = cycleTotal > 0 ? Math.round(totalUtil * mt / cycleTotal) : 0;
+          remaining -= share;
           rows.push({
             code: co.code, product: prod,
             obtained: mt, utilMT: uShare, avq: share,
@@ -459,7 +413,57 @@ function buildAvailableQuota() {
     </div>`;
   }).join('');
 
-  el.innerHTML = hdr + '<div class="avq-wrap">' + barRows + '</div>';
+  // ── Total summary row ───────────────────────────────────────────────
+  const filtTotalObt  = filtered.reduce((s, r) => s + r.obtained, 0);
+  const filtTotalUtil = filtered.reduce((s, r) => s + r.utilMT,   0);
+  const filtTotalAvq  = filtered.reduce((s, r) => s + r.avq,      0);
+  const totUtilW = filtTotalObt > 0 ? (filtTotalUtil / filtTotalObt * 100).toFixed(1) : 0;
+  const totAvqW  = filtTotalObt > 0 ? Math.max(0, filtTotalAvq / filtTotalObt * 100).toFixed(1) : 0;
+  const avqTotColor = filtTotalAvq > 0 ? 'var(--blue)' : 'var(--red2)';
+
+  // Per-product breakdown for total row
+  const prodTotals = {};
+  filtered.forEach(r => { prodTotals[r.product] = (prodTotals[r.product] || 0) + r.avq; });
+  const prodSummaryHtml = Object.entries(prodTotals)
+    .filter(([, v]) => v > 0)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([prod, mt]) => {
+      const col = pc(prod);
+      const shortProd = prod.length > 14 ? prod.slice(0, 13) + '\u2026' : prod;
+      return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;` +
+        `padding:1px 6px;border-radius:3px;background:${col}18;color:${col};border:1px solid ${col}44;white-space:nowrap">` +
+        `<span style="width:5px;height:5px;border-radius:50%;background:${col};display:inline-block;flex-shrink:0"></span>` +
+        `${shortProd}: ${mt.toLocaleString()} MT` +
+        `</span>`;
+    }).join('');
+
+  const totalRow = `
+    <div style="margin-top:10px;padding-top:10px;border-top:2px solid var(--border2)">
+      <div class="avq-row" style="background:var(--bg2);border-radius:8px;padding:8px 6px;border:1px solid var(--border2)">
+        <div>
+          <div class="avq-co" style="color:var(--navy);font-size:13px;font-weight:800">TOTAL</div>
+          <div style="font-size:9px;color:var(--txt3);margin-top:2px">${new Set(filtered.map(r=>r.code)).size} companies</div>
+        </div>
+        <div>
+          <div class="avq-bar-bg" style="position:relative">
+            <div style="position:absolute;inset:0;background:var(--navy)22;border-radius:5px"></div>
+            <div style="position:absolute;top:0;left:0;height:100%;width:${totUtilW}%;background:var(--navy);border-radius:5px;opacity:.4"></div>
+            <div style="position:absolute;top:0;left:${totUtilW}%;height:100%;width:${totAvqW}%;background:${avqTotColor};border-radius:0 5px 5px 0"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:3px">
+            <span>Used: <strong style="color:var(--navy)">${filtTotalUtil.toLocaleString()} MT</strong></span>
+            <span>Available: <strong style="color:${avqTotColor}">${filtTotalAvq.toLocaleString()} MT</strong></span>
+          </div>
+          <div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">${prodSummaryHtml}</div>
+        </div>
+        <div class="avq-mt" style="color:${avqTotColor};font-size:16px;font-weight:800">${filtTotalAvq.toLocaleString()} MT</div>
+        <div class="avq-prod" style="font-size:9.5px;color:var(--txt3);line-height:1.6">
+          Obtained<br><strong style="color:var(--navy);font-size:11px">${filtTotalObt.toLocaleString()}</strong>
+        </div>
+      </div>
+    </div>`;
+
+  el.innerHTML = hdr + '<div class="avq-wrap">' + barRows + totalRow + '</div>';
 }
 
 function buildTopCo() {
@@ -672,20 +676,8 @@ function buildFlowKPIStrip() {
   const arrived   = fRa.filter(r => r.cargoArrived);
   const inShip    = fRa.filter(r => !r.cargoArrived);
 
-  // ① Obtained — sum Obtained #N cycle MTs, same logic as KPI2 (updateOverviewKPIs)
-  let totalObtained = 0;
-  const _flowSeenCo = new Set();
-  filteredSPI().forEach(co => {
-    if (_flowSeenCo.has(co.code)) return;
-    _flowSeenCo.add(co.code);
-    (co.cycles || []).forEach(c => {
-      if (!/^obtained #/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const pertekTerbit = getPertekTerbitForObtained(c, co.cycles);
-      if (!PERIOD.active || inPd(pertekTerbit)) totalObtained += mt;
-    });
-  });
+  // ① Obtained — total from ALL SPI companies (not just RA subset)
+  const totalObtained = filteredSPI().reduce((s, co) => s + (co.obtained || 0), 0);
   // ② Utilized — sum of utilizationByProd across ALL SPI companies
   //    This is the SINGLE source of truth: same data used by Detail — Company & Product Level
   const totalUtilized = filteredSPI().reduce((s, co) => {

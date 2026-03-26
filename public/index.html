@@ -193,6 +193,24 @@
   </div>
 </div>
 
+<!-- PRODUCT COMPANY POPUP -->
+<div id="prodCoPopup" style="display:none;position:fixed;inset:0;z-index:9500;background:rgba(15,23,42,.45);backdrop-filter:blur(2px)" onclick="if(event.target===this)closeProdCoPopup()">
+  <div id="prodCoPopupBox" style="position:absolute;background:var(--bg);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.28);width:min(94vw,520px);max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
+    <!-- header -->
+    <div id="prodCoPopupHdr" style="padding:14px 18px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div>
+        <div id="prodCoPopupTitle" style="font-size:14px;font-weight:800;color:#fff"></div>
+        <div id="prodCoPopupSub" style="font-size:10.5px;color:rgba(255,255,255,.65);margin-top:2px"></div>
+      </div>
+      <button onclick="closeProdCoPopup()" style="background:rgba(255,255,255,.15);border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+    </div>
+    <!-- summary strip -->
+    <div id="prodCoPopupStrip" style="display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0"></div>
+    <!-- list -->
+    <div id="prodCoPopupList" style="overflow-y:auto;flex:1;padding:8px 0"></div>
+  </div>
+</div>
+
 <!-- AVAILABLE QUOTA DRILL-DOWN MODAL -->
 <div id="avqDrillModal" style="display:none;position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px)" onclick="if(event.target===this)closeAvqDrill()">
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(94vw,900px);max-height:88vh;background:var(--bg);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden">
@@ -1461,24 +1479,24 @@
 <!-- Hidden placeholder divs for JS builders that target specific IDs -->
 <div id="revList"      style="display:none"></div>
 <div id="pendingQuick" style="display:none"></div>
-<script src="/js/01-data.js?v=20260316"></script>
-<script src="/js/02-period-filter.js?v=20260316"></script>
-<script src="/js/03-kpis.js?v=20260316"></script>
-<script src="/js/04-charts.js?v=20260316"></script>
-<script src="/js/05-tables-spi.js?v=20260316"></script>
-<script src="/js/06-tables-util-ra.js?v=20260316"></script>
-<script src="/js/07-tables-main.js?v=20260316"></script>
-<script src="/js/08-drawer.js?v=20260316"></script>
-<script src="/js/09-nav-import.js?v=20260316"></script>
-<script src="/js/10-edit-form.js?v=20260316"></script>
-<script src="/js/11-shipment.js?v=20260316"></script>
-<script src="/js/12-product-mt.js?v=20260316"></script>
-<script src="/js/13-rev-mgmt.js?v=20260316"></script>
-<script src="/js/14-export.js?v=20260316"></script>
-<script src="/js/15-leadtime.js?v=20260316"></script>
-<script src="/js/16-storage.js?v=20260316"></script>
-<script src="/js/17-ou-chart.js?v=20260316"></script>
-<script src="/js/18-sales-priority.js?v=20260316"></script>
-<script src="/js/19-init.js?v=20260316"></script>
+<script src="/js/01-data.js"></script>
+<script src="/js/02-period-filter.js"></script>
+<script src="/js/03-kpis.js"></script>
+<script src="/js/04-charts.js"></script>
+<script src="/js/05-tables-spi.js"></script>
+<script src="/js/06-tables-util-ra.js"></script>
+<script src="/js/07-tables-main.js"></script>
+<script src="/js/08-drawer.js"></script>
+<script src="/js/09-nav-import.js"></script>
+<script src="/js/10-edit-form.js"></script>
+<script src="/js/11-shipment.js"></script>
+<script src="/js/12-product-mt.js"></script>
+<script src="/js/13-rev-mgmt.js"></script>
+<script src="/js/14-export.js"></script>
+<script src="/js/15-leadtime.js"></script>
+<script src="/js/16-storage.js"></script>
+<script src="/js/17-ou-chart.js"></script>
+<script src="/js/18-sales-priority.js"></script>
+<script src="/js/19-init.js"></script>
 </body>
 </html>

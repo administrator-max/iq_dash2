@@ -85,12 +85,13 @@ function setAvqTab(tab, el) {
 
 /* ── KPI cards on Available Quota page ── */
 function buildAvqPageKPIs() {
+  // Use company-level availableQuota as source of truth (matches companies.available_quota in DB).
+  // This is the canonical value; buildAvailableQuota() in 04-charts.js also aligns to this.
   let totalObt = 0, totalUtil = 0, totalAvq = 0, coSet = new Set();
-  const rows = [];
   filteredSPI().forEach(co => {
     const obtained = co.obtained || 0;
     if (obtained <= 0) return;
-    const util = co.utilizationMT || 0;
+    const util  = co.utilizationMT  || 0;
     const avail = co.availableQuota != null ? co.availableQuota : (obtained - util);
     totalObt  += obtained;
     totalUtil += util;
@@ -147,6 +148,9 @@ function buildAvqProdGrid() {
     'SEAMLESS PIPE':'#0d6946','HRC/HRPO ALLOY':'#ca8a04',
   };
   const clr = p => { for (const k in PROD_CLR) if (p && p.toUpperCase().includes(k.toUpperCase())) return PROD_CLR[k]; return '#64748b'; };
+  // Store prodMap for popup use
+  grid._prodMap = prodMap;
+
   const entries = Object.entries(prodMap).sort((a,b) => b[1].avail - a[1].avail);
   grid.innerHTML = entries.map(([prod, d]) => {
     const utilPct = d.obtained > 0 ? Math.min((d.util / d.obtained * 100), 100).toFixed(0) : 0;
@@ -155,7 +159,14 @@ function buildAvqProdGrid() {
     return `<div style="border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;box-shadow:var(--sh)">
       <div style="background:${c};padding:9px 14px;display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:11.5px;font-weight:700;color:#fff">${prod}</span>
-        <span style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,.2);color:#fff">${d.cos.length} co.</span>
+        <span onclick="openProdCoPopup(event,'${prod.replace(/'/g,"\\'")}',this)"
+          style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:3px;background:rgba(255,255,255,.22);color:#fff;
+          cursor:pointer;border:1px solid rgba(255,255,255,.35);transition:background .15s;user-select:none"
+          onmouseover="this.style.background='rgba(255,255,255,.38)'"
+          onmouseout="this.style.background='rgba(255,255,255,.22)'"
+          title="Click to see company breakdown">
+          ${d.cos.length} co. ▾
+        </span>
       </div>
       <div style="padding:10px 14px">
         <div style="display:flex;justify-content:space-between;margin-bottom:8px">
@@ -173,6 +184,121 @@ function buildAvqProdGrid() {
       </div>
     </div>`;
   }).join('');
+}
+
+/* ── Product → Company popup ─────────────────────────────────────────── */
+function openProdCoPopup(event, prodName, anchorEl) {
+  event.stopPropagation();
+  const popup  = document.getElementById('prodCoPopup');
+  const box    = document.getElementById('prodCoPopupBox');
+  if (!popup || !box) return;
+
+  const PROD_CLR = {
+    'GL BORON':'#0369a1','GI BORON':'#0f766e','SHEETPILE':'#b45309',
+    'BORDES ALLOY':'#dc2626','PPGL CARBON':'#7c3aed','ERW PIPE OD≤140mm':'#9333ea',
+    'ERW PIPE OD>140mm':'#0891b2','AS STEEL':'#64748b','HOLLOW PIPE':'#78716c',
+    'SEAMLESS PIPE':'#0d6946','HRC/HRPO ALLOY':'#ca8a04',
+  };
+  const clr = p => { for (const k in PROD_CLR) if (p && p.toUpperCase().includes(k.toUpperCase())) return PROD_CLR[k]; return '#64748b'; };
+  const col = clr(prodName);
+
+  // Position popup near the clicked badge
+  const rect = anchorEl.getBoundingClientRect();
+  popup.style.display = 'block';
+  // position after display so we can measure box
+  requestAnimationFrame(() => {
+    const bw = box.offsetWidth  || 520;
+    const bh = box.offsetHeight || 400;
+    let left = rect.left;
+    let top  = rect.bottom + 8;
+    if (left + bw > window.innerWidth  - 12) left = window.innerWidth  - bw - 12;
+    if (top  + bh > window.innerHeight - 12) top  = rect.top - bh - 8;
+    if (left < 8) left = 8;
+    if (top  < 8) top  = 8;
+    box.style.left = left + 'px';
+    box.style.top  = top  + 'px';
+  });
+
+  // Header
+  document.getElementById('prodCoPopupHdr').style.background = col;
+  document.getElementById('prodCoPopupTitle').textContent = prodName;
+
+  // Collect per-company data for this product
+  const coRows = [];
+  filteredSPI().forEach(co => {
+    if (!(co.products || []).includes(prodName)) return;
+    const ap  = co.availableByProd   || {};
+    const up  = co.utilizationByProd || {};
+    const cycleObt = (co.cycles || []).filter(c => /^obtained/i.test(c.type))
+      .reduce((s, c) => s + (c.products && c.products[prodName] || 0), 0);
+    const obtForProd  = Number(cycleObt) > 0 ? Number(cycleObt)
+      : (Number(co.obtained) / Math.max((co.products || []).length, 1));
+    const utilForProd = up[prodName] || 0;
+    const avqForProd  = ap[prodName] != null ? ap[prodName] : (obtForProd - utilForProd);
+    coRows.push({ code: co.code, group: co.group, obt: obtForProd, util: utilForProd, avq: avqForProd });
+  });
+  coRows.sort((a, b) => b.avq - a.avq);
+
+  const totalObt  = coRows.reduce((s, r) => s + r.obt,  0);
+  const totalUtil = coRows.reduce((s, r) => s + r.util, 0);
+  const totalAvq  = coRows.reduce((s, r) => s + r.avq,  0);
+
+  document.getElementById('prodCoPopupSub').textContent =
+    `${coRows.length} compan${coRows.length !== 1 ? 'ies' : 'y'} · ${totalAvq.toLocaleString()} MT available`;
+
+  // Summary strip
+  document.getElementById('prodCoPopupStrip').innerHTML = [
+    ['Obtained', totalObt,  'var(--teal)'],
+    ['Utilized', totalUtil, 'var(--green)'],
+    ['Available',totalAvq,  col],
+  ].map(([lbl, val, c2]) => `
+    <div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">
+      <div style="font-size:15px;font-weight:800;color:${c2};font-family:'DM Mono',monospace">${Math.round(val).toLocaleString()}</div>
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3);margin-top:1px">${lbl}</div>
+    </div>`).join('');
+
+  // Company list
+  const maxObt = Math.max(...coRows.map(r => r.obt), 1);
+  document.getElementById('prodCoPopupList').innerHTML = coRows.map(r => {
+    const utilPct = r.obt > 0 ? (r.util / r.obt * 100).toFixed(0) : 0;
+    const avqPct  = r.obt > 0 ? Math.max(0, r.avq  / r.obt * 100).toFixed(0) : 0;
+    const barUtil = (r.util / maxObt * 100).toFixed(1);
+    const barAvq  = (Math.max(0, r.avq) / maxObt * 100).toFixed(1);
+    const avqCol  = r.avq > 0 ? col : 'var(--red2)';
+    const co = getSPI(r.code);
+    const grpBadge = `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;
+      background:${r.group==='CD'?'#e0f2fe':'#f0fdf4'};
+      color:${r.group==='CD'?'#0369a1':'#166534'}">${r.group}</span>`;
+    return `<div style="padding:10px 18px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s"
+      onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background=''"
+      onclick="closeProdCoPopup();setTimeout(()=>openDrawer('${r.code}'),80)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px;font-weight:800;color:var(--navy)">${r.code}</span>
+          ${grpBadge}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:var(--txt3)">Obt <strong style="color:var(--teal)">${Math.round(r.obt).toLocaleString()}</strong></span>
+          <span style="font-size:11px;color:var(--txt3)">Used <strong style="color:var(--green)">${r.util > 0 ? r.util.toLocaleString() : '—'}</strong></span>
+          <span style="font-size:13px;font-weight:800;color:${avqCol};font-family:'DM Mono',monospace">${Math.round(r.avq).toLocaleString()} MT</span>
+        </div>
+      </div>
+      <div style="position:relative;height:7px;background:var(--border);border-radius:4px;overflow:hidden">
+        <div style="position:absolute;inset:0;background:${col}22;border-radius:4px"></div>
+        <div style="position:absolute;top:0;left:0;height:100%;width:${barUtil}%;background:${col};opacity:.45;border-radius:4px"></div>
+        <div style="position:absolute;top:0;left:${barUtil}%;height:100%;width:${barAvq}%;background:${avqCol};border-radius:0 4px 4px 0"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:3px">
+        <span>${utilPct}% utilized</span>
+        <span style="color:${avqCol};font-weight:600">${avqPct}% available · click to open →</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function closeProdCoPopup() {
+  const p = document.getElementById('prodCoPopup');
+  if (p) p.style.display = 'none';
 }
 
 /* ── Table view ── */
