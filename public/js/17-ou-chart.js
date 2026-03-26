@@ -76,11 +76,8 @@ function setOUOvStatus(mode, el) {
 /** Build per-company-product records for the OU chart */
 function buildOUData() {
   const records = [];
-  const _ouSeenCo = new Set();
 
   filteredSPI().forEach(co => {
-    if (_ouSeenCo.has(co.code)) return;
-    _ouSeenCo.add(co.code);
     const pertekDate = getPertekDateForCo(co);
     const obtByProd  = getObtainedByProd(co);
 
@@ -88,9 +85,14 @@ function buildOUData() {
       if (!obtMT || obtMT <= 0) return;
 
       // Utilized MT — from utilizationByProd[prod], the single source of truth
-      // shared with Shipment & Realization Monitoring column "Utilization (MT)"
-      const utilMT    = (co.utilizationByProd || {})[prod] || 0;
-      const remaining = Math.max(0, obtMT - utilMT);
+      const utilMT = (co.utilizationByProd || {})[prod] || 0;
+
+      // Remaining: use availableByProd[prod] when available (same source of truth
+      // as availableQuota company-level). Fall back to obtMT - utilMT.
+      const aProd = co.availableByProd || {};
+      const remaining = aProd[prod] != null
+        ? Math.max(0, Number(aProd[prod]))
+        : Math.max(0, obtMT - utilMT);
 
       // First utilization date: earliest ETA/PIB date with utilMT > 0
       const firstUtilDate = getFirstUtilDate(co, prod);
@@ -248,19 +250,16 @@ function buildOUChart() {
   const filtered    = getFilteredOUData(allRecords);
 
   /* ── KPI Summary Strip ── */
-  // Total Obtained: sum Obtained #N cycle MTs across ALL filteredSPI — matches KPI2
-  let totalObtained = 0;
-  filteredSPI().forEach(co => {
-    (co.cycles || []).forEach(c => {
-      if (!/^obtained #/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const pertekTerbit = getPertekTerbitForObtained(c, co.cycles);
-      if (!PERIOD.active || inPd(pertekTerbit)) totalObtained += mt;
-    });
-  });
+  // Use company-level co.obtained / availableQuota as source of truth for totals
+  // (consistent with buildAvailableQuota and buildAvqPageKPIs)
+  const totalObtained = filteredSPI().reduce((s, co) => s + (co.obtained || 0), 0);
   const totalUtilized = allRecords.reduce((s, r) => s + r.utilized, 0);
-  const totalRemain   = allRecords.reduce((s, r) => s + r.remaining, 0);
+  // REMAINING: sum availableQuota (company-level) — same source of truth as 04-charts & 19-init
+  const totalRemain   = filteredSPI().reduce((s, co) => {
+    const util  = co.utilizationMT  || 0;
+    const avail = co.availableQuota != null ? co.availableQuota : (co.obtained || 0) - util;
+    return s + Math.max(0, avail);
+  }, 0);
   const overdueCount  = allRecords.filter(r => r.leadStatus === 'overdue').length;
   const normalCount   = allRecords.filter(r => r.leadStatus === 'normal').length;
   const avgUtilPct    = totalObtained > 0 ? Math.round(totalUtilized / totalObtained * 100) : 0;
