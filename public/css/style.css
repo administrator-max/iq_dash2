@@ -78,7 +78,7 @@ body { font-family:'DM Sans','Calibri','Segoe UI',sans-serif; background:var(--b
 .pf-val  { font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap }
 .pf-ico  { font-size:12px; color:rgba(255,255,255,.5) }
 .pf-active-dot { width:6px; height:6px; border-radius:50%; background:#4ade80; flex-shrink:0; box-shadow:0 0 6px #4ade80 }
-.pf-panel { display:none; position:fixed; top:58px; background:var(--surf); border:1px solid var(--border2); border-radius:var(--r3); box-shadow:0 8px 32px rgba(0,0,0,.16); z-index:500; width:380px; overflow:hidden }
+.pf-panel { display:none; position:fixed; top:58px; background:var(--surf); border:1px solid var(--border2); border-radius:var(--r3); box-shadow:0 8px 32px rgba(0,0,0,.16); z-index:400; width:380px; overflow:hidden }
 .pf-panel.open { display:block; animation:fadeUp .18s ease }
 .pf-ph { background:var(--navy); padding:11px 16px; display:flex; align-items:center; justify-content:space-between }
 .pf-ph-t { font-size:12px; font-weight:700; color:#fff }
@@ -197,13 +197,13 @@ body { font-family:'DM Sans','Calibri','Segoe UI',sans-serif; background:var(--b
 
 /* ── TOOLTIP ── */
 .has-tip { position:relative; cursor:help }
-.tip { display:none; position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:var(--navy); color:#fff; font-size:11px; padding:6px 10px; border-radius:var(--r); white-space:nowrap; z-index:200; pointer-events:none; line-height:1.5; text-align:left; min-width:160px; max-width:260px; white-space:normal }
+.tip { display:none; position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:var(--navy); color:#fff; font-size:11px; padding:6px 10px; border-radius:var(--r); white-space:nowrap; z-index:200; pointer-events:none; line-height:1.5; text-align:left; min-width:160px; max-width:260px; white-space:normal; z-index:1000 }
 .tip::after { content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:var(--navy) }
 .has-tip:hover .tip { display:block }
 
 /* ── PIPELINE HOVER PANEL ── */
 .pipeline-wrap { position:relative }
-.pipeline-hover { display:none; position:absolute; top:10px; right:-10px; width:220px; background:var(--surf); border:1px solid var(--border2); border-radius:var(--r2); box-shadow:var(--sh2); padding:10px 12px; z-index:100; font-size:11px; max-height:280px; overflow-y:auto }
+.pipeline-hover { display:none; position:absolute; top:10px; right:-10px; width:220px; background:var(--surf); border:1px solid var(--border2); border-radius:var(--r2); box-shadow:var(--sh2); padding:10px 12px; z-index:110; font-size:11px; max-height:280px; overflow-y:auto }
 .pipeline-hover.show { display:block }
 .ph-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--txt3); margin-bottom:6px; padding-bottom:5px; border-bottom:1px solid var(--border) }
 .ph-row { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px solid var(--border); font-size:11px }
@@ -420,19 +420,14 @@ tr:hover td { background:#f9fafb }
 .util-hist-btn:hover { text-decoration:underline }
 .util-hist-panel { display:none; background:var(--bg); border:1px solid var(--border); border-radius:var(--r); padding:6px 9px; margin-top:5px }
 .util-hist-panel.open { display:block }
-.util-hist-hd    { display:grid; grid-template-columns:82px 52px 52px 60px 1fr 52px; gap:5px; font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--txt3); padding-bottom:4px; border-bottom:1px solid var(--border); margin-bottom:3px }
-.util-hist-row   { display:grid; grid-template-columns:82px 52px 52px 60px 1fr 52px; gap:5px; align-items:center; padding:3px 0; border-bottom:1px solid var(--border); font-size:10px }
+.util-hist-hd    { display:grid; grid-template-columns:82px 52px 52px 60px 1fr; gap:5px; font-size:8.5px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--txt3); padding-bottom:4px; border-bottom:1px solid var(--border); margin-bottom:3px }
+.util-hist-row   { display:grid; grid-template-columns:82px 52px 52px 60px 1fr; gap:5px; align-items:center; padding:3px 0; border-bottom:1px solid var(--border); font-size:10px }
 .util-hist-row:last-child { border-bottom:none }
 .util-hist-date  { color:var(--txt3); font-family:'DM Mono',monospace }
 .util-hist-prev  { color:var(--txt3); font-family:'DM Mono',monospace; text-align:right }
 .util-hist-delta { color:var(--green); font-weight:700; font-family:'DM Mono',monospace; text-align:right }
 .util-hist-total { color:var(--txt); font-weight:700; font-family:'DM Mono',monospace; text-align:right }
 .util-hist-note  { color:var(--txt3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
-.util-hist-actions { display:flex; gap:3px; justify-content:flex-end }
-.hist-act-btn    { background:none; border:none; cursor:pointer; font-size:11px; padding:0 2px; opacity:.6; line-height:1 }
-.hist-act-btn:hover { opacity:1 }
-.hist-edit-btn   { color:var(--blue) }
-.hist-del-btn    { color:var(--red2) }
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width:5px; height:5px }
 ::-webkit-scrollbar-track { background:var(--bg) }
@@ -512,13 +507,31 @@ tr:hover td { background:#f9fafb }
 /* ── RESTRICTED FIELD ── */
 .fi:disabled, select.fi:disabled { background:#f1f5f9; color:#94a3b8; cursor:not-allowed; border-color:var(--border); opacity:.7 }
 .field-restricted { position:relative }
-.field-restricted::after { content:attr(data-tip); display:none; position:absolute; bottom:calc(100% + 4px); left:0; background:var(--navy); color:#fff; font-size:10px; padding:4px 8px; border-radius:var(--r); white-space:nowrap; z-index:100; pointer-events:none }
+.field-restricted::after { content:attr(data-tip); display:none; position:absolute; bottom:calc(100% + 4px); left:0; background:var(--navy); color:#fff; font-size:10px; padding:4px 8px; border-radius:var(--r); white-space:nowrap; z-index:900; pointer-events:none }
 .field-restricted:hover::after { display:block }
 .restricted-badge { font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; background:#f1f5f9; color:#94a3b8; border:1px solid var(--border); vertical-align:middle; margin-left:4px }
 
 /* ── SECTION CARD (role-gated) ── */
 .ef-section-card { border:1px solid var(--border); border-radius:var(--r2); margin-bottom:12px; overflow:hidden }
-.ef-section-card.locked { opacity:.55; pointer-events:none }
+.ef-section-card.locked { display:none }
+
+/* ── ⓘ Tooltip ─────────────────────────────────────────────────── */
+.tti { display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+  border-radius:50%;background:var(--border2);color:var(--txt3);font-size:9px;font-weight:700;
+  cursor:help;flex-shrink:0;position:relative;margin-left:4px;vertical-align:middle;
+  border:1px solid var(--border);transition:background .15s }
+.tti:hover { background:var(--blue);color:#fff;border-color:var(--blue) }
+.tti::after { content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;
+  transform:translateX(-50%);background:var(--navy);color:#fff;font-size:10px;font-weight:400;
+  line-height:1.45;padding:6px 10px;border-radius:6px;white-space:normal;width:max-content;
+  max-width:260px;z-index:1000;opacity:0;pointer-events:none;transition:opacity .15s;
+  box-shadow:0 4px 16px rgba(0,0,0,.22) }
+.tti::before { content:'';position:absolute;bottom:calc(100% + 2px);left:50%;
+  transform:translateX(-50%);border:4px solid transparent;border-top-color:var(--navy);
+  opacity:0;transition:opacity .15s }
+.tti:hover::after,.tti:hover::before { opacity:1 }
+.tti.tip-left::after { left:auto;right:0;transform:none }
+.tti.tip-right::after { left:0;transform:none }
 .ef-sec-hd { display:flex; align-items:center; justify-content:space-between; padding:8px 13px; background:var(--bg); border-bottom:1px solid var(--border) }
 .ef-sec-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--txt3) }
 .ef-sec-role  { font-size:9px; font-weight:700; padding:1px 6px; border-radius:3px }
@@ -790,16 +803,6 @@ tr:hover td { background:#f9fafb }
 .del-ship-btn:hover { background: var(--red-bg); color: var(--red2) }
 .del-ship-btn:disabled { opacity: .3; cursor: not-allowed }
 
-/* Ops: multiple realization rows per lot */
-.ops-real-row td { border-bottom: 1px dashed var(--border); }
-.ops-real-row + .ops-real-row td { border-top: none; }
-.ops-add-real-row td { background: #f8fafc; border-bottom: 1px solid var(--border); padding: 0; }
-.ops-add-real-row .add-ship-btn {
-  font-size: 10px; padding: 2px 10px; opacity: .7;
-  border-color: var(--blue); color: var(--blue);
-}
-.ops-add-real-row .add-ship-btn:hover { opacity: 1; background: var(--blue); color: #fff; }
-
 /* Product subtotal row */
 .sprod-total-row {
   display: flex;
@@ -941,3 +944,134 @@ tr:hover td { background:#f9fafb }
   box-shadow: var(--sh2);
   transform: translateY(-2px);
 }
+
+
+/* ══════════════════════════════════════════════════════════════════
+   UI POLISH — consistent spacing, typography, layering
+   Z-INDEX SYSTEM:
+     20   → sticky table th inside scrollable containers
+     110  → floating panels anchored to content (pipeline-hover)
+     300  → topbar sticky
+     400  → dropdowns near topbar (search, period-filter)
+     500  → drawer overlay + drawer panel
+     600  → import modal
+     700  → drill-down KPI modals
+     800  → floating popups (prodCoPopup)
+     900  → field-restricted tooltip
+     1000 → .tip / .tti inline tooltips
+     1100 → toast notifications
+     1200 → export progress bar
+══════════════════════════════════════════════════════════════════ */
+
+/* ── tti in table headers: no layout disruption ── */
+th .tti, td .tti {
+  vertical-align: middle;
+  margin-left: 4px;
+  position: relative;
+  top: -1px;
+}
+th .tti::after {
+  left: 0;
+  right: auto;
+  transform: none;
+  max-width: 220px;
+}
+th .tti::before { left: 6px; transform: none; }
+
+/* ── Utilization cell: compact and readable ── */
+.util-inc-wrap   { display:flex; flex-direction:column; gap:3px; min-width:148px; }
+.util-cur-row    { display:flex; align-items:center; gap:5px; padding:1px 0; }
+.util-cur-lbl    { font-size:8.5px; font-weight:700; text-transform:uppercase;
+                   letter-spacing:.6px; color:var(--txt3); width:42px; flex-shrink:0; }
+.util-cur-val    { font-size:11.5px; font-weight:700; font-family:'DM Mono',monospace;
+                   color:var(--navy); line-height:1; }
+.util-add-row    { display:flex; align-items:center; gap:4px; }
+.util-add-lbl    { font-size:13px; font-weight:700; color:var(--green);
+                   flex-shrink:0; line-height:1; }
+.util-add-inp    { width:66px; padding:3px 6px; border:1.5px solid var(--green-bd);
+                   border-radius:var(--r); font-family:'DM Mono',monospace;
+                   font-size:11px; font-weight:700; color:var(--green);
+                   background:var(--green-bg); outline:none; text-align:right; }
+.util-add-inp:focus { border-color:var(--green); }
+.util-add-inp.err   { border-color:var(--red-lt); background:var(--red-bg); color:var(--red2); }
+.util-apply-btn  { font-size:9.5px; font-weight:700; padding:3px 8px;
+                   border-radius:var(--r); border:1px solid var(--green-bd);
+                   background:var(--green-bg); color:var(--green);
+                   cursor:pointer; transition:all .12s; flex-shrink:0;
+                   line-height:1.3; white-space:nowrap; }
+.util-apply-btn:hover:not(:disabled) { background:var(--green); color:#fff; border-color:var(--green); }
+.util-apply-btn:disabled { opacity:.35; cursor:not-allowed; }
+
+/* ── Shipment table ── */
+.sship-table thead th { padding:5px 8px; font-size:8.5px; }
+.sship-table tbody td { padding:5px 8px; font-size:11.5px; }
+.sprod-hdr        { padding:6px 11px; }
+.sprod-hdr-name   { font-size:11px; }
+.sprod-quota-badge, .sprod-avail-badge { font-size:9px; padding:1px 6px; }
+.lot-badge        { width:20px; height:20px; font-size:9px; }
+.add-ship-row     { padding:5px 10px; }
+.add-ship-btn     { font-size:10px; padding:3px 10px; }
+.grand-total-bar  { padding:7px 12px; margin-top:10px; }
+.grand-total-val  { font-size:13px; }
+
+/* ── PMT table ── */
+.pmt-table thead th { padding:5px 9px; font-size:8.5px; }
+.pmt-table tbody td { padding:5px 8px; }
+.pmt-mt-inp       { padding:4px 7px; font-size:11.5px; }
+.pmt-prod-chip    { font-size:11px; gap:5px; }
+.pmt-hs-chip      { font-size:9.5px; padding:1px 5px; }
+.pmt-total-row td { padding:5px 9px; font-size:10.5px; }
+
+/* ── Edit form sections ── */
+.ef-sec-body      { padding:10px 12px; }
+.ef-sec-hd        { padding:7px 12px; }
+.ef-sec-title     { font-size:9.5px; letter-spacing:.7px; }
+.ef-section-card  { margin-bottom:10px; }
+.form-row         { margin-bottom:11px; }
+.fl               { font-size:10px; margin-bottom:3px; letter-spacing:.5px; }
+.fi               { padding:6px 9px; font-size:12px; }
+
+/* ── Role banner ── */
+.role-banner      { padding:9px 11px 8px; margin-bottom:11px; }
+.role-banner-lbl  { font-size:8.5px; margin-bottom:7px; }
+.role-grid        { gap:5px; }
+.role-btn         { padding:7px 5px; gap:2px; }
+.role-btn .rb-ico  { font-size:16px; }
+.role-btn .rb-name { font-size:10px; }
+.role-btn .rb-desc { font-size:7.5px; line-height:1.2; }
+
+/* ── Revision request cards ── */
+.revreq-row { margin-bottom:6px !important; }
+.revreq-row:last-child { margin-bottom:0 !important; }
+.revreq-targets { padding-top:5px; }
+.revreq-target-row { gap:5px; }
+.revreq-target-row select { font-size:11px; padding:3px 5px; }
+.revreq-target-row input[type="text"] { font-size:11px; padding:3px 6px; }
+
+/* ── CorpSec confirm table ── */
+#corpsecRevConfirmWrap table { border-radius:6px; overflow:hidden; }
+#corpsecRevConfirmWrap th    { padding:5px 9px; font-size:8.5px; }
+#corpsecRevConfirmWrap td    { padding:6px 9px; font-size:11px; }
+
+/* ── Role history panel ── */
+#sec-role-history  { border-radius:7px; overflow:hidden; }
+#roleHistoryBody   { gap:3px; }
+#roleHistoryBody > div { font-size:10.5px; line-height:1.4; padding:4px 6px; }
+
+/* ── pmt-note (placeholder states only) ── */
+.pmt-note { font-size:10.5px; padding:5px 9px; line-height:1.45; }
+
+/* ── val-err ── */
+.val-err { font-size:9.5px; padding-top:2px; }
+
+/* ── rr-cycle-row ── */
+.rr-cycle-row   { padding:6px 9px; gap:8px; }
+.rr-cycle-type  { font-size:11px; }
+.rr-cycle-meta  { font-size:10px; }
+.rr-cycle-status{ font-size:9.5px; }
+
+/* ── Drawer ── */
+.dl-k { font-size:9.5px; width:110px; }
+.dl-v { font-size:12px; }
+.d-sv { font-size:18px; }
+.d-sl { font-size:8.5px; }

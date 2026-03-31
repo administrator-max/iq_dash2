@@ -30,24 +30,36 @@ function revisionStatus(d) {
     const hasSubmit2 = (d.cycles||[]).some(c => /^submit\s*#[2-9]/i.test(c.type));
     return hasSubmit2 ? 'reapply' : 'active';
   }
-  // revType='complete': PERTEK already issued — check if SPI Perubahan also issued
+  // revType='complete': PERTEK already issued — check if SPI also issued
+
   // Explicit override: if revStatus/spiRef says 'SPI Perubahan belum terbit' → PENDING
   const explicitPending =
     (d.revStatus && d.revStatus.includes('SPI Perubahan belum')) ||
     (d.spiRef    && d.spiRef.includes('SPI Perubahan belum'));
   if (explicitPending) return 'revpending';
-  // Otherwise: SPI Perubahan issued if spiRef or revStatus contains 'SPI Perubahan Terbit' or starts with '✅ Done'
-  // Do NOT count 'SPI TERBIT' alone — that may be the original SPI, not the revision SPI
+
+  // ── NEW: SPI NO. field is populated + statusUpdate says SPI Terbit → Completed
+  // This covers BTS/GIS/SMS type: PERTEK complete, SPI issued, statusUpdate='SPI Terbit'
+  const spiNoFilled    = d.spiNo && d.spiNo.trim() !== '';
+  const statusIsSPI    = d.statusUpdate && /spi\s*terbit/i.test(d.statusUpdate);
+  if (spiNoFilled && statusIsSPI) return 'completed';
+
+  // ── Also completed if spiNo filled regardless (SPI issued = done)
+  // Only if revStatus does not explicitly say pending
+  if (spiNoFilled && !explicitPending) return 'completed';
+
+  // SPI Perubahan issued via spiRef or revStatus text
   const spiPerubahanIssued =
     (d.spiRef    && d.spiRef.includes('SPI Perubahan Terbit')) ||
     (d.revStatus && d.revStatus.includes('SPI Perubahan Terbit')) ||
     (d.revStatus && d.revStatus.startsWith('✅ Done'));
+
   // Special case: companies that went via Pertek route (no separate SPI Perubahan)
-  // spiRef only has PERTEK — check it does NOT contain any SPI reference
   const hasPertekOnly =
     d.spiRef && d.spiRef.includes('PERTEK TERBIT') &&
     !d.spiRef.includes('SPI TERBIT') && !d.spiRef.includes('SPI Perubahan');
   if (hasPertekOnly) return 'revpending';
+
   return spiPerubahanIssued ? 'completed' : 'revpending';
 }
 

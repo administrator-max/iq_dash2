@@ -7,7 +7,9 @@ const LS_KEY = 'quotaDashboard_v1';
 /** Fields that can change at runtime and should be persisted */
 const RA_MUTABLE  = ['berat','realPct','utilPct','cargoArrived','arrivalDate',
                      'etaJKT','pibReleaseDate','reapplyEst','reapplySubmitted','target'];
-const SPI_MUTABLE = ['spiRef','remarks','revType','revStatus','revNote','statusUpdate'];
+const SPI_MUTABLE = ['spiRef','remarks','revType','revStatus','revNote','statusUpdate',
+                     'salesRevRequest','spiNo','pertekNo','updatedBy','updatedDate',
+                     'utilizationMT','availableQuota','shipments','reapplyTargets'];
 
 /** Serialize current state → localStorage */
 function saveToStorage() {
@@ -77,7 +79,7 @@ function showSaveToast(ts) {
     toast.id = 'saveToast';
     toast.style.cssText = 'position:fixed;bottom:80px;right:22px;background:var(--green);color:#fff;' +
       'font-size:12px;font-weight:600;padding:8px 16px;border-radius:var(--r);box-shadow:var(--sh2);' +
-      'z-index:9999;opacity:0;transition:opacity .25s;pointer-events:none';
+      'z-index:1100;opacity:0;transition:opacity .25s;pointer-events:none';
     document.body.appendChild(toast);
   }
   const d = ts ? new Date(ts) : new Date();

@@ -74,12 +74,12 @@ const ROLE_PERMISSIONS = {
   // submitProdTable / obtainedProdTable = the dynamic per-product MT inputs (no single eSubmitMT/eObtainedMT anymore)
   // salesShipTable / opsShipTable = the new multi-product multi-shipment tables (Sections D & E)
   CorpSec:    ['eSubmitDate','ePertekNo','ePertekDate','eSpiNo','eSpiDate','eStatus','eStatusUpdate',
-               'submitProdTable','obtainedProdTable'],
-  Sales:      ['salesShipTable','eTarget'],
+               'submitProdTable','obtainedProdTable','corpsecRevConfirm'],
+  Sales:      ['salesShipTable','eTarget','salesRevReq'],
   Operations: ['opsShipTable'],
   SuperAdmin: ['eSubmitDate','ePertekNo','ePertekDate','eSpiNo','eSpiDate','eStatus','eStatusUpdate',
-               'submitProdTable','obtainedProdTable',
-               'salesShipTable','opsShipTable','eTarget','eRem'],
+               'submitProdTable','obtainedProdTable','corpsecRevConfirm',
+               'salesShipTable','opsShipTable','eTarget','salesRevReq','eRem'],
 };
 
 /* Sections locked per role */
@@ -119,6 +119,7 @@ function selectRole(role, btn) {
   if (g('editFields').style.display !== 'none') {
     applyRolePermissions();
     livePreview();
+    buildRoleHistory();
   }
 }
 
@@ -181,29 +182,52 @@ function applyRolePermissions() {
     }
   });
 
-  // Lock/unlock section cards visually
+  // Show only sections for current role (hide others completely)
   ALL_SECTIONS.forEach(secId => {
     const el = g(secId);
     if (!el) return;
     const isOpen = secAllowed.includes(secId);
-    el.classList.toggle('locked', !isOpen);
-    // Add/remove lock indicator in section header
-    const hd = el.querySelector('.ef-sec-hd');
-    if (hd) {
-      let lockIco = hd.querySelector('.sec-lock-ico');
-      if (!isOpen) {
-        if (!lockIco) {
-          lockIco = document.createElement('span');
-          lockIco.className = 'sec-lock-ico';
-          lockIco.style.cssText = 'font-size:11px;margin-left:6px;opacity:.6';
-          lockIco.textContent = '🔒';
-          el.querySelector('.ef-sec-title').appendChild(lockIco);
-        }
-      } else if (lockIco) {
-        lockIco.remove();
-      }
-    }
+    // Hide sections not belonging to this role; show allowed ones
+    el.style.display = isOpen ? '' : 'none';
+    el.classList.toggle('locked', false); // clear any old locked class
+    // Remove any leftover lock icons
+    const lockIco = el.querySelector('.sec-lock-ico');
+    if (lockIco) lockIco.remove();
   });
+
+  // ── Sales Revision Request lock ───────────────────────────────────
+  const canSalesRev = allowed.includes('salesRevReq');
+  const revReqWrap  = g('salesRevReqWrap');
+  if (revReqWrap) {
+    revReqWrap.querySelectorAll('.revreq-chk,.revreq-mt-inp,.revreq-newprod-inp,.revreq-note-inp').forEach(el => {
+      // checkboxes always unlocked for Sales; child inputs unlocked only if checkbox checked
+      if (el.classList.contains('revreq-chk')) {
+        el.disabled = !canSalesRev;
+      } else {
+        const row = el.closest('tr');
+        const chk = row ? row.querySelector('.revreq-chk') : null;
+        el.disabled = !canSalesRev || !(chk && chk.checked);
+      }
+    });
+    const wrapEl = g('wrap-salesRevReq');
+    if (wrapEl) {
+      wrapEl.style.opacity = canSalesRev ? '1' : '0.55';
+      wrapEl.style.cursor  = canSalesRev ? '' : 'not-allowed';
+      wrapEl.title         = canSalesRev ? '' : 'Restricted by role';
+    }
+  }
+
+  // ── CorpSec Revision Confirm lock ──────────────────────────────────
+  const canCorpSecRev = allowed.includes('corpsecRevConfirm');
+  document.querySelectorAll('.corpsec-revconfirm-inp').forEach(inp => {
+    inp.disabled = !canCorpSecRev;
+  });
+  const csRevWrap = g('corpsecRevConfirmWrap');
+  if (csRevWrap) {
+    csRevWrap.style.opacity = canCorpSecRev ? '1' : '0.55';
+    csRevWrap.style.cursor  = canCorpSecRev ? '' : 'not-allowed';
+    csRevWrap.title         = canCorpSecRev ? '' : 'Restricted by role — requires Sales revision request first';
+  }
 
   // Enable save button once role is selected and company is selected
   const saveBtn = g('saveBtn');
@@ -212,6 +236,9 @@ function applyRolePermissions() {
     saveBtn.style.opacity = '1';
     saveBtn.style.cursor  = '';
   }
+
+  // Rebuild role history when role or company changes
+  buildRoleHistory();
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -238,35 +265,24 @@ function applyRolePermissions() {
 function getObtainedByProd(co) {
   const result = {};
   if (!co) return result;
-
-  // Sum ALL Obtained #N cycles (covers #1 + #2 re-apply cycles)
-  const cycles = co.cycles || [];
-  cycles.forEach(cy => {
-    if (!/^obtained/i.test(cy.type)) return;
-    if (!cy.products) return;
-    Object.entries(cy.products).forEach(([p, v]) => {
-      const n = typeof v === 'number' ? v : parseFloat(v);
-      if (!isNaN(n) && n > 0) result[p] = (result[p] || 0) + n;
-    });
-  });
-
-  // Per-product fallback: for products in co.products that aren't in any cycle,
-  // distribute the remaining co.obtained evenly among them
-  const covered  = Object.keys(result);
-  const missing  = (co.products || []).filter(p => !covered.includes(p));
-  if (missing.length) {
-    const coveredTotal = covered.reduce((s, p) => s + result[p], 0);
-    const remainder    = Math.max(0, (co.obtained || 0) - coveredTotal);
-    const share        = remainder > 0 ? Math.round(remainder / missing.length) : 0;
-    missing.forEach(p => { if (share > 0) result[p] = share; });
+  // First: use availableByProd if set (respects manual overrides)
+  if (co.availableByProd && Object.keys(co.availableByProd).length) {
+    // availableByProd is what's left; we need total obtained per prod
   }
-
-  // Last resort: if nothing found at all, split co.obtained evenly
+  // Primary: Obtained #1 cycle products
+  const cycles = co.cycles || [];
+  const obtCy = cycles.find(cy => /^obtained\s*#?1/i.test(cy.type))
+             || cycles.find(cy => /^obtained/i.test(cy.type));
+  if (obtCy && obtCy.products) {
+    Object.entries(obtCy.products).forEach(([p, v]) => {
+      if (typeof v === 'number' && v > 0) result[p] = v;
+    });
+  }
+  // Fallback: use co products list with co.obtained total split evenly
   if (!Object.keys(result).length && co.products && co.obtained) {
     const n = co.products.length;
     co.products.forEach(p => { result[p] = Math.round(co.obtained / n); });
   }
-
   return result;
 }
 
@@ -276,13 +292,9 @@ function ensureShipments(co) {
   const obtByProd = getObtainedByProd(co);
   Object.keys(obtByProd).forEach(p => {
     if (!co.shipments[p]) co.shipments[p] = [];
-    // Normalize existing lots: ensure lotNo is always set
-    co.shipments[p].forEach((l, i) => {
-      if (l.lotNo == null) l.lotNo = (l.lot != null ? l.lot : i + 1);
-    });
     // Ensure at least one lot exists
     if (co.shipments[p].length === 0) {
-      co.shipments[p].push({ lotNo: 1, utilMT: null, etaJKT: '', note: '', realMT: null, pibDate: '', arrived: false });
+      co.shipments[p].push({ lot: 1, utilMT: null, etaJKT: '', note: '', realMT: null, pibDate: '', arrived: false });
     }
   });
   return co.shipments;
@@ -305,3 +317,243 @@ function remainingQuota(co, prod) {
    Renders both the Sales form (#salesFormWrap) and the Ops form
    (#opsFormWrap) dynamically for the selected company.
 ════════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════
+   ROLE HISTORY — show relevant change history per role
+   Called after role selected + company loaded.
+══════════════════════════════════════════════════════════════════ */
+function buildRoleHistory() {
+  const sec  = document.getElementById('sec-role-history');
+  const body = document.getElementById('roleHistoryBody');
+  const badge= document.getElementById('roleHistoryRoleBadge');
+  if (!sec || !body) return;
+
+  const c  = gv('editCo');
+  const co = c ? (getSPI(c) || PENDING.find(p => p.code === c)) : null;
+  const ra = c ? getRA(c) : null;
+  if (!co || !currentRole) { sec.style.display = 'none'; return; }
+
+  const role  = currentRole;
+  const entries = []; // { date, icon, text, color }
+
+  const fmtD = s => s || '—';
+  const roleColors = {
+    CorpSec:    { bg:'#eff6ff', bd:'#bfdbfe', tc:'#1d4ed8', badge:'background:#1d4ed8;color:#fff' },
+    Sales:      { bg:'#f0fdf4', bd:'#bbf7d0', tc:'#15803d', badge:'background:#15803d;color:#fff' },
+    Operations: { bg:'#fff7ed', bd:'#fed7aa', tc:'#c2410c', badge:'background:#c2410c;color:#fff' },
+    SuperAdmin: { bg:'#faf5ff', bd:'#e9d5ff', tc:'#7c3aed', badge:'background:#7c3aed;color:#fff' },
+  };
+  const rc = roleColors[role] || roleColors.SuperAdmin;
+
+  // ── CorpSec: submission, PERTEK, SPI, revision, statusUpdate ──────────
+  if (role === 'CorpSec' || role === 'SuperAdmin') {
+    const cycles = co.cycles || [];
+
+    // Submission cycles
+    cycles.filter(c => /^submit/i.test(c.type) && !/obtained/i.test(c.type)).forEach(c => {
+      if (c.submitDate) entries.push({
+        date: c.submitDate, icon: '📤', section: 'Submission & PERTEK',
+        text: `<strong>${c.type}</strong> — Submit: ${fmtD(c.submitDate)}${c.mt ? ' · ' + c.mt.toLocaleString() + ' MT' : ''}${c.submitType ? ' · ' + c.submitType : ''}`,
+        color: 'var(--blue)'
+      });
+    });
+
+    // Obtained / PERTEK cycles
+    cycles.filter(c => /^obtained/i.test(c.type)).forEach(c => {
+      if (c.submitDate || c.releaseDate) entries.push({
+        date: c.releaseDate || c.submitDate, icon: '📄', section: 'Submission & PERTEK',
+        text: `<strong>${c.type}</strong> — PERTEK/SPI: ${fmtD(c.releaseDate)}${c.mt ? ' · ' + c.mt.toLocaleString() + ' MT' : ''}${c.status ? ' · <em>' + c.status + '</em>' : ''}`,
+        color: 'var(--teal)'
+      });
+    });
+
+    // Revision request confirmed cycles
+    cycles.filter(c => c._isRevReq).forEach(c => {
+      entries.push({
+        date: c.releaseDate, icon: '✅', section: 'Revision & Status',
+        text: `<strong>Rev Konfirmasi</strong> — ${c.type.replace('Revision Request — ','')}${c.mt ? ' · ' + c.mt.toLocaleString() + ' MT' : ''} · ${c.status||''}`,
+        color: 'var(--green)'
+      });
+    });
+
+    // PERTEK No & SPI No (static fields)
+    if (co.pertekNo) entries.push({ date: null, icon: '🔢', section: 'Submission & PERTEK', text: `PERTEK No: <strong>${co.pertekNo}</strong>`, color: 'var(--txt3)' });
+    if (co.spiNo)    entries.push({ date: null, icon: '✅', section: 'Submission & PERTEK', text: `SPI No: <strong>${co.spiNo}</strong>`, color: 'var(--green)' });
+
+    // Status update
+    if (co.statusUpdate) entries.push({
+      date: co.updatedDate || null, icon: '📝', section: 'Revision & Status',
+      text: `Status Update: <em>${co.statusUpdate}</em>${co.updatedBy ? ' · oleh ' + co.updatedBy : ''}`,
+      color: 'var(--txt2)'
+    });
+
+    // Revision status
+    if (co.revStatus && co.revType !== 'none') entries.push({
+      date: co.revSubmitDate || null, icon: '🔄', section: 'Revision & Status',
+      text: `Revision: <strong>${co.revStatus}</strong>${co.revNote ? ' · ' + co.revNote : ''}`,
+      color: 'var(--amber)'
+    });
+  }
+
+  // ── Sales: revision requests (primary), shipments, reapply ──────────
+  if (role === 'Sales' || role === 'SuperAdmin') {
+
+    // ① Revision Requests — always show, with full detail and CorpSec response
+    const revReqs = co.salesRevRequest || {};
+    const reqEntries = Object.entries(revReqs).filter(([,v]) => v && v.requested);
+    if (reqEntries.length) {
+      reqEntries.forEach(([prod, req]) => {
+        const targets  = (req.targetProducts||[]).filter(t => t.product);
+        const tDisp    = targets.length > 1
+          ? targets.map(t => `<strong>${t.product}</strong>${t.mt ? ' ('+Number(t.mt).toLocaleString()+' MT)' : ''}`).join(' + ')
+          : targets.length === 1 && targets[0].product
+            ? `<strong>${targets[0].product}</strong>${targets[0].mt ? ' ('+Number(targets[0].mt).toLocaleString()+' MT)' : ''}`
+            : req.newProduct ? `<strong>${req.newProduct}</strong>` : '<em>Tetap sama</em>';
+
+        const isConf   = req.status === 'confirmed';
+        const isBatal  = req.status === 'rejected';
+        const stIcon   = isConf ? '✅' : isBatal ? '✕' : '⏳';
+        const stLabel  = isConf ? 'Dikonfirmasi CorpSec' : isBatal ? 'Dibatalkan CorpSec' : 'Menunggu CorpSec';
+        const stColor  = isConf ? 'var(--green)' : isBatal ? 'var(--red2)' : 'var(--amber)';
+        const stBg     = isConf ? 'var(--green-bg)' : isBatal ? 'var(--red-bg)' : 'var(--amber-bg)';
+        const stBd     = isConf ? 'var(--green-bd)' : isBatal ? 'var(--red-bd)' : 'var(--amber-bd)';
+
+        // Build the detail text
+        const dot    = `<span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${prodDot(prod)};margin-right:3px;vertical-align:middle;flex-shrink:0"></span>`;
+        let text = `${dot}<strong>${prod}</strong> → ${tDisp}`;
+        if (req.note) text += ` · <em style="color:var(--txt3)">${req.note}</em>`;
+
+        // CorpSec response line
+        let responseHtml = '';
+        if (isConf) {
+          responseHtml = `<div style="margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+            <span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;
+              background:${stBg};color:${stColor};border:1px solid ${stBd}">${stIcon} ${stLabel}</span>
+            ${req.confirmedMT ? `<span style="font-size:10px;font-family:'DM Mono',monospace;font-weight:700;color:${stColor}">${Number(req.confirmedMT).toLocaleString()} MT dikonfirmasi</span>` : ''}
+            ${req.confirmedDate ? `<span style="font-size:9.5px;color:var(--txt3)">oleh ${req.confirmedBy||'CorpSec'} · ${req.confirmedDate}</span>` : ''}
+          </div>`;
+        } else if (isBatal) {
+          responseHtml = `<div style="margin-top:4px">
+            <span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;
+              background:${stBg};color:${stColor};border:1px solid ${stBd}">${stIcon} ${stLabel}</span>
+          </div>`;
+        } else {
+          responseHtml = `<div style="margin-top:4px">
+            <span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;
+              background:${stBg};color:${stColor};border:1px solid ${stBd}">${stIcon} ${stLabel}</span>
+          </div>`;
+        }
+
+        entries.push({
+          date: req.confirmedDate || null,
+          icon: '📋',
+          text: text + responseHtml,
+          color: 'var(--txt)',
+          section: 'Revision Request ke CorpSec',
+        });
+      });
+    } else {
+      // No revision request yet — show placeholder
+      entries.push({
+        date: null, icon: '📋',
+        text: '<em style="color:var(--txt3)">Belum ada Revision Request yang diajukan ke CorpSec.</em>',
+        color: 'var(--txt3)',
+        section: 'Revision Request ke CorpSec',
+      });
+    }
+
+    // ② Shipment utilization & ETA
+    const ships = co.shipments || {};
+    const shipEntries = [];
+    Object.entries(ships).forEach(([prod, lots]) => {
+      lots.forEach(lot => {
+        if (lot.utilMT || lot.etaJKT || lot.note) {
+          const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${prodDot(prod)};margin-right:3px;vertical-align:middle"></span>`;
+          shipEntries.push({
+            date: lot.etaJKT || null, icon: '📦',
+            text: `${dot}<strong>${prod}</strong> Lot ${lot.lotNo||1} — ${lot.utilMT ? '<strong>'+lot.utilMT.toLocaleString()+' MT</strong>' : '<em style="color:var(--txt3)">Util belum diisi</em>'} · ETA: ${lot.etaJKT || '—'}${lot.note ? ' · <em>'+lot.note+'</em>' : ''}`,
+            color: lot.utilMT ? 'var(--blue)' : 'var(--txt3)',
+            section: 'Utilisasi & ETA Shipment',
+          });
+        }
+      });
+    });
+    if (shipEntries.length) {
+      shipEntries.forEach(e => entries.push(e));
+    }
+
+    // ③ Reapply targets
+    const reapply = co.reapplyByProd || {};
+    const reapplyEntries = Object.entries(reapply).filter(([,v]) => v > 0);
+    if (reapplyEntries.length) entries.push({
+      date: null, icon: '♻️',
+      text: `Re-Apply Target: ${reapplyEntries.map(([p,v]) =>
+        `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--violet-bg);color:var(--violet);border:1px solid var(--violet-bd)">${p}: ${Number(v).toLocaleString()} MT</span>`
+      ).join(' ')}`,
+      color: 'var(--violet)',
+      section: 'Target Re-Apply',
+    });
+  }
+
+  // ── Operations: realization, PIB date, cargo arrived ─────────────────
+  if (role === 'Operations' || role === 'SuperAdmin') {
+    const ships = co.shipments || {};
+    Object.entries(ships).forEach(([prod, lots]) => {
+      lots.forEach(lot => {
+        if (lot.realMT || lot.pibDate || lot.cargoArrived) {
+          const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${prodDot(prod)};margin-right:4px;vertical-align:middle"></span>`;
+          const arrived = lot.cargoArrived
+            ? `<span style="font-size:9.5px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">✅ Arrived</span>` : '';
+          entries.push({
+            date: lot.pibDate || null, icon: '🚢',
+            text: `${dot}<strong>${prod}</strong> Lot ${lot.lotNo} — Real: ${lot.realMT ? lot.realMT.toLocaleString() + ' MT' : '—'} · PIB: ${lot.pibDate || '—'} ${arrived}`,
+            color: 'var(--green)'
+          });
+        }
+      });
+    });
+
+    // RA realization
+    if (ra && (ra.berat || ra.realPct)) entries.push({
+      date: ra.arrivalDate || null, icon: '📊', section: 'Realisasi',
+      text: `Realisasi: <strong>${(ra.berat||0).toLocaleString()} MT</strong> · ${(ra.realPct*100||0).toFixed(1)}% · ${ra.cargoArrived ? '✅ Cargo Arrived' : '🚢 In Transit'} · ETA: ${ra.etaJKT || '—'}`,
+      color: ra.cargoArrived ? 'var(--green)' : 'var(--blue)'
+    });
+  }
+
+  // ── Last updated ───────────────────────────────────────────────────────
+  if (co.updatedBy && co.updatedDate) entries.push({
+    date: co.updatedDate, icon: '💾', section: 'Info',
+    text: `Last saved by <strong>${co.updatedBy}</strong> · ${co.updatedDate}`,
+    color: 'var(--txt3)'
+  });
+
+  if (!entries.length) {
+    sec.style.display = 'none';
+    return;
+  }
+
+  // Render — group by section if entries have .section
+  badge.textContent = role;
+  badge.style.cssText = rc.badge;
+  sec.style.display = 'block';
+
+  // Group entries by section for cleaner display
+  let html = '';
+  let lastSection = null;
+  entries.forEach(e => {
+    if (e.section && e.section !== lastSection) {
+      lastSection = e.section;
+      html += `<div style="font-size:8.5px;font-weight:700;text-transform:uppercase;
+        letter-spacing:.8px;color:var(--txt3);margin:${html?'8px':'0'}px 0 3px;
+        padding-bottom:3px;border-bottom:1px solid ${rc.bd}">${e.section}</div>`;
+    }
+    html += `<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;
+      border-radius:6px;background:${rc.bg};border:1px solid ${rc.bd};margin-bottom:3px">
+      <span style="flex-shrink:0;font-size:12px;line-height:1.5">${e.icon}</span>
+      <div style="flex:1;min-width:0;font-size:10.5px;color:${e.color};line-height:1.5">${e.text}</div>
+      ${e.date ? `<span style="flex-shrink:0;font-size:9px;color:var(--txt3);
+        font-family:'DM Mono',monospace;white-space:nowrap;margin-top:2px">${e.date}</span>` : ''}
+    </div>`;
+  });
+  body.innerHTML = html;
+}

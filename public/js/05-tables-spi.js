@@ -40,13 +40,31 @@ function buildRevList() {
       div.style.cssText = `padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .13s,border-left .13s;border-left:3px solid transparent`;
       div.onmouseover = () => { div.style.background='var(--blue-bg)'; div.style.borderLeft=`3px solid ${sec.color}`; };
       div.onmouseout  = () => { div.style.background=''; div.style.borderLeft='3px solid transparent'; };
+      // Sales Revision Request mini-summary for sidebar
+      const salesReq   = co.salesRevRequest || {};
+      const reqEntries = Object.entries(salesReq).filter(([,v]) => v && v.requested);
+      let salesReqMini = '';
+      if (reqEntries.length > 0) {
+        const confCount = reqEntries.filter(([,v]) => v.status === 'confirmed').length;
+        const waitCount = reqEntries.filter(([,v]) => !v.status || v.status === 'pending').length;
+        const ico = confCount === reqEntries.length ? '✅' : waitCount > 0 ? '⏳' : '✕';
+        const col = confCount === reqEntries.length ? 'var(--green)' : waitCount > 0 ? 'var(--amber)' : 'var(--red2)';
+        salesReqMini = `<div style="margin-top:4px;font-size:9.5px;color:${col};font-weight:600">
+          ${ico} Rev Request: ${reqEntries.map(([p,v]) => {
+            const newP = v.newProduct ? ` → ${v.newProduct}` : '';
+            const mt   = v.confirmedMT != null ? v.confirmedMT.toLocaleString() : v.requestedMT != null ? v.requestedMT.toLocaleString() : '?';
+            return `${p}${newP} (${mt} MT)`;
+          }).join(' · ')}
+        </div>`;
+      }
       div.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <span style="font-size:13px;font-weight:700;color:var(--blue)">${co.code} <span style="font-size:10px;color:var(--txt3);font-weight:400">↗ click for detail</span></span>
           <span class="badge ${sec.badge}">${sec.label.replace(/\s+·.*/,'')}</span>
         </div>
         <div style="font-size:10.5px;margin-top:3px;color:${sec.color}">${co.revStatus}</div>
-        <div style="margin-top:4px">${buildRevNoteHtml(co)}</div>`;
+        <div style="margin-top:4px">${buildRevNoteHtml(co)}</div>
+        ${salesReqMini}`;
       div.onclick = () => openDrawer(co.code);
       el.appendChild(div);
     });
@@ -252,11 +270,42 @@ function buildPendingQuick() {
   }
 }
 
-/* buildRevNoteHtml: renders revision note with split reallocation support */
+/* buildRevNoteHtml: renders revision note with split reallocation support + Sales Rev Request */
 function buildRevNoteHtml(d) {
-  if (!d.revFrom || !d.revFrom.length) return d.revNote || '—';
+  // Show Sales Revision Request badge if any pending/confirmed requests exist
+  const salesReq = d.salesRevRequest || {};
+  const reqEntries = Object.entries(salesReq).filter(([,v]) => v && v.requested);
+  let salesReqHtml = '';
+  if (reqEntries.length > 0) {
+    const confCount = reqEntries.filter(([,v]) => v.status === 'confirmed').length;
+    const batalCount = reqEntries.filter(([,v]) => v.status === 'rejected').length;
+    const waitCount  = reqEntries.length - confCount - batalCount;
+    const parts = [];
+    if (confCount)  parts.push(`<span style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">✅ ${confCount} dikonfirmasi</span>`);
+    if (waitCount)  parts.push(`<span style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)">⏳ ${waitCount} menunggu</span>`);
+    if (batalCount) parts.push(`<span style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--red-bg);color:var(--red2);border:1px solid var(--red-bd)">✕ ${batalCount} dibatalkan</span>`);
+    const prodList = reqEntries.map(([prod, v]) => {
+      const targets = v.targetProducts && v.targetProducts.length
+                    ? v.targetProducts
+                    : (v.newProduct ? [{ product: v.newProduct, mt: v.requestedMT }] : []);
+      const tDisp = targets.length > 1
+        ? targets.map(t => `${t.product||'—'}${t.mt!=null?' ('+Number(t.mt).toLocaleString()+' MT)':''}`).join(' + ')
+        : targets.length === 1 && targets[0].product
+          ? ` → ${targets[0].product}${targets[0].mt!=null?' ('+Number(targets[0].mt).toLocaleString()+' MT)':''}`
+          : '';
+      const confMT = v.confirmedMT != null ? v.confirmedMT.toLocaleString() : null;
+      return `<span style="font-size:9.5px;color:var(--txt3)">${prod}${tDisp}${confMT?' [conf: '+confMT+' MT]':''}</span>`;
+    }).join(' · ');
+    salesReqHtml = `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;align-items:center">
+      <span style="font-size:9.5px;font-weight:700;color:var(--txt3)">📋 Rev Request:</span>
+      ${parts.join('')}
+      <div style="width:100%;font-size:9.5px;color:var(--txt3);margin-top:2px">${prodList}</div>
+    </div>`;
+  }
+
+  if (!d.revFrom || !d.revFrom.length) return (d.revNote || '—') + salesReqHtml;
   const isSplit = d.revFrom.length === 1 && d.revTo.length > 1;
-  if (!isSplit) return d.revNote || '—';
+  if (!isSplit) return (d.revNote || '—') + salesReqHtml;
   // Split: show structured breakdown
   const f = d.revFrom[0];
   const toLines = d.revTo.map(t => {
@@ -278,6 +327,7 @@ function buildRevNoteHtml(d) {
       <span style="font-size:10.5px;font-weight:600">${f.label}: ${f.prod} ${f.mt.toLocaleString()} MT</span>
     </div>
     ${toLines}
+    ${salesReqHtml}
   </div>`;
 }
 
@@ -358,7 +408,7 @@ function buildRevDetailTable() {
 
     // Section header row
     const hdr = document.createElement('tr');
-    hdr.innerHTML = `<td colspan="8" style="padding:6px 14px;background:${grp.bg};border-top:2px solid ${grp.bd};border-bottom:1px solid ${grp.bd}">
+    hdr.innerHTML = `<td colspan="9" style="padding:6px 14px;background:${grp.bg};border-top:2px solid ${grp.bd};border-bottom:1px solid ${grp.bd}">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:11px;font-weight:700;color:${grp.tc}">${grp.label}</span>
         <span style="font-size:10.5px;font-family:'DM Mono',monospace;color:${grp.tc}">${grp.cos.length} co.</span>
@@ -373,6 +423,27 @@ function buildRevDetailTable() {
                      : rs==='revpending' ? 'Pending — PERTEK Terbit'
                      : 'Complete';
       const badgeCls = rs==='active'?'b-rev':rs==='reapply'?'b-reapply':rs==='revpending'?'b-revpending':'b-revdone';
+
+      // Sales Revision Request summary for this company
+      const salesReq   = co.salesRevRequest || {};
+      const reqEntries = Object.entries(salesReq).filter(([,v]) => v && v.requested);
+      let salesReqCell = '<span style="color:var(--txt3);font-size:10px">—</span>';
+      if (reqEntries.length > 0) {
+        const lines = reqEntries.map(([prod, v]) => {
+          const newP     = v.newProduct ? ` → <strong style="color:var(--blue)">${v.newProduct}</strong>` : '';
+          const mt       = v.confirmedMT != null ? v.confirmedMT.toLocaleString()
+                         : v.requestedMT != null ? v.requestedMT.toLocaleString() : '—';
+          const stColor  = v.status==='confirmed' ? 'var(--green)' : v.status==='rejected' ? 'var(--red2)' : 'var(--amber)';
+          const stIco    = v.status==='confirmed' ? '✅' : v.status==='rejected' ? '✕' : '⏳';
+          return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+            <span style="font-size:9.5px;font-weight:700;color:${stColor}">${stIco}</span>
+            <span style="font-size:10px;font-weight:600">${prod}${newP}</span>
+            <span style="font-size:9.5px;font-family:'DM Mono',monospace;color:var(--txt3)">${mt} MT</span>
+          </div>`;
+        }).join('');
+        salesReqCell = `<div style="min-width:150px">${lines}</div>`;
+      }
+
       const tr = document.createElement('tr'); tr.className = rowClass;
       tr.innerHTML = `
         <td style="color:var(--txt3);font-size:13px;cursor:pointer;padding:8px 10px" onclick="openDrawer('${co.code}')">↗</td>
@@ -392,23 +463,9 @@ function buildRevDetailTable() {
         </td>
         <td>${buildRevChgHtml(co)}</td>
         <td class="t-r t-mono">${co.revMT ? co.revMT.toLocaleString() : '—'}</td>
-        <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${(() => {
-          // Derive approval stage from hard doc numbers first — avoids stale revStatus text
-          const hasSpiNo    = co.spiNo    && co.spiNo.trim()    !== '';
-          const hasPertekNo = co.pertekNo && co.pertekNo.trim() !== '';
-          if (rs === 'completed' || rs === 'clean') {
-            const obtCy = (co.cycles||[]).find(c => /^obtained/i.test(c.type));
-            const spiDate = (obtCy && obtCy.releaseDate && obtCy.releaseDate !== 'TBA') ? obtCy.releaseDate : '';
-            if (hasSpiNo) return 'SPI TERBIT' + (spiDate ? ' ' + spiDate : '');
-            if (hasPertekNo) {
-              const pertekCy = (co.cycles||[]).find(c => /^submit\s*#?1/i.test(c.type));
-              const pertekDate = (pertekCy && pertekCy.releaseDate && pertekCy.releaseDate !== 'TBA') ? pertekCy.releaseDate : '';
-              return 'PERTEK TERBIT' + (pertekDate ? ' ' + pertekDate : '') + ' — SPI belum terbit';
-            }
-          }
-          return co.revStatus || '—';
-        })()}</span></td>
-        <td style="font-size:11px;color:var(--txt3)">${co.revSubmitDate}</td>`;
+        <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${co.revStatus}</span></td>
+        <td style="font-size:11px;color:var(--txt3)">${co.revSubmitDate}</td>
+        <td style="vertical-align:top">${salesReqCell}</td>`;
       tbody.appendChild(tr);
     });
   });
@@ -451,8 +508,7 @@ function renderSPI() {
     );
     pRows.forEach(d => {
       const cy = (d.cycles||[]).find(c => /submit/i.test(c.type) && !/obtained/i.test(c.type));
-      const submitDate   = cy ? (cy.submitDate || '—') : (d.submitDate || '—');
-      const statusText   = d.statusUpdate || cy?.status || d.status || '—';
+      const latestStatus = cy ? (cy.status || d.status) : d.status;
       const tr = document.createElement('tr'); tr.className = 'tr-pending';
       tr.innerHTML = `
         <td><div class="t-code" onclick="openDrawerPending('${d.code}')">${d.code}</div></td>
@@ -462,8 +518,8 @@ function renderSPI() {
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td><span class="badge b-pending">📬 New Submission</span></td>
-        <td style="font-size:11px;color:var(--red2);line-height:1.4">${statusText}</td>
-        <td style="font-size:10.5px;color:var(--txt3);max-width:180px;line-height:1.4">SUBMIT MOI ${submitDate}</td>
+        <td style="font-size:11px;color:var(--red2);line-height:1.4">${latestStatus||'—'}</td>
+        <td style="font-size:10.5px;color:var(--txt3)">${d.remarks||'—'}</td>
         <td style="color:var(--txt3);font-size:11px">—</td>
         <td style="color:var(--txt3);font-size:11px">—</td>`;
       tbody.appendChild(tr);
@@ -502,8 +558,18 @@ function renderSPI() {
     const utilPct    = d.obtained > 0 ? Math.min(100,(spiUtil/d.obtained*100)).toFixed(0)+'%' : '—';
     const utilColor  = spiUtil > 0 ? 'var(--blue)' : 'var(--txt3)';
     const statusNote = d.statusUpdate || d.spiRef || '—';
+      // Sales Rev Request indicator in company cell
+      const salesReq2   = d.salesRevRequest || {};
+      const reqE2 = Object.entries(salesReq2).filter(([,v]) => v && v.requested);
+      const salesRevBadge = reqE2.length > 0 ? (() => {
+        const conf  = reqE2.filter(([,v]) => v.status === 'confirmed').length;
+        const wait  = reqE2.filter(([,v]) => !v.status || v.status === 'pending').length;
+        const col   = conf===reqE2.length ? 'var(--green)' : wait>0 ? 'var(--amber)' : 'var(--red2)';
+        const ico   = conf===reqE2.length ? '✅' : wait>0 ? '⏳' : '✕';
+        return `<div style="margin-top:2px;font-size:9px;font-weight:700;color:${col}">${ico} Rev Req (${reqE2.length})</div>`;
+      })() : '';
     tr.innerHTML = `
-      <td><div class="t-code" onclick="openDrawer('${d.code}')">${d.code}</div></td>
+      <td><div class="t-code" onclick="openDrawer('${d.code}')">${d.code}${salesRevBadge}</div></td>
       <td style="font-size:11.5px;font-weight:600">${d.group}</td>
       <td>${chips(d.products)}</td>
       <td class="t-r t-mono">${d.submit1.toLocaleString()}</td>

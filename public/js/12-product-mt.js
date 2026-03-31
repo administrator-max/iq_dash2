@@ -124,18 +124,10 @@ function buildProductMTTables(co) {
       }, 0);
 
       subWrap.innerHTML = `
-        <div class="pmt-note">
-          <strong>One row per product.</strong>
-          Use the <strong style="color:var(--blue)">dropdown</strong> to select or change a product —
-          each option shows the product name with its HS customs code.
-          The HS code updates automatically when you pick a different product.
-          Changing a product name will create a <strong>SPI Issued → Revision</strong> record on Save,
-          propagating to all dashboard charts, tables, and master data.
-        </div>
         <table class="pmt-table">
           <thead>
             <tr>
-              <th>Product &amp; HS Code</th>
+              <th>Product &amp; HS Code <span class="tti" data-tip="Gunakan dropdown untuk memilih atau mengganti produk. Kode HS update otomatis saat produk diganti. Mengganti nama produk akan membuat record SPI Issued → Revision saat Save, dan akan merambat ke semua chart, tabel, dan data master.">i</span></th>
               <th class="t-r" style="width:145px">Submit MT</th>
             </tr>
           </thead>
@@ -186,15 +178,10 @@ function buildProductMTTables(co) {
       }, 0);
 
       obtWrap.innerHTML = `
-        <div class="pmt-note">
-          <strong>One PERTEK number covers all products in this submission.</strong>
-          Assign Obtained MT per product individually — even if the PERTEK document is one document.
-          The totals feed KPI 2 (SPI/PERTEK Obtained).
-        </div>
         <table class="pmt-table">
           <thead>
             <tr>
-              <th>Product &amp; HS Code</th>
+              <th>Product &amp; HS Code <span class="tti" data-tip="Satu nomor PERTEK mencakup semua produk. Isi Obtained MT per produk secara individual — meski dokumen PERTEK hanya satu. Total akan masuk ke KPI 2 (SPI/PERTEK Obtained).">i</span></th>
               <th class="t-r" style="width:120px">Submitted</th>
               <th class="t-r" style="width:140px">Obtained MT ↓</th>
             </tr>
@@ -370,19 +357,6 @@ function fmtThousandInline(el) {
   if (stEl) stEl.textContent = st.toLocaleString() + ' MT';
 }
 
-/* Float-aware inline formatter for shipment MT inputs.
-   Allows digits, one decimal point, up to 2 decimal places.
-   Formats the integer part with thousands separators while typing. */
-function fmtFloatInline(el) {
-  const raw = el.value;
-  // Allow digits, one dot, up to 2 decimal places — strip everything else
-  const cleaned = raw.replace(/[^0-9.]/g, '').replace(/^(\d*\.?\d{0,2}).*$/, '$1');
-  const [intPart, decPart] = cleaned.split('.');
-  const fmtInt = intPart ? Number(intPart).toLocaleString() : '';
-  // Preserve trailing dot and decimals while typing
-  el.value = decPart !== undefined ? fmtInt + '.' + decPart : fmtInt;
-}
-
 function updateObtainedTotal() {
   let tot = 0;
   document.querySelectorAll('.pmt-obtained-inp').forEach(i => {
@@ -462,8 +436,7 @@ function loadEdit() {
   // ── Build Sales & Ops shipment forms (Sections D & E) ──
   if (co) {
     ensureShipments(co);
-    buildSalesOpsForm(co);
-    buildReapplyTable(co);
+    buildSalesOpsForm(co);  // also calls buildReapplyTable + buildRevisionRequestTable
     buildRevMgmtSection(co);
   } else {
     g('salesFormWrap').innerHTML = '<div class="pmt-note" style="color:var(--txt3)">No product data available.</div>';
@@ -477,6 +450,7 @@ function loadEdit() {
   applyRolePermissions();
   applyShipmentRoleLock();
   livePreview();
+  buildRoleHistory();
 }
 
 /* ════════════════════════════════════════════════════════════════════════════

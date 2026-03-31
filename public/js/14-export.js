@@ -299,7 +299,7 @@ function exportExecutivePDF() {
     .pfl{font-size:6pt;color:#94a3b8}
     .pfr{font-size:6pt;color:#94a3b8}
 
-    .ptb{position:fixed;top:0;left:0;right:0;z-index:9999;background:#182644;color:#fff;
+    .ptb{position:fixed;top:0;left:0;right:0;z-index:1200;background:#182644;color:#fff;
          padding:10px 20px;display:flex;align-items:center;justify-content:space-between;
          font-family:Helvetica,Arial,sans-serif;font-size:13px;box-shadow:0 2px 12px rgba(0,0,0,.4)}
     .ptb-l{display:flex;flex-direction:column;gap:2px}
@@ -1348,7 +1348,7 @@ function doExportXLSX() {
 
   /* ── Show confirmation toast ── */
   const toast = document.createElement('div');
-  toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#14673e;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.2)';
+  toast.style.cssText = 'position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#14673e;color:#fff;padding:10px 22px;border-radius:8px;font-size:13px;font-weight:600;z-index:1100;box-shadow:0 4px 20px rgba(0,0,0,.2)';
   toast.textContent = `✅ Export ready: ${filename}  ·  ${fSPI.length} SPI + ${fPending.length} Pending companies  ·  ${cycleRows.length-1} cycle rows`;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 5000);

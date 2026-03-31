@@ -80,6 +80,110 @@ function buildRevMgmtSection(co) {
     <div class="rr-stat-box"><div class="rr-stat-val" style="color:var(--blue)">${cycleCount}</div><div class="rr-stat-lbl">Total Cycles</div></div>
   </div>`;
 
+  // ── 2b. Sales Revision Request panel (CorpSec read + confirm) ───────────
+  const salesRevReq = co.salesRevRequest || {};
+  const reqProds = Object.entries(salesRevReq).filter(([,v]) => v && v.requested);
+
+  if (reqProds.length > 0) {
+    const canConfirm = currentRole && (ROLE_PERMISSIONS[currentRole]||[]).includes('corpsecRevConfirm');
+
+    let reqRows = reqProds.map(([prod, req]) => {
+      const dot      = prodDot(prod);
+      const pid      = prod.replace(/[^a-zA-Z0-9]/g,'_');
+      const reqMT    = req.requestedMT != null ? req.requestedMT.toLocaleString() + ' MT' : '—';
+      // Support split: show all target products
+      const targets  = req.targetProducts && req.targetProducts.length
+                     ? req.targetProducts
+                     : (req.newProduct ? [{ product: req.newProduct, mt: req.requestedMT }] : []);
+      const newP     = targets.length > 0 && targets.some(t => t.product)
+        ? targets.map(t => t.product ? ` → <strong style="color:var(--blue)">${t.product}</strong>${t.mt ? ` <span style="font-size:9.5px;color:var(--txt3)">(${Number(t.mt).toLocaleString()} MT)</span>` : ''}` : '').filter(Boolean).join(', ')
+        : '';
+      const note     = req.note || '';
+      const isConf   = req.status === 'confirmed';
+      const isBatal  = req.status === 'rejected';
+      const confMT   = req.confirmedMT != null ? Number(req.confirmedMT).toLocaleString() : (req.requestedMT != null ? Number(req.requestedMT).toLocaleString() : '');
+
+      // Status badge
+      const statusBadge = isConf
+        ? `<span style="font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">✅ Dikonfirmasi</span>`
+        : isBatal
+        ? `<span style="font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:3px;background:var(--red-bg);color:var(--red2);border:1px solid var(--red-bd)">✕ Dibatalkan</span>`
+        : `<span style="font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:3px;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)">⏳ Menunggu</span>`;
+
+      const actionArea = canConfirm ? `
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <input type="text" inputmode="numeric"
+            class="pmt-mt-inp corpsec-revconfirm-inp"
+            data-prod="${prod}" id="csconf-mt-${pid}"
+            value="${confMT}"
+            placeholder="Qty (MT)"
+            oninput="fmtThousandInline(this)"
+            style="width:90px;font-size:11.5px;padding:4px 7px;border:1px solid var(--border2);border-radius:5px;text-align:right">
+          <button onclick="csConfirmRev('${prod}','${pid}','${code}')"
+            style="font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:5px;border:none;cursor:pointer;
+              background:var(--green);color:#fff;transition:background .15s"
+            onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='var(--green)'">
+            ✓ Konfirmasi
+          </button>
+          <button onclick="csBatalRev('${prod}','${pid}','${code}')"
+            style="font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:5px;border:1px solid var(--red-bd);cursor:pointer;
+              background:var(--red-bg);color:var(--red2);transition:background .15s"
+            onmouseover="this.style.background='#fecaca'" onmouseout="this.style.background='var(--red-bg)'">
+            ✕ Batal
+          </button>
+        </div>` : `<div>${statusBadge}</div>`;
+
+      return `<tr style="border-bottom:1px solid var(--border);padding:6px 0">
+        <td style="padding:8px 10px">
+          <div class="pmt-prod-chip">
+            <div class="pmt-prod-dot" style="background:${dot}"></div>
+            <span style="font-weight:700">${prod}</span>
+          </div>
+          ${newP ? `<div style="font-size:10px;color:var(--txt3);margin-top:2px">${newP}</div>` : ''}
+          ${note ? `<div style="font-size:9.5px;color:var(--txt3);margin-top:2px;font-style:italic">💬 ${note}</div>` : ''}
+        </td>
+        <td style="padding:8px 10px;text-align:right;vertical-align:top">
+          ${targets.length > 1
+            ? targets.map(t => `<div style="font-size:10px;color:var(--amber);font-family:'DM Mono',monospace;white-space:nowrap">
+                ${t.product||'(sama)'}: <strong>${t.mt!=null?Number(t.mt).toLocaleString():'—'} MT</strong>
+              </div>`).join('')
+            : `<span style="font-weight:700;color:var(--amber);font-family:'DM Mono',monospace">${reqMT}</span>`
+          }
+        </td>
+        <td style="padding:8px 10px">${statusBadge}</td>
+        <td style="padding:8px 10px">${actionArea}</td>
+      </tr>`;
+    }).join('');
+
+    html += `<div id="corpsecRevConfirmWrap" style="margin-bottom:12px;padding:12px;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+        📋 Sales Revision Request
+        <span style="font-size:9.5px;font-weight:600;padding:1px 6px;background:var(--amber);color:#fff;border-radius:3px">${reqProds.length} produk</span>
+        ${!canConfirm
+          ? '<span style="font-size:9.5px;color:var(--amber);opacity:.7">🔒 CorpSec / Super Admin only</span>'
+          : '<span style="font-size:9.5px;color:var(--green)">✏️ Konfirmasi per produk</span>'}
+      </div>
+      <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden;border:1px solid var(--border)">
+        <thead>
+          <tr style="background:var(--bg2)">
+            <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3)">Produk</th>
+            <th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);width:110px">Qty Diminta</th>
+            <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);width:110px">Status</th>
+            <th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3)">Aksi CorpSec</th>
+          </tr>
+        </thead>
+        <tbody>${reqRows}</tbody>
+      </table>
+      <div style="margin-top:8px;font-size:10px;color:var(--txt3)">
+        <span class="tti" data-tip="Input qty konfirmasi (pre-filled dari request Sales), lalu klik Konfirmasi atau Batal per produk. Hasil tersimpan saat klik Save &amp; Refresh.">i</span>
+      </div>
+    </div>`;
+  } else {
+    html += `<div style="margin-bottom:10px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;font-size:10.5px;color:var(--txt3)">
+      📋 <em>Belum ada Revision Request dari Sales.</em> CorpSec tidak dapat input revision sampai Sales mengajukan request.
+    </div>`;
+  }
+
   // ── 3. Cycle timeline ──────────────────────────────────────────────────
   html += `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--txt3);margin-bottom:6px">Cycle History</div>`;
   html += `<div class="rr-cycle-timeline">`;
@@ -226,6 +330,85 @@ function buildRevMgmtSection(co) {
   el.innerHTML = html;
 }
 
+/* ── CorpSec: confirm / reject individual revision request items ── */
+function csConfirmRev(prod, pid, code) {
+  const co = getSPI(code); if (!co) return;
+  const req = co.salesRevRequest && co.salesRevRequest[prod];
+  if (!req) return;
+
+  const inp = document.getElementById('csconf-mt-' + pid);
+  const raw = inp ? inp.value.replace(/,/g,'') : '';
+  const mt  = raw ? Number(raw) : (req.requestedMT || null);
+
+  req.status      = 'confirmed';
+  req.confirmedMT = mt;
+  req.confirmedDate = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+  req.confirmedBy   = currentRole || 'CorpSec';
+
+  // ── Inject into cycle history as a "Revision Request (Confirmed)" entry ──
+  if (!co.cycles) co.cycles = [];
+  // Build products object for the cycle: use targetProducts if split, else single
+  const targets  = req.targetProducts && req.targetProducts.length
+                 ? req.targetProducts : [{ product: req.newProduct || prod, mt }];
+  const prodObj  = {};
+  targets.forEach(t => { if (t.product) prodObj[t.product] = t.mt || mt || 0; });
+  if (!Object.keys(prodObj).length) prodObj[prod] = mt || 0;
+
+  // Remove any previous pending revision request cycle for this prod to avoid dupes
+  const existingIdx = co.cycles.findIndex(c =>
+    c.type === `Revision Request — ${prod}` && c.status === 'pending'
+  );
+  if (existingIdx >= 0) co.cycles.splice(existingIdx, 1);
+
+  const now = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'numeric'});
+  co.cycles.push({
+    type:        `Revision Request — ${prod}`,
+    mt:          mt || 0,
+    products:    prodObj,
+    submitType:  'Sales Request',
+    submitDate:  req.confirmedDate,
+    releaseType: 'CorpSec Confirmation',
+    releaseDate: now,
+    status:      `✅ Dikonfirmasi oleh ${currentRole||'CorpSec'} · ${req.confirmedDate}${req.note ? ' · ' + req.note : ''}`,
+    _isRevReq:   true,
+  });
+
+  // Set revType to active so it appears in revision tracking
+  if (co.revType === 'none' || co.revType === 'clean') {
+    co.revType   = 'active';
+    co.revStatus = `Revision Request dikonfirmasi — ${prod}${req.newProduct ? ' → ' + req.newProduct : ''} · ${now}`;
+    co.revNote   = req.note || '';
+    // Populate revFrom / revTo for the detail table
+    if (!co.revFrom) co.revFrom = [];
+    if (!co.revTo)   co.revTo   = [];
+    co.revFrom.push({ prod, mt: co.obtained || 0, label: 'Before' });
+    targets.forEach(t => {
+      co.revTo.push({ prod: t.product || prod, mt: t.mt || mt || 0, label: 'After' });
+    });
+  }
+
+  buildRevMgmtSection(co);
+  applyRolePermissions();
+  // Refresh sidebar/tables to reflect new status
+  buildRevList && buildRevList();
+  updateSPICounts && updateSPICounts();
+}
+
+function csBatalRev(prod, pid, code) {
+  const co = getSPI(code); if (!co) return;
+  if (!co.salesRevRequest || !co.salesRevRequest[prod]) return;
+  co.salesRevRequest[prod].status      = 'rejected';
+  co.salesRevRequest[prod].confirmedMT = null;
+
+  // Remove any injected pending revision request cycle for this prod
+  if (co.cycles) {
+    co.cycles = co.cycles.filter(c => !(c._isRevReq && c.type === `Revision Request — ${prod}`));
+  }
+
+  buildRevMgmtSection(co);
+  applyRolePermissions();
+}
+
 /* ── Action handlers ─────────────────────────────────────────────────────── */
 
 /* Save approval stage + date + note to the live record */
@@ -245,7 +428,6 @@ function rrSaveStatus(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
-  _persistRevFields(code);
   nsShowToast(`✓ ${code} revision status updated`);
 }
 
@@ -267,7 +449,6 @@ function rrMarkApproved(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
-  _persistRevFields(code);
   nsShowToast(`✓ ${code} revision marked as approved/complete`);
 }
 
@@ -296,8 +477,6 @@ function rrCancelRevision(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
-  _persistRevFields(code);
-  _saveCyclesToDB(code, co.cycles || []);
   nsShowToast(`✓ ${code} revision cancelled — original products restored`);
 }
 
@@ -307,7 +486,6 @@ function rrReopenRevision(code) {
   co.revType = 'active';
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
-  _persistRevFields(code);
   nsShowToast(`${code} revision re-opened as active`);
 }
 
@@ -336,76 +514,21 @@ function rrSaveReapply(code) {
   _refreshAfterRREdit();
   const co = getSPI(code);
   if (co) buildRevMgmtSection(co);
-  // Persist RA fields to DB via PATCH
-  const ra_final = getRA(code);
-  if (ra_final) {
-    fetch(`/api/company/${code}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ra: {
-        berat:             ra_final.berat,
-        obtained:          ra_final.obtained,
-        cargoArrived:      ra_final.cargoArrived,
-        realPct:           ra_final.realPct,
-        utilPct:           ra_final.utilPct ?? null,
-        reapplyStatus:     ra_final.reapplyStatus ?? null,
-        reapplySubmitDate: ra_final.reapplySubmitDate ?? null,
-        reapplyStage:      ra_final.reapplyStage ?? 1,
-        target:            ra_final.target ?? null,
-        pertek:            ra_final.pertek ?? null,
-        spi:               ra_final.spi ?? null,
-      }}),
-    }).catch(e => console.warn('rrSaveReapply DB persist failed:', e));
-  }
   nsShowToast(`✓ ${code} re-apply data updated`);
 }
 
-/* Shared refresh after any RR edit — also persists rev fields to DB */
+/* Shared refresh after any RR edit */
 function _refreshAfterRREdit() {
   buildRevList();
   buildRevDetailTable();
   renderSPI();
   renderMain();
   updateOverviewKPIs();
-  saveToStorage(); // localStorage fallback
-}
-
-/* Lightweight DB persist for revision-only field changes.
-   Called after rrSaveStatus / rrMarkApproved / rrCancelRevision / rrReopenRevision.
-   Does NOT touch cycles — only company-level rev* fields. */
-async function _persistRevFields(code) {
-  const co = getSPI(code);
-  if (!co) return;
-  const payload = {
-    revType:       co.revType,
-    revNote:       co.revNote       || '',
-    revSubmitDate: co.revSubmitDate || '',
-    revStatus:     co.revStatus     || '',
-    revMt:         co.revMT         ?? 0,
-    spiRef:        co.spiRef        || '',
-    remarks:       co.remarks       || '',
-    revFrom:       co.revFrom       || [],
-    revTo:         co.revTo         || [],
-  };
-  try {
-    const resp = await fetch(`/api/company/${code}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      console.warn(`Rev persist failed for ${code}:`, err.error || resp.statusText);
-      nsShowToast(`⚠️ ${code} saved locally — DB sync failed`);
-    }
-  } catch(e) {
-    console.warn('Rev persist network error:', e);
-    nsShowToast(`⚠️ ${code} saved locally — no DB connection`);
-  }
+  if (typeof autoSave === 'function') autoSave();
 }
 
 /* ── Save all fields — mutate live data — refresh every section ── */
-async function saveEdit() {
+function saveEdit() {
   const c = gv('editCo');
   if (!c) return;
 
@@ -423,6 +546,15 @@ async function saveEdit() {
   if (co_live && (can('salesShipTable') || can('opsShipTable'))) {
     collectShipmentData(co_live);
   }
+
+  // ── Collect Sales Revision Request ────────────────────────────────
+  if (co_live && can('salesRevReq')) {
+    collectRevisionRequestData(co_live);
+  }
+
+  // ── Collect CorpSec Revision Confirmation ─────────────────────────
+  // Status (confirmed/rejected) is set directly by csConfirmRev/csBatalRev buttons
+  // confirmedMT is read from the input at the time of button click (already stored in co.salesRevRequest)
 
   // ── Per-product MT tables (CorpSec / SuperAdmin) ──────────────────
   const canSubmit   = can('submitProdTable');
@@ -519,8 +651,6 @@ async function saveEdit() {
         const subCy = (p.cycles||[]).find(cy => /^submit/i.test(cy.type));
         if (subCy && newSubmitDate) subCy.submitDate = newSubmitDate;
         if (subCy && newSubmitMT != null) subCy.mt = newSubmitMT;
-        // Keep cycle status in sync with statusUpdate so CURRENT STATUS ONLY column stays fresh
-        if (subCy && newStatusUpdate) subCy.status = newStatusUpdate;
         // Write per-product submit MT into pending cycle.products
         if (subCy && canSubmit && Object.keys(newSubmitProds).length > 0) {
           subCy.products = { ...subCy.products, ...newSubmitProds };
@@ -694,93 +824,12 @@ async function saveEdit() {
     applyProductRenames(co);
   }
 
-  /* ── 4. Persist to PostgreSQL via API ──────────────────────────── */
-  const co_final = getSPI(c) || PENDING.find(p => p.code === c);
-  const ra_final = RA.find(r => r.code === c);
-
-  const payload = {
-    // ── Company core fields — keys must match server's camelCase mapping ──
-    revType:       co_final?.revType       ?? undefined,
-    revNote:       co_final?.revNote       ?? undefined,
-    revSubmitDate: co_final?.revSubmitDate ?? undefined,
-    revStatus:     co_final?.revStatus     ?? undefined,
-    revMt:         co_final?.revMT         ?? undefined,  // server maps rev_mt → revMt
-    remarks:       co_final?.remarks       ?? undefined,
-    spiRef:        co_final?.spiRef        ?? undefined,
-    statusUpdate:  co_final?.statusUpdate  ?? undefined,
-    pertekNo:      co_final?.pertekNo      ?? undefined,
-    spiNo:         co_final?.spiNo         ?? undefined,
-    submit1:       co_final?.submit1       ?? undefined,
-    obtained:      co_final?.obtained      ?? undefined,
-    utilizationMt: co_final?.utilizationMT ?? undefined,  // server maps utilization_mt → utilizationMt
-    availableQuota:co_final?.availableQuota?? undefined,
-    updatedBy:     co_final?.updatedBy     ?? undefined,
-    updatedDate:   co_final?.updatedDate   ?? undefined,
-  };
-
-  // ── Shipments (Sales / Ops) ──
-  if (co_final?.shipments && Object.keys(co_final.shipments).length > 0) {
-    payload.shipments = co_final.shipments;
-  }
-
-  // ── Reapply targets ──
-  if (co_final?.reapplyTargets && co_final.reapplyTargets.length > 0) {
-    payload.reapplyTargets = co_final.reapplyTargets;
-  }
-
-  // ── Revision product change pairs ──
-  if (co_final?.revFrom !== undefined || co_final?.revTo !== undefined) {
-    payload.revFrom = co_final.revFrom || [];
-    payload.revTo   = co_final.revTo   || [];
-  }
-
-  // ── RA record ──
-  if (ra_final) {
-    payload.ra = {
-      berat:               ra_final.berat,
-      obtained:            ra_final.obtained,
-      cargoArrived:        ra_final.cargoArrived,
-      realPct:             ra_final.realPct,
-      utilPct:             ra_final.utilPct ?? null,
-      arrivalDate:         ra_final.arrivalDate ?? null,
-      etaJKT:              ra_final.etaJKT ?? null,
-      reapplyEst:          ra_final.reapplyEst ?? null,
-      reapplyStage:        ra_final.reapplyStage ?? 1,
-      reapplySubmitDate:   ra_final.reapplySubmitDate ?? null,
-      reapplyStatus:       ra_final.reapplyStatus ?? null,
-      target:              ra_final.target ?? null,
-      pertek:              ra_final.pertek ?? null,
-      spi:                 ra_final.spi ?? null,
-      catatan:             ra_final.catatan ?? null,
-    };
-  }
-
-  // ── Send to server ──
-  try {
-    const resp = await fetch(`/api/company/${c}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      console.error('Save failed:', err);
-      alert(`⚠️ Save failed: ${err.error || resp.statusText}\nChanges shown on screen but NOT saved to database.`);
-    }
-    // Also update cycles in DB if submit/obtained MT changed
-    if (newSubmitMT != null || newObtainedMT != null || hasPERTEK || hasSPI) {
-      await _saveCyclesToDB(c, co_final?.cycles || []);
-    }
-  } catch (netErr) {
-    console.error('Network error saving to API:', netErr);
-    alert('⚠️ Network error — changes shown on screen but NOT saved to database.');
-  }
-
-  /* ── 5. Refresh ALL dashboard sections ── */
+  /* ── 4. Refresh ALL dashboard sections ── */
   showSaveToast(saveToStorage());
   updateStorageStatus();
   cancelEdit();
   closeImport();
+  buildRoleHistory && buildRoleHistory();
 
   // Charts
   buildPipeline(); buildProductDonut(); buildTopCo();
@@ -794,19 +843,6 @@ async function saveEdit() {
   buildAvailableQuota();
   updateOverviewStats();
   updateOverviewKPIs();
-}
-
-/* ── Helper: persist cycle array to DB via dedicated endpoint ── */
-async function _saveCyclesToDB(code, cycles) {
-  try {
-    await fetch(`/api/company/${code}/cycles`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cycles }),
-    });
-  } catch(e) {
-    console.warn('Cycle save failed (non-critical):', e);
-  }
 }
 /* ══════════════════════════════════════════════════════════════════════
    EXPORT EXECUTIVE PDF — Management Summary (A4 Portrait)
