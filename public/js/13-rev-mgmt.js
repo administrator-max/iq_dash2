@@ -824,9 +824,22 @@ function saveEdit() {
     applyProductRenames(co);
   }
 
-  /* ── 4. Refresh ALL dashboard sections ── */
-  showSaveToast(saveToStorage());
+  /* ── 4. Persist to server + localStorage, then refresh ── */
+  saveToStorage(); // localStorage backup
   updateStorageStatus();
+
+  // PATCH to server so data survives page refresh
+  if (co) {
+    patchToServer(co).then(() => {
+      showSaveToast(new Date().toISOString());
+    }).catch(err => {
+      console.warn('Server PATCH failed, data saved locally only:', err);
+      showSaveToast(new Date().toISOString());
+    });
+  } else {
+    showSaveToast(new Date().toISOString());
+  }
+
   cancelEdit();
   closeImport();
   buildRoleHistory && buildRoleHistory();

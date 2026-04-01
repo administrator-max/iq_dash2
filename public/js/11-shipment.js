@@ -184,26 +184,26 @@ function buildSalesRow(prod, idx, lot, obtMT) {
     <td class="t-c"><span class="lot-badge">${lotNo}</span></td>
     <td>
       <div class="util-inc-wrap">
-        <div class="util-cur-row">
-          <span class="util-cur-lbl">Saat ini</span>
-          <span class="util-cur-val" id="util-cur-${pid}-${idx}">${curMT > 0 ? curMT.toLocaleString() + ' MT' : '<span style="color:var(--txt3);font-size:10px;font-weight:400">Belum ada</span>'}</span>
+        <!-- Direct edit mode: single input for current utilMT -->
+        <div class="util-edit-wrap" id="util-edit-wrap-${pid}-${idx}">
+          <div style="display:flex;align-items:center;gap:5px">
+            <input type="text" inputmode="numeric"
+              class="util-add-inp sales-util-direct-inp"
+              id="util-direct-${pid}-${idx}"
+              data-prod="${prod}" data-idx="${idx}"
+              value="${curMT > 0 ? curMT.toLocaleString() : ''}"
+              placeholder="0"
+              oninput="onSalesDirectChange(this)"
+              title="Edit langsung nilai utilisasi MT">
+            <span style="font-size:10px;color:var(--txt3);flex-shrink:0">MT</span>
+            <button class="util-apply-btn sales-util-save-btn"
+              id="util-save-${pid}-${idx}"
+              data-prod="${prod}" data-idx="${idx}"
+              onclick="saveSalesUtil('${prod}',${idx})"
+              style="background:var(--blue);color:#fff;border-color:var(--blue)">Simpan</button>
+          </div>
+          <div class="val-err" id="util-err-${pid}-${idx}"></div>
         </div>
-        <div class="util-add-row">
-          <span class="util-add-lbl" title="Tambah utilisasi">+</span>
-          <input type="text" inputmode="numeric"
-            class="util-add-inp sales-util-add-inp"
-            id="util-add-${pid}-${idx}"
-            data-prod="${prod}" data-idx="${idx}"
-            value="" placeholder="MT"
-            oninput="onSalesAddChange(this)"
-            title="Tambah utilisasi MT · Tidak boleh melebihi PERTEK Obtained">
-          <button class="util-apply-btn sales-util-apply-btn"
-            id="util-apply-${pid}-${idx}"
-            data-prod="${prod}" data-idx="${idx}"
-            onclick="applySalesUtil('${prod}',${idx})"
-            disabled>Terapkan</button>
-        </div>
-        <div class="val-err" id="util-err-${pid}-${idx}"></div>
         ${histHTML}
       </div>
     </td>
@@ -327,7 +327,8 @@ function toggleUtilHist(pid, idx) {
 }
 
 /* ── Sales: +Add input changed → validate only, don't write yet ── */
-function onSalesAddChange(inp) {
+/* ── Sales: validate direct MT input ── */
+function onSalesDirectChange(inp) {
   fmtThousandInline(inp);
   const prod   = inp.dataset.prod;
   const idx    = parseInt(inp.dataset.idx);
@@ -337,88 +338,93 @@ function onSalesAddChange(inp) {
   ensureShipments(co);
   const pid    = prod.replace(/[^a-zA-Z0-9]/g,'_');
   const rawVal = inp.value.replace(/,/g,'');
-  const addVal = rawVal === '' ? 0 : parseFloat(rawVal);
+  const newMT  = rawVal === '' ? 0 : parseFloat(rawVal);
+  const obtMT  = (getObtainedByProd(co))[prod] || 0;
+  const curMT  = (co.shipments[prod] && co.shipments[prod][idx])
+                 ? (co.shipments[prod][idx].utilMT || 0) : 0;
+  const otherMT = totalUtilForProd(co.shipments, prod) - curMT;
+  const available = obtMT - otherMT - newMT;
 
-  const curMT   = (co.shipments[prod] && co.shipments[prod][idx])
-                  ? (co.shipments[prod][idx].utilMT || 0) : 0;
-  const obtMT   = (getObtainedByProd(co))[prod] || 0;
-  const otherMT = totalUtilForProd(co.shipments, prod) - curMT; // util from other lots
-  const newTotal = curMT + addVal;
-  const available = obtMT - otherMT - newTotal;
+  const errEl  = g(`util-err-${pid}-${idx}`);
+  const saveBtn = g(`util-save-${pid}-${idx}`);
 
-  const errEl   = g(`util-err-${pid}-${idx}`);
-  const applyBtn = g(`util-apply-${pid}-${idx}`);
-
-  if (addVal <= 0 || rawVal === '') {
-    inp.classList.remove('err');
-    if (errEl) errEl.classList.remove('show');
-    if (applyBtn) applyBtn.disabled = true;
+  if (newMT < 0) {
+    inp.classList.add('err');
+    if (errEl) { errEl.textContent = 'Nilai tidak boleh negatif'; errEl.classList.add('show'); }
+    if (saveBtn) saveBtn.disabled = true;
   } else if (available < 0) {
     inp.classList.add('err');
     if (errEl) {
-      errEl.textContent = `Exceeds quota by ${Math.abs(available).toLocaleString()} MT (max +${(obtMT - otherMT - curMT).toLocaleString()} MT)`;
+      errEl.textContent = `Melebihi kuota ${Math.abs(available).toLocaleString()} MT (max ${(obtMT - otherMT).toLocaleString()} MT)`;
       errEl.classList.add('show');
     }
-    if (applyBtn) applyBtn.disabled = true;
+    if (saveBtn) saveBtn.disabled = true;
   } else {
     inp.classList.remove('err');
     if (errEl) errEl.classList.remove('show');
-    if (applyBtn) applyBtn.disabled = false;
+    if (saveBtn) saveBtn.disabled = false;
   }
 }
 
-/* ── Sales: Apply incremental utilization ── */
-function applySalesUtil(prod, idx) {
+/* ── Keep onSalesAddChange for backward compat (no-op now) ── */
+function onSalesAddChange(inp) { onSalesDirectChange(inp); }
+
+/* ── Sales: Save direct utilization edit ── */
+function saveSalesUtil(prod, idx) {
   const co = getCurrentEditCo();
   if (!co) return;
   ensureShipments(co);
 
-  const pid    = prod.replace(/[^a-zA-Z0-9]/g,'_');
-  const addInp = g(`util-add-${pid}-${idx}`);
-  if (!addInp) return;
+  const pid     = prod.replace(/[^a-zA-Z0-9]/g,'_');
+  const directInp = g(`util-direct-${pid}-${idx}`);
+  if (!directInp) return;
 
-  const rawVal = addInp.value.replace(/,/g,'');
-  const addVal = rawVal === '' ? 0 : parseFloat(rawVal);
-  if (!addVal || addVal <= 0) return;
+  const rawVal = directInp.value.replace(/,/g,'');
+  const newMT  = rawVal === '' ? 0 : parseFloat(rawVal);
+  if (newMT < 0) return;
 
   const lot    = co.shipments[prod] && co.shipments[prod][idx];
   if (!lot) return;
 
-  const curMT  = lot.utilMT || 0;
-  const obtMT  = (getObtainedByProd(co))[prod] || 0;
+  const curMT   = lot.utilMT || 0;
+  const obtMT   = (getObtainedByProd(co))[prod] || 0;
   const otherMT = totalUtilForProd(co.shipments, prod) - curMT;
 
-  // Final guard: cannot exceed obtained
-  if (otherMT + curMT + addVal > obtMT) {
-    alert(`Cannot add ${addVal.toLocaleString()} MT — exceeds PERTEK obtained quota of ${obtMT.toLocaleString()} MT for ${prod}.`);
+  if (otherMT + newMT > obtMT) {
+    alert(`Nilai ${newMT.toLocaleString()} MT melebihi kuota PERTEK ${obtMT.toLocaleString()} MT untuk ${prod}.`);
     return;
   }
 
-  const newMT  = curMT + addVal;
+  const delta  = newMT - curMT;
 
-  // Get note from the row's note input (current vessel/note field)
+  // Get note from vessel/note input
   const noteInp = document.querySelector(`.sales-note-inp[data-prod="${prod}"][data-idx="${idx}"]`);
   const noteVal = noteInp ? noteInp.value.trim() : '';
 
-  // Record history entry
-  if (!lot.utilHistory) lot.utilHistory = [];
-  const now = new Date();
-  const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
-  lot.utilHistory.push({ date: dateStr, prev: curMT, delta: addVal, total: newMT, note: noteVal });
+  // Record history entry (only if value changed)
+  if (delta !== 0) {
+    if (!lot.utilHistory) lot.utilHistory = [];
+    const now = new Date();
+    const dateStr = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+    lot.utilHistory.push({ date: dateStr, prev: curMT, delta, total: newMT, note: noteVal });
+  }
 
-  // Commit new utilMT
+  // Commit
   lot.utilMT = newMT;
 
-  // Reset add input
-  addInp.value = '';
+  // Visual feedback — flash save button green briefly
+  const saveBtn = g(`util-save-${pid}-${idx}`);
+  if (saveBtn) {
+    const orig = saveBtn.textContent;
+    saveBtn.textContent = '✓ Tersimpan';
+    saveBtn.style.background = 'var(--green)';
+    setTimeout(() => {
+      if (saveBtn) { saveBtn.textContent = orig; saveBtn.style.background = 'var(--blue)'; }
+    }, 1400);
+  }
 
-  // Update current display
-  const curDisp = g(`util-cur-${pid}-${idx}`);
-  if (curDisp) curDisp.textContent = `${newMT.toLocaleString()} MT`;
-
-  // Disable apply btn
-  const applyBtn = g(`util-apply-${pid}-${idx}`);
-  if (applyBtn) applyBtn.disabled = true;
+  // Update input to formatted value
+  directInp.value = newMT > 0 ? newMT.toLocaleString() : '';
 
   // Recompute totals & badges
   const usedMT  = totalUtilForProd(co.shipments, prod);
@@ -559,7 +565,7 @@ function applyShipmentRoleLock() {
   const canSales = allowed.includes('salesShipTable');
   const canOps   = allowed.includes('opsShipTable');
 
-  document.querySelectorAll('.sales-util-add-inp,.sales-util-apply-btn,.sales-eta-inp,.sales-note-inp,.add-ship-btn').forEach(el => {
+  document.querySelectorAll('.sales-util-direct-inp,.sales-util-save-btn,.sales-util-add-inp,.sales-util-apply-btn,.sales-eta-inp,.sales-note-inp,.add-ship-btn').forEach(el => {
     el.disabled = !canSales;
   });
   document.querySelectorAll('.del-ship-btn').forEach(btn => {
@@ -581,8 +587,16 @@ function collectShipmentData(co) {
   if (!co) return;
   const obtByProd = getObtainedByProd(co);
 
-  // Sales utilMT is written directly to co.shipments on each Apply click (incremental model).
-  // Only collect ETA and Note fields here.
+  // Sales utilMT: read from direct edit input first (may have unsaved value)
+  document.querySelectorAll('.sales-util-direct-inp').forEach(inp => {
+    const prod = inp.dataset.prod;
+    const idx  = parseInt(inp.dataset.idx);
+    if (co.shipments && co.shipments[prod] && co.shipments[prod][idx]) {
+      const raw = inp.value.replace(/,/g,'');
+      const val = raw ? parseFloat(raw) : 0;
+      if (val >= 0) co.shipments[prod][idx].utilMT = val;
+    }
+  });
   document.querySelectorAll('.sales-eta-inp').forEach(inp => {
     const prod = inp.dataset.prod;
     const idx  = parseInt(inp.dataset.idx);

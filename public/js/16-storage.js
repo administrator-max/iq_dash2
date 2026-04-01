@@ -131,3 +131,101 @@ function updateStorageStatus() {
 ══════════════════════════════════════════════════ */
 
 /* ── Centralized OU product color palette (management-friendly) ── */
+/* ══════════════════════════════════════════════════
+   SERVER PERSISTENCE — PATCH /api/company/:code
+   Called after every saveEdit() to persist data
+   permanently in PostgreSQL (survives refresh).
+══════════════════════════════════════════════════ */
+async function patchToServer(co) {
+  if (!co || !co.code) return;
+
+  // Build reapplyTargets array from co.reapplyByProd (or existing reapplyTargets)
+  const reapplyTargets = co.reapplyByProd
+    ? Object.entries(co.reapplyByProd).map(([product, targetMT]) => ({
+        product, targetMT: targetMT || 0, submitted: false, submitDate: '', notes: ''
+      }))
+    : (co.reapplyTargets || []);
+
+  // Build shipments payload (only lots with actual data)
+  const shipPayload = {};
+  if (co.shipments) {
+    Object.entries(co.shipments).forEach(([prod, lots]) => {
+      if (!lots || !lots.length) return;
+      shipPayload[prod] = lots.map((l, i) => ({
+        lotNo:        l.lotNo  || (i + 1),
+        utilMT:       l.utilMT || 0,
+        etaJKT:       l.etaJKT || '',
+        note:         l.note   || '',
+        realMT:       l.realMT || 0,
+        pibDate:      l.pibDate || '',
+        cargoArrived: l.cargoArrived || false,
+      }));
+    });
+  }
+
+  // Encode salesRevRequest into revNote for persistence
+  // (server stores it in rev_note field as JSON string)
+  const salesRevJson = co.salesRevRequest && Object.keys(co.salesRevRequest).length
+    ? JSON.stringify(co.salesRevRequest)
+    : null;
+
+  const body = {
+    revType:       co.revType       || 'none',
+    revNote:       salesRevJson || co.revNote || '',
+    revSubmitDate: co.revSubmitDate || '',
+    revStatus:     co.revStatus     || '',
+    revMt:         co.revMT         || 0,
+    remarks:       co.remarks       || '',
+    spiRef:        co.spiRef        || '',
+    statusUpdate:  co.statusUpdate  || '',
+    pertekNo:      co.pertekNo      || '',
+    spiNo:         co.spiNo         || '',
+    utilizationMt: co.utilizationMT || 0,
+    availableQuota:co.availableQuota != null ? co.availableQuota : null,
+    updatedBy:     co.updatedBy     || '',
+    updatedDate:   co.updatedDate   || '',
+    shipments:     shipPayload,
+    reapplyTargets,
+  };
+
+  const res = await fetch(`/api/company/${encodeURIComponent(co.code)}`, {
+    method:  'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/* ── Also patch RA record if Operations updated realization ── */
+async function patchRAToServer(co, ra) {
+  if (!co || !co.code || !ra) return;
+  const body = {
+    ra: {
+      berat:         ra.berat        || 0,
+      obtained:      ra.obtained     || co.obtained || 0,
+      cargoArrived:  ra.cargoArrived || false,
+      realPct:       ra.realPct      || 0,
+      utilPct:       ra.utilPct      != null ? ra.utilPct : null,
+      arrivalDate:   ra.arrivalDate  || null,
+      etaJKT:        ra.etaJKT       || null,
+      reapplyEst:    ra.reapplyEst   || null,
+      reapplyStage:  ra.reapplyStage || 1,
+      reapplySubmitDate: ra.reapplySubmitDate || null,
+      reapplyStatus: ra.reapplyStatus || null,
+      target:        ra.target       != null ? ra.target : null,
+      pertek:        ra.pertek       || null,
+      spi:           ra.spi          || null,
+      catatan:       ra.catatan      || null,
+    }
+  };
+  await fetch(`/api/company/${encodeURIComponent(co.code)}`, {
+    method:  'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  });
+}

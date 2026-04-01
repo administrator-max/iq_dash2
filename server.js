@@ -85,10 +85,7 @@ async function getCyclesFor(codes) {
   const byCode = {};
   cRows.forEach(c => {
     if (!byCode[c.company_code]) byCode[c.company_code] = [];
-    // Deduplicate: skip if a cycle with same type already exists for this company
-    const existing = byCode[c.company_code];
-    if (existing.some(e => e.type === c.cycle_type)) return;
-    existing.push({
+    byCode[c.company_code].push({
       type:        c.cycle_type,
       mt:          isNaN(c.mt) ? c.mt : Number(c.mt),
       submitType:  c.submit_type,
@@ -130,7 +127,23 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
     utilizationMT:  Number(co.utilization_mt) || 0,
     availableQuota: co.available_quota != null ? Number(co.available_quota) : null,
     revType:        co.rev_type     || 'none',
-    revNote:        co.rev_note     || '',
+    revNote:        (() => {
+      // If rev_note contains JSON (salesRevRequest), extract it; otherwise plain text
+      const rn = co.rev_note || '';
+      try {
+        const parsed = JSON.parse(rn);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return '';
+      } catch(e) {}
+      return rn;
+    })(),
+    salesRevRequest: (() => {
+      const rn = co.rev_note || '';
+      try {
+        const parsed = JSON.parse(rn);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      } catch(e) {}
+      return {};
+    })(),
     revSubmitDate:  co.rev_submit_date || '',
     revStatus:      co.rev_status   || '',
     revMT:          Number(co.rev_mt) || 0,
@@ -165,16 +178,9 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
 // ═══════════════════════════════════════════════════════════════════
 app.get('/api/data', async (req, res) => {
   try {
-    const { rows: _rawCompanies } = await pool.query(
+    const { rows: companies } = await pool.query(
       `SELECT * FROM companies ORDER BY section, code`
     );
-    // Deduplicate by code — keep first occurrence (safeguard against duplicate DB rows)
-    const _seenCodes = new Set();
-    const companies = _rawCompanies.filter(c => {
-      if (_seenCodes.has(c.code)) return false;
-      _seenCodes.add(c.code);
-      return true;
-    });
     const codes = companies.map(c => c.code);
     if (!codes.length) return res.json({ spi: [], pending: [], ra: [] });
 
@@ -299,7 +305,6 @@ app.patch('/api/company/:code', async (req, res) => {
       'rev_type','rev_note','rev_submit_date','rev_status','rev_mt',
       'remarks','spi_ref','status_update','pertek_no','spi_no',
       'utilization_mt','available_quota','updated_by','updated_date',
-      'submit1','obtained',
     ];
     const sets = []; const vals = []; let idx = 1;
     for (const f of allowed) {
@@ -370,32 +375,6 @@ app.patch('/api/company/:code', async (req, res) => {
       }
     }
 
-    // Handle revision_changes (revFrom / revTo product change pairs)
-    if (body.revFrom !== undefined || body.revTo !== undefined) {
-      // Full replace: delete existing then re-insert
-      await client.query(`DELETE FROM revision_changes WHERE company_code = $1`, [code]);
-      const fromRows = body.revFrom || [];
-      const toRows   = body.revTo   || [];
-      for (let i = 0; i < fromRows.length; i++) {
-        const f = fromRows[i];
-        if (!f.prod) continue;
-        await client.query(
-          `INSERT INTO revision_changes (company_code, direction, product, mt, label, sort_order)
-           VALUES ($1,'from',$2,$3,$4,$5)`,
-          [code, f.prod, f.mt ?? null, f.label || '', i]
-        );
-      }
-      for (let i = 0; i < toRows.length; i++) {
-        const t = toRows[i];
-        if (!t.prod) continue;
-        await client.query(
-          `INSERT INTO revision_changes (company_code, direction, product, mt, label, sort_order)
-           VALUES ($1,'to',$2,$3,$4,$5)`,
-          [code, t.prod, t.mt ?? null, t.label || '', i]
-        );
-      }
-    }
-
     // Handle RA record update
     if (body.ra) {
       const r = body.ra;
@@ -425,53 +404,7 @@ app.patch('/api/company/:code', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// PUT /api/company/:code/cycles  — replace all cycles for a company
-// ═══════════════════════════════════════════════════════════════════
-app.put('/api/company/:code/cycles', async (req, res) => {
-  const { code } = req.params;
-  const { cycles } = req.body;
-  if (!Array.isArray(cycles)) return res.status(400).json({ error: 'cycles must be an array' });
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    // Delete existing cycles (cascade deletes cycle_products)
-    await client.query(`DELETE FROM cycles WHERE company_code = $1`, [code]);
-    // Re-insert
-    for (let i = 0; i < cycles.length; i++) {
-      const cy = cycles[i];
-      const { rows } = await client.query(
-        `INSERT INTO cycles
-           (company_code, cycle_type, mt, submit_type, submit_date, release_type, release_date, status, sort_order)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         RETURNING id`,
-        [code, cy.type, cy.mt != null ? String(cy.mt) : null,
-         cy.submitType||null, cy.submitDate||null,
-         cy.releaseType||null, cy.releaseDate||null,
-         cy.status||'', i]
-      );
-      const cycleId = rows[0].id;
-      // Insert per-product breakdown
-      if (cy.products && typeof cy.products === 'object') {
-        for (const [prod, mt] of Object.entries(cy.products)) {
-          await client.query(
-            `INSERT INTO cycle_products (cycle_id, product, mt) VALUES ($1,$2,$3)`,
-            [cycleId, prod, mt != null ? String(mt) : null]
-          );
-        }
-      }
-    }
-    await client.query('COMMIT');
-    res.json({ ok: true, code, cycleCount: cycles.length });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error('PUT /cycles error:', err);
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
-
-
+// GET /api/company/:code  — single company detail
 // ═══════════════════════════════════════════════════════════════════
 app.get('/api/company/:code', async (req, res) => {
   const { code } = req.params;

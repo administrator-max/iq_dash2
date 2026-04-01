@@ -9,6 +9,9 @@ window.onload = async () => {
   // ── Load data from PostgreSQL API ──────────────────────────
   await loadData();
 
+  // Merge any locally-saved overrides (belt-and-suspenders if server PATCH was missed)
+  loadFromStorage();
+
   updateStorageStatus();
 
   // Populate edit dropdown — sorted alphabetically A→Z
