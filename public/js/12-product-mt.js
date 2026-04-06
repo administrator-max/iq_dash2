@@ -345,12 +345,20 @@ function applyProductRenames(co) {
 
 /* Thousand-separator for inline pmt inputs (no fixed ID) */
 function fmtThousandInline(el) {
-  const raw = el.value.replace(/[^0-9]/g, '');
-  el.value = raw ? Number(raw).toLocaleString() : '';
+  // Allow decimal up to 2 digits (e.g. 1,234.56)
+  // Strip anything that's not digit, comma, or dot
+  let raw = el.value.replace(/[^0-9.,]/g, '');
+  // Normalize: only keep first dot as decimal separator
+  const parts = raw.replace(/,/g, '').split('.');
+  const intPart = parts[0] || '';
+  const decPart = parts.length > 1 ? parts[1].slice(0, 2) : null;
+  // Format integer part with thousand separators
+  const intFormatted = intPart ? Number(intPart).toLocaleString('en-US') : '';
+  el.value = decPart !== null ? intFormatted + '.' + decPart : intFormatted;
   // Update submit total live
   let st = 0;
   document.querySelectorAll('.pmt-submit-inp').forEach(i => {
-    const n = parseInt((i.value || '').replace(/,/g,''), 10);
+    const n = parseFloat((i.value || '').replace(/,/g,''));
     if (!isNaN(n)) st += n;
   });
   const stEl = g('submitMTTotal');

@@ -87,9 +87,9 @@ function buildRevMgmtSection(co) {
   if (reqProds.length > 0) {
     const canConfirm = currentRole && (ROLE_PERMISSIONS[currentRole]||[]).includes('corpsecRevConfirm');
 
-    let reqRows = reqProds.map(([prod, req]) => {
+    let reqRows = reqProds.map(([prod, req], _ri) => {
       const dot      = prodDot(prod);
-      const pid      = prod.replace(/[^a-zA-Z0-9]/g,'_');
+      const pid      = prod.replace(/[^a-zA-Z0-9]/g,'_') + '_cs' + _ri;
       const reqMT    = req.requestedMT != null ? req.requestedMT.toLocaleString() + ' MT' : '—';
       // Support split: show all target products
       const targets  = req.targetProducts && req.targetProducts.length
@@ -247,22 +247,124 @@ function buildRevMgmtSection(co) {
       `<option value="${s}" ${s===stageVal?'selected':''}>${s}</option>`
     ).join('');
 
+    // Build per-product obtained input rows from ALL confirmed salesRevRequest targets
+    // This accumulates across multiple confirmed products (e.g. 2 ERW products)
+    let prodList = [];
+    const salesRevReq2 = co.salesRevRequest || {};
+    Object.entries(salesRevReq2).filter(([,v]) => v && v.requested).forEach(([p, req]) => {
+      const targets = req.targetProducts && req.targetProducts.length
+        ? req.targetProducts
+        : [{ product: req.newProduct || p, mt: req.confirmedMT || req.requestedMT || null }];
+      targets.forEach(t => {
+        const nm = t.product || p;
+        if (nm && !prodList.find(x => x.prod === nm)) {
+          prodList.push({ prod: nm, mt: t.mt || req.confirmedMT || req.requestedMT || null });
+        }
+      });
+    });
+    // Fallback to revTo if salesRevRequest empty
+    if (!prodList.length && co.revTo && co.revTo.length) {
+      prodList = co.revTo;
+    }
+
+    // Load existing obtained #2 cycle values for pre-fill
+    const obt2Cy = (co.cycles||[]).find(c => /^obtained\s*#2/i.test(c.type) || /^obtained.*revision/i.test(c.type));
+    const obt2Prods = obt2Cy ? (obt2Cy.products || {}) : {};
+    const obt2MT    = obt2Cy ? obt2Cy.mt : null;
+    const obt2SPI   = obt2Cy ? (obt2Cy.releaseDate||'') : '';
+    const obt2PERTEK= (co.cycles||[]).find(c => /^(submit\s*#2|revision\s*#)/i.test(c.type));
+    const pertekVal = obt2PERTEK ? (obt2PERTEK.releaseDate||'') : (co.pertekNo||'');
+
+    // Per-product obtained MT inputs
+    let obtainedHtml = '';
+    if (prodList.length > 0) {
+      const prodRows = prodList.map((t, i) => {
+        const prodName = t.prod || t.product || '';
+        // Pre-fill: existing Obtained #2 value if valid → revTo.mt → empty
+        const existRaw = obt2Prods[prodName];
+        const existParsed = parseFloat(String(existRaw).replace(/,/g,''));
+        const revToMT = (t.mt != null && !isNaN(Number(t.mt)) && Number(t.mt) > 0) ? Number(t.mt) : null;
+        const existNum = (!isNaN(existParsed) && existParsed > 0)
+          ? existParsed
+          : revToMT;
+        const existVal = existNum != null ? existNum.toLocaleString() : '';
+        const dotColor = (typeof prodDot === 'function') ? prodDot(prodName) : '#94a3b8';
+        const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:2px;background:${dotColor};margin-right:5px;vertical-align:middle;flex-shrink:0"></span>`;
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <div style="flex:1;font-size:11px;font-weight:600;color:var(--txt);display:flex;align-items:center">${dot}${prodName}</div>
+          <input type="text" inputmode="decimal" class="fi rr-obt-prod-inp" data-prod="${prodName}"
+            value="${existVal}" placeholder="e.g. 2,200"
+            oninput="fmtThousandInline(this);rrUpdateObtTotal()"
+            style="width:120px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:700">
+        </div>`;
+      }).join('');
+      // Compute initial total for display
+      const initTotal = prodList.reduce((s, t) => {
+        const prodName = t.prod || t.product || '';
+        const raw = obt2Prods[prodName];
+        const parsed = parseFloat(String(raw).replace(/,/g,''));
+        const revToMT2 = (t.mt != null && !isNaN(Number(t.mt)) && Number(t.mt) > 0) ? Number(t.mt) : 0;
+        const v = (!isNaN(parsed) && parsed > 0) ? parsed : revToMT2;
+        return s + v;
+      }, 0);
+      const initTotalDisp = initTotal > 0 ? initTotal.toLocaleString() + ' MT' : '—';
+
+      obtainedHtml = `<div style="margin-bottom:12px;padding:10px;background:var(--teal-bg);border:1px solid var(--teal-bd);border-radius:7px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="fl" style="color:var(--teal);margin-bottom:0">Obtained MT — Per Produk
+            <span class="tti" data-tip="Isi Obtained MT yang resmi diterbitkan dalam PERTEK/SPI revision ini. Pre-filled dari revisi request — edit sesuai dokumen resmi.">i</span>
+          </div>
+          <button onclick="rrApplyObtained('${code}')"
+            style="font-size:10.5px;font-weight:700;padding:4px 12px;border-radius:5px;border:none;
+              background:var(--teal);color:#fff;cursor:pointer;transition:background .13s;white-space:nowrap"
+            onmouseover="this.style.background='#0a6670'" onmouseout="this.style.background='var(--teal)'">
+            ✓ Terapkan ke Obtained #2
+          </button>
+        </div>
+        ${prodRows}
+        <div style="display:flex;justify-content:flex-end;margin-top:6px;font-size:10px;color:var(--txt3);gap:4px;align-items:center">
+          Total: <strong id="rrObtTotal" style="color:var(--teal);font-family:'DM Mono',monospace">${initTotalDisp}</strong>
+        </div>
+      </div>`;
+    } else {
+      // No product breakdown — single MT field
+      const singleVal = (obt2MT != null && !isNaN(Number(obt2MT))) ? Number(obt2MT).toLocaleString() : '';
+      obtainedHtml = `<div style="margin-bottom:12px;padding:10px;background:var(--teal-bg);border:1px solid var(--teal-bd);border-radius:7px">
+        <div class="fl" style="color:var(--teal);margin-bottom:8px">Obtained MT (Total)</div>
+        <input type="text" inputmode="decimal" class="fi rr-obt-prod-inp" data-prod="_total"
+          value="${singleVal}" placeholder="MT"
+          oninput="fmtThousandInline(this)"
+          style="width:130px;text-align:right;font-family:'DM Mono',monospace;font-size:12px">
+      </div>`;
+    }
+
     html += `<div class="rr-edit-area">
       <div class="rr-edit-hd">✏️ Update Revision / Submit #2 Status</div>
       ${changeHtml}
+      ${obtainedHtml}
       <div class="rr-form-row">
         <div>
           <div class="fl">Approval Stage</div>
-          <select class="fi" id="rrApprovalStage">${stageOpts}</select>
+          <select class="fi" id="rrApprovalStage" onchange="rrUpdateObtTotal()">${stageOpts}</select>
         </div>
         <div>
           <div class="fl">Rev. Submit Date</div>
           <input class="fi" id="rrRevDate" type="text" placeholder="DD/MM/YYYY" value="${dateVal}">
         </div>
       </div>
+      <div class="rr-form-row">
+        <div>
+          <div class="fl">PERTEK No. (Revision)</div>
+          <input class="fi" id="rrRevPertekNo" type="text" placeholder="e.g. 601/ILMATE/PERTEK-SPI-P/II/2026" value="${pertekVal && pertekVal !== 'TBA' ? pertekVal : ''}">
+        </div>
+        <div>
+          <div class="fl">SPI No. (Revision)</div>
+          <input class="fi" id="rrRevSpiNo" type="text" placeholder="e.g. 04.SPI-05.26.1624" value="${obt2SPI && obt2SPI !== 'TBA' ? obt2SPI : ''}">
+        </div>
+      </div>
       <div class="rr-form-row full">
         <div>
-          <div class="fl">Status Note <span class="ef-hint">Internal — shown in Revision table</span></div>
+          <div class="fl">Status Note <span class="tti" data-tip="Internal — ditampilkan di Revision table">i</span></div>
           <input class="fi" id="rrStatusNote" type="text" placeholder="e.g. Update 06/03/26 — Awaiting ministry sign-off" value="${noteVal.replace(/"/g,'&quot;')}">
         </div>
       </div>
@@ -336,29 +438,29 @@ function csConfirmRev(prod, pid, code) {
   const req = co.salesRevRequest && co.salesRevRequest[prod];
   if (!req) return;
 
+  // Read MT from input — use requestedMT as fallback only if input is truly empty
   const inp = document.getElementById('csconf-mt-' + pid);
-  const raw = inp ? inp.value.replace(/,/g,'') : '';
-  const mt  = raw ? Number(raw) : (req.requestedMT || null);
+  const raw = inp ? inp.value.replace(/,/g,'').trim() : '';
+  const mt  = raw !== '' ? parseFloat(raw) : (req.requestedMT || null);
 
-  req.status      = 'confirmed';
-  req.confirmedMT = mt;
+  req.status        = 'confirmed';
+  req.confirmedMT   = mt;
   req.confirmedDate = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
   req.confirmedBy   = currentRole || 'CorpSec';
 
-  // ── Inject into cycle history as a "Revision Request (Confirmed)" entry ──
+  // ── Build products object from targetProducts ──────────────────────
   if (!co.cycles) co.cycles = [];
-  // Build products object for the cycle: use targetProducts if split, else single
-  const targets  = req.targetProducts && req.targetProducts.length
-                 ? req.targetProducts : [{ product: req.newProduct || prod, mt }];
-  const prodObj  = {};
+  const targets = req.targetProducts && req.targetProducts.length
+    ? req.targetProducts
+    : [{ product: req.newProduct || prod, mt }];
+  const prodObj = {};
   targets.forEach(t => { if (t.product) prodObj[t.product] = t.mt || mt || 0; });
   if (!Object.keys(prodObj).length) prodObj[prod] = mt || 0;
 
-  // Remove any previous pending revision request cycle for this prod to avoid dupes
-  const existingIdx = co.cycles.findIndex(c =>
-    c.type === `Revision Request — ${prod}` && c.status === 'pending'
+  // Remove stale pending cycle for this prod
+  co.cycles = co.cycles.filter(c =>
+    !(c.type === `Revision Request — ${prod}` && c.status === 'pending')
   );
-  if (existingIdx >= 0) co.cycles.splice(existingIdx, 1);
 
   const now = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'numeric'});
   co.cycles.push({
@@ -373,23 +475,34 @@ function csConfirmRev(prod, pid, code) {
     _isRevReq:   true,
   });
 
-  // Set revType to active so it appears in revision tracking
-  if (co.revType === 'none' || co.revType === 'clean') {
-    co.revType   = 'active';
-    co.revStatus = `Revision Request dikonfirmasi — ${prod}${req.newProduct ? ' → ' + req.newProduct : ''} · ${now}`;
-    co.revNote   = req.note || '';
-    // Populate revFrom / revTo for the detail table
-    if (!co.revFrom) co.revFrom = [];
-    if (!co.revTo)   co.revTo   = [];
-    co.revFrom.push({ prod, mt: co.obtained || 0, label: 'Before' });
-    targets.forEach(t => {
-      co.revTo.push({ prod: t.product || prod, mt: t.mt || mt || 0, label: 'After' });
-    });
-  }
+  // ── Update revType + accumulate revFrom/revTo ──────────────────────
+  // revFrom/revTo accumulate across multiple csConfirmRev calls (multi-product)
+  if (!co.revFrom) co.revFrom = [];
+  if (!co.revTo)   co.revTo   = [];
+
+  // Remove old entry for this prod if re-confirming
+  co.revFrom = co.revFrom.filter(f => f.prod !== prod);
+  co.revTo   = co.revTo.filter(f => f.prod !== prod && !targets.some(t => t.product === f.prod));
+
+  // Add updated entries — revFrom uses per-product obtained MT, not total
+  const obtByProdMap = (typeof getObtainedByProd === 'function') ? getObtainedByProd(co) : {};
+  const fromMT = obtByProdMap[prod] != null ? obtByProdMap[prod] : (co.obtained || 0);
+  co.revFrom.push({ prod, mt: fromMT, label: 'Before' });
+  targets.forEach(t => {
+    // Use confirmed MT (mt from input) — not requestedMT
+    const toMT = (t.mt != null && !isNaN(Number(t.mt)) && Number(t.mt) > 0)
+      ? Number(t.mt)
+      : (mt || 0);
+    co.revTo.push({ prod: t.product || prod, mt: toMT, label: 'After' });
+  });
+
+  // Activate revision tracking
+  co.revType   = 'active';
+  co.revStatus = `Revision Request dikonfirmasi — ${prod}${req.newProduct ? ' → ' + req.newProduct : ''} · ${now}`;
+  if (!co.revNote) co.revNote = req.note || '';
 
   buildRevMgmtSection(co);
   applyRolePermissions();
-  // Refresh sidebar/tables to reflect new status
   buildRevList && buildRevList();
   updateSPICounts && updateSPICounts();
 }
@@ -412,19 +525,114 @@ function csBatalRev(prod, pid, code) {
 /* ── Action handlers ─────────────────────────────────────────────────────── */
 
 /* Save approval stage + date + note to the live record */
-function rrSaveStatus(code) {
+
+/* ── Read obtained MT from revision edit form ── */
+function rrReadObtainedFromForm(co) {
+  const inputs = document.querySelectorAll('.rr-obt-prod-inp');
+  if (!inputs.length) return { total: null, byProd: {} };
+  const byProd = {};
+  let total = 0;
+  inputs.forEach(inp => {
+    const prod = inp.dataset.prod;
+    const raw  = (inp.value || '').replace(/,/g,'').trim();
+    const val  = parseFloat(raw);
+    const safeVal = (!isNaN(val) && val > 0) ? val : 0;
+    if (prod === '_total') {
+      total = safeVal;
+    } else if (prod && safeVal > 0) {
+      byProd[prod] = safeVal;
+      total += safeVal;
+    }
+  });
+  return { total, byProd };
+}
+
+/* ── Apply obtained MT values directly to Obtained #2 cycle ── */
+function rrApplyObtained(code) {
   const co = getSPI(code); if (!co) return;
-  const stage = (g('rrApprovalStage') || {}).value || '';
-  const date  = (g('rrRevDate')  || {}).value || '';
-  const note  = (g('rrStatusNote') || {}).value || '';
+  const { total: obtTotal, byProd: obtByProd } = rrReadObtainedFromForm(co);
+
+  if (obtTotal <= 0 && !Object.keys(obtByProd).length) {
+    alert('Isi Obtained MT terlebih dahulu sebelum menerapkan.'); return;
+  }
+
+  // Find or create Obtained #2 cycle
+  let obt2Cy = (co.cycles||[]).find(c => /^obtained\s*#2/i.test(c.type) || /^obtained.*revision/i.test(c.type));
+  if (!obt2Cy) {
+    if (!co.cycles) co.cycles = [];
+    obt2Cy = {
+      type: 'Obtained #2', mt: null, products: {},
+      submitType: 'Submit MOT (Submit #2) Perubahan', submitDate: 'TBA',
+      releaseType: 'SPI Perubahan', releaseDate: 'TBA', status: '', _fromRevReq: true
+    };
+    co.cycles.push(obt2Cy);
+  }
+
+  obt2Cy.mt       = obtTotal;
+  obt2Cy.products = obtByProd;
+  if (!obt2Cy.status) obt2Cy.status = `Obtained #2 diisi — ${obtTotal.toLocaleString()} MT`;
+  co.revMT = obtTotal;
+
+  // Visual feedback on button
+  const btn = document.querySelector(`button[onclick="rrApplyObtained('${code}')"]`);
+  if (btn) {
+    const orig = btn.textContent;
+    btn.textContent = '✓ Diterapkan!';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { if(btn){ btn.textContent = orig; btn.style.background = 'var(--teal)'; } }, 1800);
+  }
+
+  // Refresh cycle history panel
+  buildRevMgmtSection(co);
+  nsShowToast(`✓ Obtained #2 updated — ${obtTotal.toLocaleString()} MT`);
+}
+
+/* ── Update obtained total display ── */
+function rrUpdateObtTotal() {
+  const el = document.getElementById('rrObtTotal');
+  if (!el) return;
+  let t = 0;
+  document.querySelectorAll('.rr-obt-prod-inp').forEach(inp => {
+    t += parseFloat(inp.value.replace(/,/g,'')) || 0;
+  });
+  el.textContent = t > 0 ? t.toLocaleString() + ' MT' : '—';
+}
+
+function rrSaveStatus(code) {
+  const co     = getSPI(code); if (!co) return;
+  const stage  = (g('rrApprovalStage') || {}).value || '';
+  const date   = (g('rrRevDate')       || {}).value || '';
+  const note   = (g('rrStatusNote')    || {}).value || '';
+  const pertekNo = (g('rrRevPertekNo') || {}).value || '';
+  const spiNo    = (g('rrRevSpiNo')    || {}).value || '';
+  const { total: obtTotal, byProd: obtByProd } = rrReadObtainedFromForm(co);
 
   co.revStatus = stage;
-  if (date) co.revSubmitDate = date;
-  if (note) co.revNote = note;
+  if (date)   co.revSubmitDate = date;
+  if (note)   co.revNote = note;
 
-  // Update the most recent active cycle's status
+  // Update / create the Obtained #2 cycle with new MT values
+  const dateStr = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'2-digit'});
+  let obt2Cy = (co.cycles||[]).find(c => /^obtained\s*#2/i.test(c.type) || /^obtained.*revision/i.test(c.type));
+  if (!obt2Cy) {
+    // Create one
+    obt2Cy = { type: 'Obtained #2', mt: null, products: {}, submitType: 'Submit MOT (Submit #2) Perubahan', submitDate: 'TBA', releaseType: 'SPI Perubahan', releaseDate: 'TBA', status: '', _fromRevReq: true };
+    if (!co.cycles) co.cycles = [];
+    co.cycles.push(obt2Cy);
+  }
+  if (obtTotal > 0) {
+    obt2Cy.mt = obtTotal;
+    co.revMT   = obtTotal;
+  }
+  if (Object.keys(obtByProd).length) obt2Cy.products = obtByProd;
+  if (spiNo) { obt2Cy.releaseDate = spiNo; co.spiNo = spiNo; }
+
+  // Update active Submit #2 / Revision cycle with PERTEK no
   const activeCy = rrGetActiveCycle(co);
-  if (activeCy) activeCy.status = `Update ${new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'2-digit'})} - ${stage}`;
+  if (activeCy) {
+    activeCy.status = `Update ${dateStr} - ${stage}`;
+    if (pertekNo) activeCy.releaseDate = pertekNo;
+  }
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
@@ -433,19 +641,47 @@ function rrSaveStatus(code) {
 
 /* Mark revision as fully approved — sets revType to 'complete' */
 function rrMarkApproved(code) {
-  const co = getSPI(code); if (!co) return;
-  const stage = (g('rrApprovalStage') || {}).value || '';
-  const date  = (g('rrRevDate')  || {}).value || '';
+  const co     = getSPI(code); if (!co) return;
+  const stage  = (g('rrApprovalStage') || {}).value || '';
+  const date   = (g('rrRevDate')       || {}).value || '';
+  const pertekNo = (g('rrRevPertekNo') || {}).value || '';
+  const spiNo    = (g('rrRevSpiNo')    || {}).value || '';
+  const { total: obtTotal, byProd: obtByProd } = rrReadObtainedFromForm(co);
 
   co.revType   = 'complete';
-  co.revStatus = stage.includes('SPI') ? `SPI TERBIT — ${stage}` : `PERTEK TERBIT${date ? ' ' + date : ''} — ${stage}`;
+  co.revStatus = spiNo
+    ? `SPI Perubahan Terbit — No. ${spiNo}`
+    : (pertekNo ? `PERTEK Perubahan Terbit — No. ${pertekNo}` : `APPROVED — ${stage}`);
 
-  // Update active cycle
+  // Update active Submit #2 / Revision cycle
   const activeCy = rrGetActiveCycle(co);
   if (activeCy) {
     activeCy.status = `APPROVED — ${stage}`;
-    if (date) activeCy.releaseDate = date;
+    if (pertekNo) activeCy.releaseDate = pertekNo;
   }
+
+  // Update / create Obtained #2 cycle
+  let obt2Cy = (co.cycles||[]).find(c => /^obtained\s*#2/i.test(c.type) || /^obtained.*revision/i.test(c.type));
+  if (!obt2Cy) {
+    obt2Cy = { type: 'Obtained #2', mt: null, products: {}, submitType: 'Submit MOT (Submit #2) Perubahan', submitDate: date || 'TBA', releaseType: 'SPI Perubahan', releaseDate: spiNo || 'TBA', status: '', _fromRevReq: true };
+    if (!co.cycles) co.cycles = [];
+    co.cycles.push(obt2Cy);
+  }
+  if (obtTotal > 0) {
+    obt2Cy.mt   = obtTotal;
+    co.revMT    = obtTotal;
+    // Update co.obtained to reflect new total (revision approved)
+    co.obtained = (co.obtained || 0) - (co.revMT || 0) + obtTotal;
+  }
+  if (Object.keys(obtByProd).length) obt2Cy.products = obtByProd;
+  if (spiNo) {
+    obt2Cy.releaseDate = spiNo;
+    co.spiNo = spiNo;
+    obt2Cy.status = `SPI Perubahan TERBIT — No. ${spiNo}`;
+  } else if (pertekNo) {
+    obt2Cy.status = `PERTEK Perubahan TERBIT — No. ${pertekNo} · SPI TBA`;
+  }
+  if (pertekNo) co.pertekNo = pertekNo;
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);

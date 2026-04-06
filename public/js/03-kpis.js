@@ -30,10 +30,7 @@ function updateOverviewKPIs() {
      refers to: "which PERTEK was officially issued in November 2025?"
   ─────────────────────────────────────────────────────────────────────── */
   let totalObtainedMT = 0, obtCoSet = new Set();
-  const _obtSeenCo = new Set();
   SPI.forEach(co => {
-    if (_obtSeenCo.has(co.code)) return;   // skip duplicate company rows
-    _obtSeenCo.add(co.code);
     const allCycles = co.cycles || [];
     allCycles.forEach(c => {
       // Only count Obtained #N cycles — exclude ALL Revision obtained cycles.
@@ -438,21 +435,7 @@ function refreshUtilDrill() {
 
   const totalUtil  = rows.reduce((s,r) => s+r.utilMT, 0);
   const totalAvail = rows.reduce((s,r) => s+r.availMT, 0);
-  // Match KPI2: sum Obtained #N cycle MTs (same logic as updateOverviewKPIs)
-  let totalObt = 0;
-  const _utilSeenCo = new Set();
-  filteredSPI().forEach(co => {
-    if (_utilSeenCo.has(co.code)) return;
-    _utilSeenCo.add(co.code);
-    const allCycles = co.cycles || [];
-    allCycles.forEach(c => {
-      if (!/^obtained #/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
-      if (!PERIOD.active || inPd(pertekTerbit)) totalObt += mt;
-    });
-  });
+  const totalObt   = filteredSPI().reduce((s,co) => s+(co.obtained||0), 0);
   const avgUtil    = totalObt > 0 ? (totalUtil/totalObt*100).toFixed(1) : '—';
 
   document.getElementById('utilDrillSubtitle').textContent =
@@ -1095,15 +1078,16 @@ function refreshObtainedDrill() {
      PERTEK Terbit = releaseDate of the Submit #N / Revision #N cycle.
   ─────────────────────────────────────────────────────────────────────── */
   const rows = [];
-  const _drillSeenCo = new Set();
   SPI.forEach(co => {
-    if (_drillSeenCo.has(co.code)) return;
-    _drillSeenCo.add(co.code);
     const allCycles = co.cycles || [];
     allCycles.forEach(c => {
-      // Only show Obtained #N cycles — exclude ALL Revision obtained cycles.
-      // Consistent with KPI2: 21,970 MT = non-revision obtained only.
+      // Only show Obtained #N cycles — exclude revision-request-generated Obtained #2 cycles
+      // (those created by csConfirmRev with _isRevReq flag, or auto-created Obtained #2
+      //  from rrApplyObtained — these are tracked via the Revision table, not obtained drill)
       if (!/^obtained #/i.test(c.type)) return;
+      // Skip Obtained #2 cycles created from CorpSec revision confirmation (not real re-apply)
+      // These have _isRevReq on their source cycle or lack a proper PERTEK date
+      if (/^obtained #[2-9]/i.test(c.type) && c._fromRevReq) return;
       const mt = typeof c.mt === 'number' ? c.mt : 0;
 
       // Get PERTEK Terbit from paired Submit cycle (this is the filter date)
@@ -1143,26 +1127,17 @@ function refreshObtainedDrill() {
     });
   });
 
-  // Deduplicate: same company + same cycle type should never appear twice
-  const _seenKey = new Set();
-  const dedupedRows = rows.filter(r => {
-    const key = `${r.code}||${r.cycle}`;
-    if (_seenKey.has(key)) return false;
-    _seenKey.add(key);
-    return true;
-  });
-
   // Sort: by PERTEK Terbit date asc, then company code
-  dedupedRows.sort((a, b) => {
+  rows.sort((a, b) => {
     if (a.pertekTerbit && b.pertekTerbit) return a.pertekTerbit - b.pertekTerbit;
     if (a.pertekTerbit) return -1;
     if (b.pertekTerbit) return 1;
     return a.code.localeCompare(b.code);
   });
 
-  const totalMT    = dedupedRows.filter(r => r.mt > 0).reduce((s, r) => s + r.mt, 0);
-  const coCount    = new Set(dedupedRows.map(r => r.code)).size;
-  const cycleCount = dedupedRows.length;
+  const totalMT    = rows.filter(r => r.mt > 0).reduce((s, r) => s + r.mt, 0);
+  const coCount    = new Set(rows.map(r => r.code)).size;
+  const cycleCount = rows.length;
   const periodLabel = PERIOD.active ? PERIOD.label : 'All Time';
 
   // Modal header
@@ -1200,13 +1175,13 @@ function refreshObtainedDrill() {
   const fmtDate = d => d ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
   const body = document.getElementById('drillBody');
 
-  if (!dedupedRows.length) {
+  if (!rows.length) {
     body.innerHTML = `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--txt3)">No obtained cycles found with PERTEK Terbit in ${periodLabel}</td></tr>`;
     return;
   }
 
   let lastCode = '';
-  body.innerHTML = dedupedRows.map(r => {
+  body.innerHTML = rows.map(r => {
     const stripe = r.code !== lastCode && lastCode !== '' ? ';background:var(--bg2)' : '';
     lastCode = r.code;
     const cycleLabel = r.cycle

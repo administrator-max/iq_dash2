@@ -1,3 +1,15 @@
+/* ── Global product→PID map for revision request table ──────────────
+   Products like "ERW PIPE OD≤140mm" and "ERW PIPE OD>140mm" both
+   collapse to "ERW_PIPE_OD_140mm" when stripping non-alphanumeric.
+   We keep an index-based map so each product gets a unique DOM id.
+─────────────────────────────────────────────────────────────────── */
+let _revReqPidMap = {}; // prodName → unique pid string
+
+function makeRevPid(prodName) {
+  if (_revReqPidMap[prodName]) return _revReqPidMap[prodName];
+  // Fallback: simple replace (unique if no collision)
+  return prodName.replace(/[^a-zA-Z0-9]/g, '_');
+}
 /* ═══════════════════════════════════════
    SALES & OPS SHIPMENT ENGINE
    buildSalesOpsForm, lot management,
@@ -751,8 +763,26 @@ function buildRevisionRequestTable(co) {
   // { requested: bool, requestedMT: number|null, note: string,
   //   targetProducts: [{ product: string, mt: number|null }] }
   // targetProducts = array produk tujuan (bisa 1 atau lebih untuk split)
+  // ── Sanitize salesRevRequest: normalize requested to strict boolean ──
+  if (co.salesRevRequest) {
+    Object.keys(co.salesRevRequest).forEach(prod => {
+      const r = co.salesRevRequest[prod];
+      if (!r) { delete co.salesRevRequest[prod]; return; }
+      const wasReq = r.requested === true || r.requested === 'true' || r.requested === 1;
+      r.requested = wasReq;
+      if (!wasReq) delete co.salesRevRequest[prod];
+    });
+  }
   const existing  = co.salesRevRequest || {};
   const canSales  = currentRole && (ROLE_PERMISSIONS[currentRole]||[]).includes('salesShipTable');
+
+  // ── Build unique PID map (populate global _revReqPidMap) ──────────
+  // Prevents collision: "ERW PIPE OD≤140mm" vs "ERW PIPE OD>140mm" → both "ERW_PIPE_OD_140mm"
+  _revReqPidMap = {};
+  products.forEach((p, idx) => {
+    const base = p.replace(/[^a-zA-Z0-9]/g, '_');
+    _revReqPidMap[p] = `${base}_${idx}`;
+  });
 
   const ALL_PRODS = Object.keys(PROD_COLORS).concat(
     Object.keys(obtByProd).filter(k => !PROD_COLORS[k])
@@ -762,7 +792,7 @@ function buildRevisionRequestTable(co) {
     // targets = [{product:'', mt:null}, ...]
     if (!targets || targets.length === 0) targets = [{ product: '', mt: null }];
     return targets.map((t, i) => {
-      const pid2 = sourceProd.replace(/[^a-zA-Z0-9]/g,'_');
+      const pid2 = makeRevPid(sourceProd);
       const opts = `<option value="">— Tetap sama —</option>` +
         ALL_PRODS.map(op =>
           `<option value="${op}" ${op === t.product ? 'selected' : ''}>${op}</option>`
@@ -779,8 +809,8 @@ function buildRevisionRequestTable(co) {
           onchange="syncRevReqTotal('${sourceProd}')">
           ${opts}
         </select>
-        <input type="text" inputmode="numeric" class="pmt-mt-inp revreq-target-mt" data-prod="${sourceProd}" data-idx="${i}"
-          value="${mt}" placeholder="MT"
+        <input type="text" inputmode="decimal" class="pmt-mt-inp revreq-target-mt" data-prod="${sourceProd}" data-idx="${i}"
+          value="${mt}" placeholder="MT (e.g. 123.50)"
           oninput="fmtThousandInline(this);syncRevReqTotal('${sourceProd}')"
           ${disabled ? 'disabled' : ''}
           style="width:80px;flex-shrink:0;text-align:right">
@@ -792,31 +822,31 @@ function buildRevisionRequestTable(co) {
   }
 
   const rows = products.map(p => {
-    const pid   = p.replace(/[^a-zA-Z0-9]/g,'_');
+    const pid   = makeRevPid(p);
     const obtMT = obtByProd[p] || 0;
     const req   = existing[p] || {};
     const dot   = prodDot(p);
-    const checked  = req.requested ? 'checked' : '';
-    const note     = req.note || '';
-    const targets  = req.targetProducts && req.targetProducts.length
-                   ? req.targetProducts
-                   : [{ product: req.newProduct || '', mt: req.requestedMT || null }];
-    const disabled = !canSales || !req.requested;
+    const note  = req.note || '';
+    // Strict boolean: handle true, "true", 1 — never treat object/undefined as true
+    const isReq = req.requested === true || req.requested === 'true' || req.requested === 1;
+    const targets = (req.targetProducts && req.targetProducts.length)
+                  ? req.targetProducts
+                  : [{ product: req.newProduct || '', mt: req.requestedMT || null }];
+    const disabled = !canSales || !isReq;
 
     // Sum of all target MTs for display
-    const totalTargetMT = targets.reduce((s,t) => s + (Number(t.mt)||0), 0);
+    const totalTargetMT = targets.reduce((s,t) => s + (parseFloat(String(t.mt||'').replace(/,/g,''))||0), 0);
     const totalDisp = totalTargetMT > 0
       ? `<span style="font-size:9.5px;color:var(--blue);font-weight:700">${totalTargetMT.toLocaleString()} MT total</span>`
       : '';
-
     return `<div class="revreq-row" id="revreq-row-${pid}"
       style="padding:10px;border:1px solid var(--border);border-radius:7px;margin-bottom:8px;
-        background:${req.requested ? 'var(--bg)' : 'var(--bg2)'};
-        opacity:${req.requested ? '1' : '0.65'};transition:opacity .2s">
+        background:${isReq ? 'var(--bg)' : 'var(--bg2)'};
+        opacity:${isReq ? '1' : '0.65'};transition:opacity .2s">
       <!-- Row header: checkbox + product info + note -->
-      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:${req.requested?'10px':'0'}">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:${isReq?'10px':'0'}">
         <input type="checkbox" class="revreq-chk" data-prod="${p}" data-pid="${pid}"
-          ${checked} ${canSales?'':'disabled'}
+          ${isReq ? 'checked' : ''} ${canSales?'':'disabled'}
           onchange="toggleRevReqRow('${pid}',this.checked)"
           style="margin-top:3px;flex-shrink:0"
           title="Request revision for ${p}">
@@ -831,22 +861,23 @@ function buildRevisionRequestTable(co) {
           </div>
           <input type="text" class="fi revreq-note-inp" data-prod="${p}"
             value="${note}" placeholder="Alasan / catatan permintaan revisi…"
-            ${disabled ? 'disabled' : ''}
+            ${!isReq || !canSales ? 'disabled' : ''}
             style="margin-top:6px;width:100%;font-size:11px">
         </div>
       </div>
       <!-- Target products (shown only when checked) -->
       <div class="revreq-targets" id="revreq-targets-${pid}"
-        style="display:${req.requested?'block':'none'};padding-left:24px">
+        style="display:${isReq?'block':'none'};padding-left:24px">
         <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);margin-bottom:6px">
           Produk / Qty Tujuan
         </div>
         <div class="revreq-targets-wrap" id="revreq-targets-wrap-${pid}">
-          ${buildTargetRows(p, targets, disabled)}
+          ${buildTargetRows(p, isReq ? targets : [{ product:'', mt:null }], !isReq || !canSales)}
         </div>
         ${canSales ? `<button onclick="addRevReqTarget('${p}')"
           style="margin-top:4px;font-size:10.5px;font-weight:600;padding:3px 10px;border-radius:5px;
-            border:1px dashed var(--border2);background:var(--bg2);color:var(--blue);cursor:pointer"
+            border:1px dashed var(--border2);background:var(--bg2);color:var(--blue);cursor:pointer;
+            display:${isReq?'inline-block':'none'}"
           id="revreq-addbtn-${pid}">
           + Tambah Produk Tujuan
         </button>` : ''}
@@ -867,7 +898,7 @@ function buildRevisionRequestTable(co) {
 
 /* Add a new target row for a source product */
 function addRevReqTarget(sourceProd) {
-  const pid  = sourceProd.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid  = makeRevPid(sourceProd);
   const wrap = document.getElementById('revreq-targets-wrap-' + pid);
   if (!wrap) return;
   const idx  = wrap.querySelectorAll('.revreq-target-row').length;
@@ -886,8 +917,8 @@ function addRevReqTarget(sourceProd) {
       onchange="syncRevReqTotal('${sourceProd}')">
       ${opts}
     </select>
-    <input type="text" inputmode="numeric" class="pmt-mt-inp revreq-target-mt" data-prod="${sourceProd}" data-idx="${idx}"
-      value="" placeholder="MT"
+    <input type="text" inputmode="decimal" class="pmt-mt-inp revreq-target-mt" data-prod="${sourceProd}" data-idx="${idx}"
+      value="" placeholder="MT (e.g. 123.50)"
       oninput="fmtThousandInline(this);syncRevReqTotal('${sourceProd}')"
       style="width:80px;flex-shrink:0;text-align:right">
     <button onclick="removeRevReqTarget('${sourceProd}',${idx})"
@@ -900,7 +931,7 @@ function addRevReqTarget(sourceProd) {
 
 /* Remove a target row */
 function removeRevReqTarget(sourceProd, idx) {
-  const pid  = sourceProd.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid  = makeRevPid(sourceProd);
   const wrap = document.getElementById('revreq-targets-wrap-' + pid);
   if (!wrap) return;
   const rows = wrap.querySelectorAll('.revreq-target-row');
@@ -912,7 +943,7 @@ function removeRevReqTarget(sourceProd, idx) {
 
 /* Re-number data-idx after add/remove */
 function rebuildRevReqTargetIndices(sourceProd) {
-  const pid  = sourceProd.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid  = makeRevPid(sourceProd);
   const wrap = document.getElementById('revreq-targets-wrap-' + pid);
   if (!wrap) return;
   wrap.querySelectorAll('.revreq-target-row').forEach((row, i) => {
@@ -927,12 +958,12 @@ function rebuildRevReqTargetIndices(sourceProd) {
 
 /* Update total MT display next to product name */
 function syncRevReqTotal(sourceProd) {
-  const pid  = sourceProd.replace(/[^a-zA-Z0-9]/g,'_');
+  const pid  = makeRevPid(sourceProd);
   const wrap = document.getElementById('revreq-targets-wrap-' + pid);
   if (!wrap) return;
   let total = 0;
   wrap.querySelectorAll('.revreq-target-mt').forEach(inp => {
-    total += Number(inp.value.replace(/,/g,'')) || 0;
+    total += parseFloat(inp.value.replace(/,/g,'')) || 0;
   });
   // Update total badge in row header
   const rowEl = document.getElementById('revreq-row-' + pid);
@@ -952,19 +983,54 @@ function toggleRevReqRow(pid, checked) {
   const row     = document.getElementById('revreq-row-' + pid);
   const targets = document.getElementById('revreq-targets-' + pid);
   if (!row) return;
+
   row.style.opacity    = checked ? '1' : '0.65';
   row.style.background = checked ? 'var(--bg)' : 'var(--bg2)';
-  if (targets) targets.style.display = checked ? 'block' : 'none';
-  row.querySelectorAll('.revreq-note-inp,.revreq-newprod-inp,.revreq-target-mt').forEach(inp => {
-    inp.disabled = !checked;
-    if (!checked) {
-      if (inp.tagName === 'SELECT') inp.selectedIndex = 0;
-      else inp.value = '';
-    }
-  });
+
+  // Update margin-bottom on header div
+  const headerDiv = row.firstElementChild;
+  if (headerDiv) headerDiv.style.marginBottom = checked ? '10px' : '0';
+
+  // Show/hide targets section
+  if (targets) {
+    targets.style.display = checked ? 'block' : 'none';
+    targets.querySelectorAll('input,select').forEach(el => {
+      el.disabled = !checked;
+      if (!checked) {
+        if (el.tagName === 'SELECT') el.selectedIndex = 0;
+        else el.value = '';
+      }
+    });
+    const addBtn = targets.querySelector('button');
+    if (addBtn) addBtn.style.display = checked ? '' : 'none';
+  }
+
+  // Enable/disable note input
+  const noteInp = row.querySelector('.revreq-note-inp');
+  if (noteInp) {
+    noteInp.disabled = !checked;
+    if (!checked) noteInp.value = '';
+  }
+
   if (!checked) {
     const badge = row.querySelector('.revreq-total-badge');
     if (badge) badge.textContent = '';
+  }
+
+  // Sync to live co object immediately so state is consistent
+  const chk = row.querySelector('.revreq-chk');
+  const prod = chk ? chk.dataset.prod : null;
+  if (prod) {
+    const co = getCurrentEditCo();
+    if (co) {
+      if (!co.salesRevRequest) co.salesRevRequest = {};
+      if (!checked) {
+        delete co.salesRevRequest[prod]; // remove unchecked product
+      } else {
+        co.salesRevRequest[prod] = co.salesRevRequest[prod] || {};
+        co.salesRevRequest[prod].requested = true;
+      }
+    }
   }
 }
 
@@ -989,7 +1055,7 @@ function collectRevisionRequestData(co) {
       const inp = tr.querySelector('.revreq-target-mt');
       const product = sel ? sel.value : '';
       const raw     = inp ? inp.value.replace(/,/g,'') : '';
-      const mt      = raw ? Number(raw) : null;
+      const mt      = raw ? parseFloat(raw.replace(/,/g,'')) : null;
       if (product || mt) targets.push({ product, mt });
     });
 
