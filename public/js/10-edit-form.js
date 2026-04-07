@@ -195,6 +195,64 @@ function applyRolePermissions() {
     if (lockIco) lockIco.remove();
   });
 
+  // ── Revision/Re-Apply active → disable Submission, PERTEK, SPI sections ──
+  // When a company has an active revision or re-apply, CorpSec cannot edit
+  // the original submission data to prevent accidental overwrites.
+  // SuperAdmin remains unrestricted.
+  const editCoCode = gv('editCo');
+  const editCo     = editCoCode ? (getSPI(editCoCode) || PENDING.find(p => p.code === editCoCode)) : null;
+  const hasActiveRev = editCo && editCo.revType && editCo.revType !== 'none' && editCo.revType !== 'clean';
+
+  if (hasActiveRev && currentRole !== 'SuperAdmin') {
+    // Disable all fields in Submission, PERTEK, SPI sections
+    const LOCKED_BY_REV = ['eSubmitDate','ePertekNo','ePertekDate',
+                            'eSpiNo','eSpiDate','eStatus','eStatusUpdate'];
+    const LOCKED_PRODS  = ['submitProdTable','obtainedProdTable'];
+
+    LOCKED_BY_REV.forEach(id => {
+      const el = g(id); if (!el) return;
+      el.disabled = true;
+      const wrap = g('wrap-' + id);
+      if (wrap) {
+        wrap.style.opacity = '0.45';
+        wrap.style.cursor  = 'not-allowed';
+        wrap.title         = 'Tidak bisa diedit — sedang ada Revision / Re-Apply aktif';
+      }
+    });
+
+    // Disable product MT tables
+    document.querySelectorAll('.pmt-submit-inp,.pmt-prod-rename,.pmt-obtained-inp').forEach(el => {
+      el.disabled = true;
+    });
+    [g('wrap-submitProdTable'), g('wrap-obtainedProdTable')].forEach(wrap => {
+      if (!wrap) return;
+      wrap.style.opacity = '0.45';
+      wrap.style.cursor  = 'not-allowed';
+      wrap.title         = 'Tidak bisa diedit — sedang ada Revision / Re-Apply aktif';
+    });
+
+    // Add banner notice to each locked section
+    ['sec-submission','sec-pertek','sec-spi'].forEach(secId => {
+      const sec = g(secId); if (!sec) return;
+      // Add banner if not already there
+      if (!sec.querySelector('.rev-lock-banner')) {
+        const hd = sec.querySelector('.ef-sec-hd');
+        if (hd) {
+          const banner = document.createElement('div');
+          banner.className = 'rev-lock-banner';
+          banner.style.cssText = 'display:flex;align-items:center;gap:6px;padding:5px 13px;' +
+            'background:var(--amber-bg);border-bottom:1px solid var(--amber-bd);' +
+            'font-size:10px;font-weight:600;color:var(--amber)';
+          banner.innerHTML = '🔒 Dikunci — ada Revision / Re-Apply aktif. Edit via section Revision Management.';
+          hd.insertAdjacentElement('afterend', banner);
+        }
+      }
+    });
+  } else {
+    // Remove any revision lock banners if no active revision
+    document.querySelectorAll('.rev-lock-banner').forEach(b => b.remove());
+  }
+
   // ── Sales Revision Request lock ───────────────────────────────────
   const canSalesRev = allowed.includes('salesRevReq');
   const revReqWrap  = g('salesRevReqWrap');

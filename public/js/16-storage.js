@@ -8,7 +8,7 @@ const LS_KEY = 'quotaDashboard_v1';
 const RA_MUTABLE  = ['berat','realPct','utilPct','cargoArrived','arrivalDate',
                      'etaJKT','pibReleaseDate','reapplyEst','reapplySubmitted','target'];
 const SPI_MUTABLE = ['spiRef','remarks','revType','revStatus','revNote','statusUpdate',
-                     'salesRevRequest','spiNo','pertekNo','updatedBy','updatedDate',
+                     'salesRevRequest','spiNo','pertekNo','spiDate','pertekDate','updatedBy','updatedDate',
                      'utilizationMT','availableQuota','shipments','reapplyTargets'];
 
 /** Serialize current state → localStorage */

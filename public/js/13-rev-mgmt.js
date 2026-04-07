@@ -205,14 +205,41 @@ function buildRevMgmtSection(co) {
       ? Object.entries(c.products).map(([p,m]) => `${p}: ${typeof m==='number'?m.toLocaleString():m} MT`).join(' · ')
       : '—';
 
-    html += `<div class="rr-cycle-row ${rowCls}">
+    // Detect if this Obtained #2 is TBA/empty — offer quick-fill button
+    const isObt2TBA = /^obtained #2/i.test(c.type) && (c.mt == null || c.mt === 0 || c.mt === 'TBA');
+    const mtDisp = (c.mt != null && c.mt !== 'TBA' && c.mt > 0)
+      ? `<strong style="color:var(--teal)">${Number(c.mt).toLocaleString()} MT</strong>`
+      : `<span style="color:var(--txt3);font-style:italic">TBA MT</span>`;
+
+    // Build per-product MT display
+    const prodLines = c.products && Object.keys(c.products).length
+      ? Object.entries(c.products).map(([p,m]) => {
+          const dotC = (typeof prodDot==='function') ? prodDot(p) : '#94a3b8';
+          const safeM = (!isNaN(Number(m)) && Number(m) > 0) ? Number(m).toLocaleString() + ' MT' : 'TBA';
+          return `<span style="display:inline-flex;align-items:center;gap:3px;margin-right:8px">
+            <span style="width:6px;height:6px;border-radius:2px;background:${dotC};display:inline-block"></span>
+            <span style="font-size:10px">${p}: <strong>${safeM}</strong></span></span>`;
+        }).join('')
+      : mtDisp;
+
+    // PERTEK/SPI date display
+    const pertekDateDisp = c.pertekDate ? ` · PERTEK: <strong>${c.pertekDate}</strong>` : '';
+    const spiDateDisp    = c.spiDate    ? ` · SPI: <strong>${c.spiDate}</strong>`       : '';
+
+    html += `<div class="rr-cycle-row ${rowCls}" style="position:relative">
       <div class="rr-cycle-dot" style="background:${dotColor}"></div>
-      <div class="rr-cycle-body">
-        <div class="rr-cycle-type">${c.type}${isActive ? ' <span style="font-size:9px;font-weight:700;padding:1px 5px;background:var(--amber-lt);color:#fff;border-radius:3px;margin-left:4px">ACTIVE</span>' : ''}</div>
-        <div class="rr-cycle-meta">${prodStr}</div>
-        <div class="rr-cycle-meta">
-          ${c.submitType}: <strong>${c.submitDate||'TBA'}</strong> &nbsp;·&nbsp;
-          ${c.releaseType}: <strong>${c.releaseDate||'TBA'}</strong>
+      <div class="rr-cycle-body" style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div class="rr-cycle-type">${c.type}${isActive ? ' <span style="font-size:9px;font-weight:700;padding:1px 5px;background:var(--amber-lt);color:#fff;border-radius:3px;margin-left:4px">ACTIVE</span>' : ''}</div>
+          ${isObt2TBA ? `<button onclick="document.getElementById('rrObtTotal')?.scrollIntoView({behavior:'smooth',block:'center'}); document.querySelector('.rr-obt-prod-inp')?.focus()"
+            style="font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:4px;border:1px solid var(--teal-bd);background:var(--teal-bg);color:var(--teal);cursor:pointer;white-space:nowrap;flex-shrink:0">
+            ✏️ Isi Obtained MT
+          </button>` : ''}
+        </div>
+        <div class="rr-cycle-meta" style="margin-top:3px;flex-wrap:wrap">${prodLines}</div>
+        <div class="rr-cycle-meta" style="margin-top:2px">
+          ${c.submitType||'Submit'}: <strong>${c.submitDate||'TBA'}</strong> &nbsp;·&nbsp;
+          ${c.releaseType||'Release'}: <strong>${c.releaseDate||'TBA'}</strong>${pertekDateDisp}${spiDateDisp}
         </div>
         ${c.status ? `<div class="rr-cycle-status">${c.status}</div>` : ''}
       </div>
@@ -272,8 +299,10 @@ function buildRevMgmtSection(co) {
     const obt2Prods = obt2Cy ? (obt2Cy.products || {}) : {};
     const obt2MT    = obt2Cy ? obt2Cy.mt : null;
     const obt2SPI   = obt2Cy ? (obt2Cy.releaseDate||'') : '';
+    const obt2SpiDate = obt2Cy ? (obt2Cy.spiDate||'') : '';
     const obt2PERTEK= (co.cycles||[]).find(c => /^(submit\s*#2|revision\s*#)/i.test(c.type));
     const pertekVal = obt2PERTEK ? (obt2PERTEK.releaseDate||'') : (co.pertekNo||'');
+    const pertekDateVal = obt2PERTEK ? (obt2PERTEK.pertekDate||'') : (co.pertekDate||'');
 
     // Per-product obtained MT inputs
     let obtainedHtml = '';
@@ -358,8 +387,18 @@ function buildRevMgmtSection(co) {
           <input class="fi" id="rrRevPertekNo" type="text" placeholder="e.g. 601/ILMATE/PERTEK-SPI-P/II/2026" value="${pertekVal && pertekVal !== 'TBA' ? pertekVal : ''}">
         </div>
         <div>
+          <div class="fl">PERTEK Terbit Date</div>
+          <input class="fi" id="rrRevPertekDate" type="text" placeholder="DD/MM/YYYY" value="${pertekDateVal && pertekDateVal !== 'TBA' ? pertekDateVal : ''}">
+        </div>
+      </div>
+      <div class="rr-form-row">
+        <div>
           <div class="fl">SPI No. (Revision)</div>
           <input class="fi" id="rrRevSpiNo" type="text" placeholder="e.g. 04.SPI-05.26.1624" value="${obt2SPI && obt2SPI !== 'TBA' ? obt2SPI : ''}">
+        </div>
+        <div>
+          <div class="fl">SPI Terbit Date</div>
+          <input class="fi" id="rrRevSpiDate" type="text" placeholder="DD/MM/YYYY" value="${obt2SpiDate && obt2SpiDate !== 'TBA' ? obt2SpiDate : ''}">
         </div>
       </div>
       <div class="rr-form-row full">
@@ -570,7 +609,15 @@ function rrApplyObtained(code) {
 
   obt2Cy.mt       = obtTotal;
   obt2Cy.products = obtByProd;
-  if (!obt2Cy.status) obt2Cy.status = `Obtained #2 diisi — ${obtTotal.toLocaleString()} MT`;
+  const spiNoVal   = (g('rrRevSpiNo')    || {}).value || '';
+  const spiDateVal = (g('rrRevSpiDate')  || {}).value || '';
+  const pkNoVal    = (g('rrRevPertekNo') || {}).value || '';
+  const pkDateVal  = (g('rrRevPertekDate')|| {}).value || '';
+  if (spiNoVal)   { obt2Cy.releaseDate = spiNoVal; co.spiNo = spiNoVal; }
+  if (spiDateVal) { obt2Cy.spiDate = spiDateVal; co.spiDate = spiDateVal; }
+  if (pkNoVal)    { co.pertekNo = pkNoVal; }
+  if (pkDateVal)  { co.pertekDate = pkDateVal; }
+  obt2Cy.status = `Obtained #2 — ${obtTotal.toLocaleString()} MT${spiNoVal ? ' · SPI: ' + spiNoVal : ''}${spiDateVal ? ' · ' + spiDateVal : ''}`;
   co.revMT = obtTotal;
 
   // Visual feedback on button
@@ -603,35 +650,38 @@ function rrSaveStatus(code) {
   const stage  = (g('rrApprovalStage') || {}).value || '';
   const date   = (g('rrRevDate')       || {}).value || '';
   const note   = (g('rrStatusNote')    || {}).value || '';
-  const pertekNo = (g('rrRevPertekNo') || {}).value || '';
-  const spiNo    = (g('rrRevSpiNo')    || {}).value || '';
+  const pertekNo   = (g('rrRevPertekNo')   || {}).value || '';
+  const pertekDate = (g('rrRevPertekDate') || {}).value || '';
+  const spiNo      = (g('rrRevSpiNo')      || {}).value || '';
+  const spiDate    = (g('rrRevSpiDate')    || {}).value || '';
   const { total: obtTotal, byProd: obtByProd } = rrReadObtainedFromForm(co);
 
   co.revStatus = stage;
-  if (date)   co.revSubmitDate = date;
-  if (note)   co.revNote = note;
+  if (date)      co.revSubmitDate = date;
+  if (note)      co.revNote = note;
+  if (pertekNo)  co.pertekNo  = pertekNo;
+  if (pertekDate)co.pertekDate = pertekDate;
+  if (spiNo)     co.spiNo     = spiNo;
 
   // Update / create the Obtained #2 cycle with new MT values
   const dateStr = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'2-digit'});
   let obt2Cy = (co.cycles||[]).find(c => /^obtained\s*#2/i.test(c.type) || /^obtained.*revision/i.test(c.type));
   if (!obt2Cy) {
-    // Create one
     obt2Cy = { type: 'Obtained #2', mt: null, products: {}, submitType: 'Submit MOT (Submit #2) Perubahan', submitDate: 'TBA', releaseType: 'SPI Perubahan', releaseDate: 'TBA', status: '', _fromRevReq: true };
     if (!co.cycles) co.cycles = [];
     co.cycles.push(obt2Cy);
   }
-  if (obtTotal > 0) {
-    obt2Cy.mt = obtTotal;
-    co.revMT   = obtTotal;
-  }
+  if (obtTotal > 0) { obt2Cy.mt = obtTotal; co.revMT = obtTotal; }
   if (Object.keys(obtByProd).length) obt2Cy.products = obtByProd;
-  if (spiNo) { obt2Cy.releaseDate = spiNo; co.spiNo = spiNo; }
+  if (spiNo)    { obt2Cy.releaseDate = spiNo; }
+  if (spiDate)  { obt2Cy.spiDate = spiDate; }
 
-  // Update active Submit #2 / Revision cycle with PERTEK no
+  // Update active Submit #2 / Revision cycle with PERTEK no + date
   const activeCy = rrGetActiveCycle(co);
   if (activeCy) {
     activeCy.status = `Update ${dateStr} - ${stage}`;
-    if (pertekNo) activeCy.releaseDate = pertekNo;
+    if (pertekNo)   activeCy.releaseDate = pertekNo;
+    if (pertekDate) activeCy.pertekDate  = pertekDate;
   }
 
   _refreshAfterRREdit();
@@ -644,8 +694,10 @@ function rrMarkApproved(code) {
   const co     = getSPI(code); if (!co) return;
   const stage  = (g('rrApprovalStage') || {}).value || '';
   const date   = (g('rrRevDate')       || {}).value || '';
-  const pertekNo = (g('rrRevPertekNo') || {}).value || '';
-  const spiNo    = (g('rrRevSpiNo')    || {}).value || '';
+  const pertekNo   = (g('rrRevPertekNo')   || {}).value || '';
+  const pertekDate = (g('rrRevPertekDate') || {}).value || '';
+  const spiNo      = (g('rrRevSpiNo')      || {}).value || '';
+  const spiDate    = (g('rrRevSpiDate')    || {}).value || '';
   const { total: obtTotal, byProd: obtByProd } = rrReadObtainedFromForm(co);
 
   co.revType   = 'complete';
@@ -677,11 +729,13 @@ function rrMarkApproved(code) {
   if (spiNo) {
     obt2Cy.releaseDate = spiNo;
     co.spiNo = spiNo;
-    obt2Cy.status = `SPI Perubahan TERBIT — No. ${spiNo}`;
+    obt2Cy.status = `SPI Perubahan TERBIT — No. ${spiNo}${spiDate ? ' · ' + spiDate : ''}`;
   } else if (pertekNo) {
-    obt2Cy.status = `PERTEK Perubahan TERBIT — No. ${pertekNo} · SPI TBA`;
+    obt2Cy.status = `PERTEK Perubahan TERBIT — No. ${pertekNo}${pertekDate ? ' · ' + pertekDate : ''} · SPI TBA`;
   }
-  if (pertekNo) co.pertekNo = pertekNo;
+  if (pertekNo)   { co.pertekNo = pertekNo; }
+  if (pertekDate) { co.pertekDate = pertekDate; if (activeCy) activeCy.pertekDate = pertekDate; }
+  if (spiDate)    { co.spiDate = spiDate; obt2Cy.spiDate = spiDate; }
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
