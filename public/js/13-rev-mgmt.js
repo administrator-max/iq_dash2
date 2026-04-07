@@ -544,6 +544,8 @@ function csConfirmRev(prod, pid, code) {
   applyRolePermissions();
   buildRevList && buildRevList();
   updateSPICounts && updateSPICounts();
+  saveToStorage();
+  patchToServer(co).catch(err => console.warn('csConfirmRev patch failed:', err));
 }
 
 function csBatalRev(prod, pid, code) {
@@ -559,6 +561,8 @@ function csBatalRev(prod, pid, code) {
 
   buildRevMgmtSection(co);
   applyRolePermissions();
+  saveToStorage();
+  patchToServer(co).catch(err => console.warn('csBatalRev patch failed:', err));
 }
 
 /* ── Action handlers ─────────────────────────────────────────────────────── */
@@ -631,6 +635,11 @@ function rrApplyObtained(code) {
 
   // Refresh cycle history panel
   buildRevMgmtSection(co);
+
+  // Persist to localStorage + server
+  saveToStorage();
+  patchToServer(co).catch(err => console.warn('rrApplyObtained patch failed:', err));
+
   nsShowToast(`✓ Obtained #2 updated — ${obtTotal.toLocaleString()} MT`);
 }
 
@@ -686,6 +695,8 @@ function rrSaveStatus(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
+  saveToStorage();
+  patchToServer(co).catch(err => console.warn('rrSaveStatus patch failed:', err));
   nsShowToast(`✓ ${code} revision status updated`);
 }
 
@@ -739,6 +750,8 @@ function rrMarkApproved(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
+  saveToStorage();
+  patchToServer(co).catch(err => console.warn('rrMarkApproved patch failed:', err));
   nsShowToast(`✓ ${code} revision marked as approved/complete`);
 }
 
@@ -767,6 +780,8 @@ function rrCancelRevision(code) {
 
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
+  saveToStorage();
+  patchToServer(co).catch(err => console.warn('rrCancelRevision patch failed:', err));
   nsShowToast(`✓ ${code} revision cancelled — original products restored`);
 }
 

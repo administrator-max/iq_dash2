@@ -65,7 +65,10 @@ async function getCyclesFor(codes) {
   const { rows: cRows } = await pool.query(
     `SELECT c.id, c.company_code, c.cycle_type, c.mt,
             c.submit_type, c.submit_date, c.release_type, c.release_date,
-            c.status, c.sort_order
+            c.status, c.sort_order,
+            COALESCE(c.pertek_date,'') AS pertek_date,
+            COALESCE(c.spi_date,'')    AS spi_date,
+            COALESCE(c.from_rev_req,false) AS from_rev_req
      FROM cycles c
      WHERE c.company_code = ANY($1)
      ORDER BY c.company_code, c.sort_order`, [codes]
@@ -94,6 +97,9 @@ async function getCyclesFor(codes) {
       releaseDate: c.release_date,
       status:      c.status,
       products:    cpMap[c.id] || {},
+      pertekDate:  c.pertek_date  || '',
+      spiDate:     c.spi_date     || '',
+      _fromRevReq: c.from_rev_req || false,
     });
   });
   return byCode;
@@ -176,6 +182,21 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
 // ═══════════════════════════════════════════════════════════════════
 // GET /api/data  — full dataset for frontend
 // ═══════════════════════════════════════════════════════════════════
+// ── Auto-migrate: add extra columns to cycles table if missing ──────
+(async () => {
+  try {
+    await pool.query(`
+      ALTER TABLE cycles
+        ADD COLUMN IF NOT EXISTS pertek_date TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS spi_date    TEXT DEFAULT '',
+        ADD COLUMN IF NOT EXISTS from_rev_req BOOLEAN DEFAULT FALSE
+    `);
+  } catch(e) {
+    // Table might not support ALTER or columns already exist — ignore
+    console.log('cycles migration skipped:', e.message);
+  }
+})();
+
 app.get('/api/data', async (req, res) => {
   try {
     const { rows: companies } = await pool.query(
@@ -406,6 +427,62 @@ app.patch('/api/company/:code', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════
 // GET /api/company/:code  — single company detail
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// PATCH /api/company/:code/cycles  — replace all cycles for a company
+// Called by frontend after any cycle mutation (revision, obtained #2, etc.)
+// ═══════════════════════════════════════════════════════════════════
+app.patch('/api/company/:code/cycles', async (req, res) => {
+  const { code } = req.params;
+  const { cycles } = req.body;
+  if (!Array.isArray(cycles)) return res.status(400).json({ error: 'cycles must be array' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Delete all existing cycles for this company, then re-insert
+    await client.query('DELETE FROM cycles WHERE company_code = $1', [code]);
+
+    for (let i = 0; i < cycles.length; i++) {
+      const c = cycles[i];
+      const { rows } = await client.query(
+        `INSERT INTO cycles
+           (company_code, cycle_type, mt, submit_type, submit_date,
+            release_type, release_date, status, sort_order,
+            pertek_date, spi_date, from_rev_req)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         RETURNING id`,
+        [code, c.type || '', c.mt || null,
+         c.submitType || '', c.submitDate || '',
+         c.releaseType || '', c.releaseDate || '',
+         c.status || '', i,
+         c.pertekDate || '', c.spiDate || '',
+         c._fromRevReq || false]
+      );
+      const cycleId = rows[0].id;
+
+      // Insert cycle_products
+      if (c.products && typeof c.products === 'object') {
+        for (const [product, mt] of Object.entries(c.products)) {
+          await client.query(
+            `INSERT INTO cycle_products (cycle_id, product, mt) VALUES ($1,$2,$3)`,
+            [cycleId, product, mt || null]
+          );
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ ok: true, cycles: cycles.length });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('/api/company/:code/cycles PATCH error:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/api/company/:code', async (req, res) => {
   const { code } = req.params;
   try {

@@ -198,6 +198,36 @@ async function patchToServer(co) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `HTTP ${res.status}`);
   }
+  // Also persist cycles array (Submit #1, Obtained #1, Obtained #2, etc.)
+  if (co.cycles && co.cycles.length) {
+    await patchCyclesToServer(co);
+  }
+  return res.json();
+}
+
+/* ── Patch cycles array to server (cycles table) ── */
+async function patchCyclesToServer(co) {
+  if (!co || !co.code || !Array.isArray(co.cycles)) return;
+  // Only send cycles that have meaningful data (not empty shells)
+  const payload = co.cycles.map(c => ({
+    type:        c.type        || '',
+    mt:          c.mt          != null ? c.mt : null,
+    submitType:  c.submitType  || '',
+    submitDate:  c.submitDate  || '',
+    releaseType: c.releaseType || '',
+    releaseDate: c.releaseDate || '',
+    status:      c.status      || '',
+    products:    c.products    || {},
+  }));
+  const res = await fetch(`/api/company/${encodeURIComponent(co.code)}/cycles`, {
+    method:  'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ cycles: payload }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 

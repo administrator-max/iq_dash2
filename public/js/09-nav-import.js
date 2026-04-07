@@ -95,23 +95,8 @@ function navFilter(f) {
 ══════════════════════════════════════════════════ */
 function openImport()  {
   document.getElementById('importModal').classList.add('open');
-  // Reset role state each time modal is opened (security — fresh session per open)
-  currentRole = null;
-  document.querySelectorAll('.role-btn').forEach(b => b.classList.remove('active'));
-  const lm = g('roleLockMsg');
-  if (lm) lm.style.display = '';
-  const ec = g('editCo');
-  if (ec) { ec.disabled = true; ec.style.cursor = 'not-allowed'; ec.value = ''; }
-  const ef = g('editFields');
-  if (ef) ef.style.display = 'none';
-  const ab = g('activeRoleBadge');
-  if (ab) ab.innerHTML = 'No role selected';
-  const sb = g('saveBtn');
-  if (sb) { sb.disabled = true; sb.style.opacity = '.45'; sb.style.cursor = 'not-allowed'; }
+  setMTab('manual', document.querySelector('.mtab.active') || document.querySelector('.mtab'));
 }
+
 function closeImport() { document.getElementById('importModal').classList.remove('open'); }
 function setMTab(id,el){ document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); document.querySelectorAll('.m-sec').forEach(s=>s.classList.remove('active')); document.getElementById('mt-'+id).classList.add('active'); }
-function handleDrop(e) { e.preventDefault(); document.getElementById('dropZ').classList.remove('over'); processFile(e.dataTransfer.files[0]); }
-function handleFileSelect(e) { processFile(e.target.files[0]); }
-function processFile(f) { if(!f)return; const m=document.getElementById('uploadMsg'); m.style.display='block'; m.innerHTML=`<div class="notice n-blue">📊 <strong>${f.name}</strong> (${(f.size/1024).toFixed(1)} KB)<br>In production, this parses the Excel and refreshes all data. Use Manual Update for immediate edits.</div>`; }
-function dlTemplate() { const hd=['Code','Group','Submit1_MT','Obtained_MT','Products','RevType','RevNote','RevStatus','Remarks','SpiRef']; const rows=SPI.slice(0,2).map(d=>[d.code,d.group,d.submit1,d.obtained,d.products.join(';'),d.revType,d.revNote,d.revStatus,d.remarks,d.spiRef]); const csv=[hd,...rows].map(r=>r.map(v=>`"${v}"`).join(',')).join('\n'); const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='quota_template_2026.csv';a.click(); }

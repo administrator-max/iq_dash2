@@ -6,7 +6,6 @@
 <title>Import Quota Monitor 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -29,7 +28,7 @@
     </div>
     <div id="sDrop" class="s-drop"></div>
     <span class="tb-date" id="tbDateTime" title="Last dashboard update timestamp"></span>
-    <button class="tb-btn" onclick="openImport()">⬆ Import</button>
+    <button class="tb-btn" onclick="openImport()" title="Input & update company data manually">📝 Input Data</button>
     <button class="tb-btn" onclick="exportExecutivePDF()" title="Export Management Summary PDF (A4)" style="background:rgba(220,38,38,.15);border-color:rgba(220,38,38,.4);color:#fca5a5;letter-spacing:.3px">📄 PDF Summary</button>
     <button class="tb-btn pri" onclick="doExportXLSX()" title="Export filtered data to Excel (.xlsx)">📊 Export Excel</button>
   </div>
@@ -1164,25 +1163,13 @@
 <!-- ═══ IMPORT MODAL ═══ -->
 <div class="modal-bg" id="importModal" onclick="e=>{if(e.target===this)closeImport()}">
   <div class="modal">
-    <div class="m-head"><div class="m-title">⬆ Import / Update Data</div><button class="m-x" onclick="closeImport()">✕</button></div>
+    <div class="m-head"><div class="m-title">📝 Input Data</div><button class="m-x" onclick="closeImport()">✕</button></div>
     <div class="m-body">
       <div class="m-tabs">
-        <div class="mtab active" onclick="setMTab('upload',this)">Upload Excel</div>
-        <div class="mtab" onclick="setMTab('manual',this)">Manual Update</div>
+        <div class="mtab active" onclick="setMTab('manual',this)">Manual Update</div>
         <div class="mtab" onclick="setMTab('manage',this)">Manage Data</div>
       </div>
-      <div id="mt-upload" class="m-sec active">
-        <div class="notice n-blue" style="margin-bottom:13px;font-size:11.5px">Upload an Excel file matching the template: <strong>Quota Tracking</strong> + <strong>Target Re-Apply &amp; Utilization</strong> sheets.</div>
-        <div class="drop-z" id="dropZ" onclick="document.getElementById('fileIn').click()" ondragover="e=>{e.preventDefault();document.getElementById('dropZ').classList.add('over')}" ondragleave="document.getElementById('dropZ').classList.remove('over')" ondrop="handleDrop(event)">
-          <div style="font-size:26px;margin-bottom:7px">📊</div>
-          <div style="font-size:13px;font-weight:700;color:var(--txt2);margin-bottom:3px">Drop Excel file or click to browse</div>
-          <div style="font-size:11px;color:var(--txt3)">.xlsx · must match template structure</div>
-        </div>
-        <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFileSelect(event)">
-        <div id="uploadMsg" style="margin-top:11px;display:none"></div>
-        <div style="margin-top:13px;display:flex;justify-content:flex-end"><button class="btn btn-s" onclick="dlTemplate()">↓ Download Template</button></div>
-      </div>
-      <div id="mt-manual" class="m-sec">
+      <div id="mt-manual" class="m-sec active">
 
         <!-- ══ STEP 1 — ROLE SELECTION (always visible, always first) ══ -->
         <div class="role-banner">
