@@ -38,7 +38,7 @@ const prodDot = p => PROD_DOT_COLORS[p] || '#94a3b8';
 
 /* HS Codes per product — Indonesian Customs Tariff (BTKI 2022) */
 const PROD_HS_CODES = {
-  'GL BORON':          '7210.41.11',
+  'GL BORON':          '7225.99.90',
   'GI BORON':          '7210.49.19',
   'BORDES ALLOY':      '7208.51.00',
   'AS STEEL':          '7228.30.00',

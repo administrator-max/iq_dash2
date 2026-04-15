@@ -1044,7 +1044,7 @@ th .tti::before { left: 6px; transform: none; }
 .revreq-row { margin-bottom:6px !important; }
 .revreq-row:last-child { margin-bottom:0 !important; }
 .revreq-targets { padding-top:5px; }
-.revreq-target-row { gap:5px; }
+.revreq-target-row { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
 .revreq-target-row select { font-size:11px; padding:3px 5px; }
 .revreq-target-row input[type="text"] { font-size:11px; padding:3px 6px; }
 
@@ -1075,3 +1075,257 @@ th .tti::before { left: 6px; transform: none; }
 .dl-v { font-size:12px; }
 .d-sv { font-size:18px; }
 .d-sl { font-size:8.5px; }
+/* ══════════════════════════════════════════════════════════════════
+   ADDITIONS — Classes used in JS/HTML not yet in global stylesheet
+   Added: April 2026
+══════════════════════════════════════════════════════════════════ */
+
+/* ── Role button color variants ─────────────────────────────────── */
+.rb-corpsec { background: linear-gradient(135deg, #eff4ff, #dbeafe); border-color: var(--blue-bd); }
+.rb-corpsec:hover, .rb-corpsec.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.rb-corpsec.active .rb-name, .rb-corpsec.active .rb-desc { color: #fff; }
+
+.rb-sales { background: linear-gradient(135deg, #edfcf2, #d1fae5); border-color: var(--green-bd); }
+.rb-sales:hover, .rb-sales.active { background: var(--green); color: #fff; border-color: var(--green); }
+.rb-sales.active .rb-name, .rb-sales.active .rb-desc { color: #fff; }
+
+.rb-ops { background: linear-gradient(135deg, #fff7ed, #fed7aa); border-color: var(--orange-bd); }
+.rb-ops:hover, .rb-ops.active { background: var(--orange); color: #fff; border-color: var(--orange); }
+.rb-ops.active .rb-name, .rb-ops.active .rb-desc { color: #fff; }
+
+.rb-super { background: linear-gradient(135deg, #f5f3ff, #ddd6fe); border-color: var(--violet-bd); }
+.rb-super:hover, .rb-super.active { background: var(--violet); color: #fff; border-color: var(--violet); }
+.rb-super.active .rb-name, .rb-super.active .rb-desc { color: #fff; }
+
+/* ── Product MT table inputs ─────────────────────────────────────── */
+.pmt-submit-inp,
+.pmt-obtained-inp,
+.pmt-prod-rename,
+.rr-obt-prod-inp,
+.reapply-prod-inp {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: var(--surf);
+  color: var(--txt);
+  text-align: right;
+  transition: border-color .15s, box-shadow .15s;
+}
+.pmt-submit-inp:focus,
+.pmt-obtained-inp:focus,
+.pmt-prod-rename:focus,
+.rr-obt-prod-inp:focus,
+.reapply-prod-inp:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(30,86,198,.12);
+}
+.pmt-submit-inp:disabled,
+.pmt-obtained-inp:disabled,
+.pmt-prod-rename:disabled,
+.rr-obt-prod-inp:disabled,
+.reapply-prod-inp:disabled {
+  background: var(--bg);
+  color: var(--txt3);
+  cursor: not-allowed;
+}
+
+/* ── CorpSec revision confirm input ──────────────────────────────── */
+.corpsec-revconfirm-inp {
+  width: 90px;
+  font-size: 11.5px;
+  padding: 4px 7px;
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  font-family: 'DM Mono', monospace;
+  text-align: right;
+  background: var(--surf);
+  color: var(--txt);
+  transition: border-color .15s;
+}
+.corpsec-revconfirm-inp:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(30,86,198,.12);
+}
+
+/* ── Sales shipment text inputs ──────────────────────────────────── */
+.sales-eta-inp,
+.sales-note-inp,
+.ops-pib-inp {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: var(--surf);
+  color: var(--txt);
+  transition: border-color .15s;
+}
+.sales-eta-inp:focus,
+.sales-note-inp:focus,
+.ops-pib-inp:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(30,86,198,.12);
+}
+
+/* ── Ops realization input ───────────────────────────────────────── */
+.ops-real-inp {
+  width: 80px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: var(--surf);
+  color: var(--txt);
+  text-align: right;
+  transition: border-color .15s;
+}
+.ops-real-inp:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(30,86,198,.12);
+}
+
+/* ── Sales util direct-entry input ───────────────────────────────── */
+.sales-util-direct-inp {
+  width: 90px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: 'DM Mono', monospace;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  text-align: right;
+  background: var(--surf);
+  color: var(--txt);
+  transition: border-color .15s;
+}
+.sales-util-direct-inp:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(30,86,198,.12);
+}
+
+/* ── Sales util save button ──────────────────────────────────────── */
+.sales-util-save-btn {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--blue);
+  border-radius: var(--r);
+  background: var(--blue);
+  color: #fff;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  white-space: nowrap;
+}
+.sales-util-save-btn:hover  { background: #1a47b0; }
+.sales-util-save-btn:active { transform: scale(.97); }
+
+/* ── Util edit wrap ──────────────────────────────────────────────── */
+.util-edit-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+/* ── Revision lock banner ────────────────────────────────────────── */
+.rev-lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-bd);
+  border-radius: var(--r);
+  font-size: 11px;
+  color: var(--amber);
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+/* ── Revision request form elements ─────────────────────────────── */
+.revreq-chk {
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--blue);
+}
+.revreq-targets-wrap  { padding-top: 4px; }
+.revreq-total-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-family: 'DM Mono', monospace;
+  background: var(--blue-bg);
+  color: var(--blue);
+  border: 1px solid var(--blue-bd);
+  border-radius: 4px;
+}
+.revreq-newprod-inp,
+.revreq-note-inp {
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  background: var(--surf);
+  color: var(--txt);
+}
+.revreq-newprod-inp:focus,
+.revreq-note-inp:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 2px rgba(30,86,198,.12);
+}
+.revreq-target-mt {
+  width: 80px;
+  padding: 4px 7px;
+  font-size: 11.5px;
+  font-family: 'DM Mono', monospace;
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  text-align: right;
+  flex-shrink: 0;
+  background: var(--surf);
+  color: var(--txt);
+}
+
+/* ── Table row variants (drill modals & main table) ─────────────── */
+.tr-pending {
+  background: var(--red-bg);
+}
+.tr-pending:hover { background: #fde8e8; }
+
+.tr-sub {
+  font-size: 11px;
+  color: var(--txt3);
+}
+
+.tr-totals {
+  font-weight: 700;
+  background: var(--bg);
+  border-top: 2px solid var(--border2);
+}
+
+/* ── Pending drill accordion arrows ─────────────────────────────── */
+.drill-co-arrow,
+.drill-sub-arrow {
+  font-size: 10px;
+  color: var(--txt3);
+  transition: transform .18s;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.pq-co.open  .drill-co-arrow,
+.pq-sub.open .drill-sub-arrow { transform: rotate(90deg); }

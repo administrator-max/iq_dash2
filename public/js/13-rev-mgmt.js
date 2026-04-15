@@ -5,23 +5,28 @@
 ═══════════════════════════════════════ */
 
 const RR_APPROVAL_STAGES = [
-  'Menunggu Disposisi Kasi',
+  'Submit',
   'Menunggu Disposisi Direktur',
-  'Menunggu Persetujuan Direktur',
+  'Menunggu Disposisi Kasubdit',
+  'Menunggu Disposisi Kasi',
+  'Menunggu proses verifikasi oleh staff',
+  'Menunggu Persetujuan Kasi',
   'Menunggu Persetujuan Kasubdit',
-  'Menunggu Penerbitan PERTEK',
-  'PERTEK Terbit — Menunggu SPI',
-  'SPI Terbit — Selesai',
+  'Menunggu Persetujuan Direktur',
+  'Menunggu Persetujuan Dirjen',
+  'Menunggu Keputusan Dirjen',
+  'Pertek terbit',
+  'Submit SPI',
+  'Proses Pengiriman ke Inatrade',
+  'Penerimaan Permohonan di Inatrade',
+  'Verifikasi Permohonan',
+  'Penelitian Pemprosesan Pendok',
+  'Penelitian Ketua Tim',
+  'Penelitian Direktur',
+  'Penelitian Dirjen',
+  'SPI Terbit',
 ];
 
-const RR_REAPPLY_STATUS_OPTIONS = [
-  'Not Yet Submitted',
-  'Submitted to MoI',
-  'Menunggu Disposisi Kasi',
-  'Menunggu Persetujuan Direktur',
-  'PERTEK Obtained',
-  'SPI Obtained',
-];
 
 /* Categorize a company record into one of four categories */
 function rrGetCategory(co) {
@@ -228,7 +233,7 @@ function buildRevMgmtSection(co) {
 
     html += `<div class="rr-cycle-row ${rowCls}" style="position:relative">
       <div class="rr-cycle-dot" style="background:${dotColor}"></div>
-      <div class="rr-cycle-body" style="flex:1;min-width:0">
+      <div class="rr-cycle-body">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div class="rr-cycle-type">${c.type}${isActive ? ' <span style="font-size:9px;font-weight:700;padding:1px 5px;background:var(--amber-lt);color:#fff;border-radius:3px;margin-left:4px">ACTIVE</span>' : ''}</div>
           ${isObt2TBA ? `<button onclick="document.getElementById('rrObtTotal')?.scrollIntoView({behavior:'smooth',block:'center'}); document.querySelector('.rr-obt-prod-inp')?.focus()"
@@ -425,48 +430,7 @@ function buildRevMgmtSection(co) {
     html += `<div class="rr-no-active" style="padding:10px 0">✅ No active revision for this company. Use <strong>+ Add New Submission</strong> above to start a new cycle.</div>`;
   }
 
-  // ── 5. Re-Apply tracking ────────────────────────────────────────────────
-  const isElig    = ra && isEligible(ra);
-  const raStatus  = (ra && ra.reapplyStatus) || 'Not Yet Submitted';
-  const raDate    = (ra && ra.reapplySubmitDate) || '';
-  const raSpiNo   = (ra && ra.reapplySpiNo) || '';
-  const raStatusOpts = RR_REAPPLY_STATUS_OPTIONS.map(s =>
-    `<option value="${s}" ${s===raStatus?'selected':''}>${s}</option>`
-  ).join('');
-
-  const raColorEl = isElig ? 'var(--green)' : 'var(--orange)';
-  html += `<div class="rr-reapply-panel">
-    <div class="rr-reapply-hd">♻️ Re-Apply Tracking</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <span style="font-size:11.5px;font-weight:600;color:${raColorEl}">
-        ${ra ? `Realization: ${(ra.realPct*100).toFixed(1)}%` : 'No realization data'}
-      </span>
-      <span>${isElig ? '<span class="badge b-eligible">✓ Eligible for Re-Apply</span>' : ra ? '<span class="badge b-ineligible">✗ Not Yet Eligible (&lt;60%)</span>' : ''}</span>
-    </div>
-    <div class="rr-form-row">
-      <div>
-        <div class="fl">Re-Apply Status</div>
-        <select class="fi" id="rrReapplyStatus">${raStatusOpts}</select>
-      </div>
-      <div>
-        <div class="fl">Re-Apply Submit Date</div>
-        <input class="fi" id="rrReapplyDate" type="text" placeholder="DD/MM/YYYY" value="${raDate}">
-      </div>
-    </div>
-    <div class="rr-form-row">
-      <div>
-        <div class="fl">Target Re-Apply MT</div>
-        <input class="fi" id="rrReapplyMT" type="number" placeholder="e.g. 1500" value="${ra && ra.target ? ra.target : ''}">
-      </div>
-      <div>
-        <div class="fl">New SPI / PERTEK No.</div>
-        <input class="fi" id="rrReaplySpiNo" type="text" placeholder="e.g. 04.PI-05.26.xxxx" value="${raSpiNo}">
-      </div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;margin-top:8px">
-      <button class="btn btn-p" onclick="rrSaveReapply('${code}')" style="font-size:11px;background:var(--blue)">💾 Save Re-Apply Update</button>
-    </div>
-  </div>`;
+  
 
   el.innerHTML = html;
 }
@@ -667,7 +631,11 @@ function rrSaveStatus(code) {
 
   co.revStatus = stage;
   if (date)      co.revSubmitDate = date;
-  if (note)      co.revNote = note;
+  if (note) {
+    co.revNote     = note;
+    // Sync to statusUpdate so it shows in PERTEK & SPI main table "STATUS UPDATE" column
+    co.statusUpdate = note;
+  }
   if (pertekNo)  co.pertekNo  = pertekNo;
   if (pertekDate)co.pertekDate = pertekDate;
   if (spiNo)     co.spiNo     = spiNo;

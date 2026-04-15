@@ -32,12 +32,16 @@ function updateOverviewKPIs() {
   let totalObtainedMT = 0, obtCoSet = new Set();
   SPI.forEach(co => {
     const allCycles = co.cycles || [];
+    // Dedup: take only FIRST occurrence of each cycleType per company
+    // (prevents double-counting when DB has multiple rows per product for same cycle)
+    const _seenCycleTypes = new Set();
     allCycles.forEach(c => {
-      // Only count Obtained #N cycles — exclude ALL Revision obtained cycles.
-      // Rule: 21,970 MT = sum of Obtained #1/#2/etc (non-revision) only.
       if (!/^obtained #/i.test(c.type)) return;
       const mt = typeof c.mt === 'number' ? c.mt : 0;
       if (mt <= 0) return;
+      const cycleKey = c.type.toLowerCase().trim();
+      if (_seenCycleTypes.has(cycleKey)) return; // skip duplicates
+      _seenCycleTypes.add(cycleKey);
       const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
       if (!PERIOD.active || inPd(pertekTerbit)) {
         totalObtainedMT += mt;
@@ -671,6 +675,15 @@ function refreshSubmitDrill() {
     });
   });
 
+  // Dedup: keep only first occurrence per company+cycleType
+  const _subSeen = new Set();
+  const _subUniq = [];
+  rows.forEach(r => {
+    const key = `${r.code}|${r.cycle}`;
+    if (!_subSeen.has(key)) { _subSeen.add(key); _subUniq.push(r); }
+  });
+  rows.length = 0; _subUniq.forEach(r => rows.push(r));
+
   const periodLabel = PERIOD.active ? PERIOD.label : 'All Time';
 
   /* ── Group rows by category for display ── */
@@ -882,7 +895,7 @@ function refreshPendingDrill() {
           ${codays !== null ? daysChip(codays) : ''}
         </div>
       </div>
-      <span style="font-size:10px;color:var(--txt3);transition:transform .18s;flex-shrink:0" class="drill-co-arrow">▶</span>`;
+      <span class="drill-co-arrow">▶</span>`;
 
     // Submissions panel
     const subsPanel = document.createElement('div');
@@ -1126,6 +1139,16 @@ function refreshObtainedDrill() {
       });
     });
   });
+
+  // Dedup: keep only first occurrence per company+cycleType
+  // (prevents duplicate rows when DB has multiple per-product cycle entries)
+  const _obtSeen = new Set();
+  const _obtUniq = [];
+  rows.forEach(r => {
+    const key = `${r.code}|${r.cycle}`;
+    if (!_obtSeen.has(key)) { _obtSeen.add(key); _obtUniq.push(r); }
+  });
+  rows.length = 0; _obtUniq.forEach(r => rows.push(r));
 
   // Sort: by PERTEK Terbit date asc, then company code
   rows.sort((a, b) => {

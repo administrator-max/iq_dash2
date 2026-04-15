@@ -28,7 +28,14 @@ function revisionStatus(d) {
   if (d.revType === 'active') {
     // Distinguish Re-Apply (Submit #2 — additional quota) from Revision (product/tonnage change)
     const hasSubmit2 = (d.cycles||[]).some(c => /^submit\s*#[2-9]/i.test(c.type));
-    return hasSubmit2 ? 'reapply' : 'active';
+    const baseStatus = hasSubmit2 ? 'reapply' : 'active';
+    // If approval stage indicates PERTEK already issued → move to 'revpending' (Pending tab)
+    const pendingStages = /pertek terbit|submit spi|proses pengiriman|penerimaan permohonan|verifikasi permohonan|penelitian|spi terbit/i;
+    const stageIsPending =
+      (d.revStatus && pendingStages.test(d.revStatus)) ||
+      (d.revNote   && pendingStages.test(d.revNote));
+    if (stageIsPending) return 'revpending';
+    return baseStatus;
   }
   // revType='complete': PERTEK already issued — check if SPI also issued
 

@@ -10,14 +10,14 @@
 /* Overview: revision list */
 function buildRevList() {
   const el = document.getElementById('revList'); if(!el) return; el.innerHTML = '';
+  // Under Revision now covers both active (revision) and reapply (Submit #2)
   const sections = [
-    { rs: 'active',  label: '🔄 Under Revision', color: 'var(--amber)', bg: 'var(--amber-bg)', bd: 'var(--amber-bd)',  badge: 'b-rev' },
-    { rs: 'reapply', label: '📨 Re-Apply (Submit #2)', color: 'var(--blue)',  bg: 'var(--blue-bg)',  bd: 'var(--blue-bd)',   badge: 'b-reapply' },
-    { rs: 'revpending', label: '⏳ Pending — PERTEK Terbit', color: 'var(--orange)', bg: 'var(--orange-bg)', bd: 'var(--orange-bd)', badge: 'b-revpending' },
+    { rs: ['active','reapply'], label: '🔄 Under Revision', color: 'var(--amber)', bg: 'var(--amber-bg)', bd: 'var(--amber-bd)', badge: 'b-rev' },
+    { rs: ['revpending'],       label: '⏳ Pending — PERTEK Terbit', color: 'var(--orange)', bg: 'var(--orange-bg)', bd: 'var(--orange-bd)', badge: 'b-revpending' },
   ];
 
   sections.forEach(sec => {
-    const cos = filteredSPI().filter(d => d.revType !== 'none' && revisionStatus(d) === sec.rs)
+    const cos = filteredSPI().filter(d => d.revType !== 'none' && sec.rs.includes(revisionStatus(d)))
       .sort((a, b) => a.code.localeCompare(b.code));
     if (!cos.length) return;
 
@@ -57,9 +57,13 @@ function buildRevList() {
           }).join(' · ')}
         </div>`;
       }
+      const _rs2 = revisionStatus(co);
+      const _typeTag = _rs2 === 'reapply'
+        ? `<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd);margin-left:4px">Re-Apply</span>`
+        : `<span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd);margin-left:4px">Revision</span>`;
       div.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <span style="font-size:13px;font-weight:700;color:var(--blue)">${co.code} <span style="font-size:10px;color:var(--txt3);font-weight:400">↗ click for detail</span></span>
+          <span style="font-size:13px;font-weight:700;color:var(--blue)">${co.code}${_typeTag} <span style="font-size:10px;color:var(--txt3);font-weight:400">↗ click for detail</span></span>
           <span class="badge ${sec.badge}">${sec.label.replace(/\s+·.*/,'')}</span>
         </div>
         <div style="font-size:10.5px;margin-top:3px;color:${sec.color}">${co.revStatus}</div>
@@ -389,12 +393,9 @@ function buildRevDetailTable() {
   // Separate into Revision (product/tonnage change) vs Re-Apply (Submit #2 additional quota)
   const allNonClean = filteredSPI().filter(d => d.revType !== 'none');
   const revGroups = [
-    { key: 'revision', label: '🔄 Under Revision — Product / Tonnage Change',
+    { key: 'underrev', label: '🔄 Under Revision',
       bg: 'var(--amber-bg)', bd: 'var(--amber-bd)', tc: 'var(--amber)',
-      cos: allNonClean.filter(co => revisionStatus(co) === 'active') },
-    { key: 'reapply',  label: '📨 Re-Apply — Submit #2 (Additional Quota)',
-      bg: 'var(--blue-bg)',  bd: 'var(--blue-bd)',  tc: 'var(--blue)',
-      cos: allNonClean.filter(co => revisionStatus(co) === 'reapply') },
+      cos: allNonClean.filter(co => revisionStatus(co) === 'active' || revisionStatus(co) === 'reapply') },
     { key: 'pending',  label: '⏳ Pending — PERTEK Terbit, Awaiting SPI',
       bg: 'var(--orange-bg)',bd: 'var(--orange-bd)',tc: 'var(--orange)',
       cos: allNonClean.filter(co => revisionStatus(co) === 'revpending') },
@@ -418,11 +419,14 @@ function buildRevDetailTable() {
     grp.cos.forEach(co => {
       const rs = revisionStatus(co);
       const rowClass = rs==='active'?'tr-rev':rs==='reapply'?'tr-reapply':rs==='revpending'?'tr-rev':'tr-revdone';
-      const typeLbl  = rs==='active'  ? 'Revision'
-                     : rs==='reapply' ? 'Re-Apply (Submit #2)'
-                     : rs==='revpending' ? 'Pending — PERTEK Terbit'
-                     : 'Complete';
-      const badgeCls = rs==='active'?'b-rev':rs==='reapply'?'b-reapply':rs==='revpending'?'b-revpending':'b-revdone';
+      const typeLbl   = rs==='active'  ? 'Revision'
+                      : rs==='reapply' ? 'Re-Apply'
+                      : rs==='revpending' ? 'Pending'
+                      : 'Complete';
+      const typeColor = rs==='reapply' ? 'var(--blue)'    : grp.tc;
+      const typeBg    = rs==='reapply' ? 'var(--blue-bg)' : grp.bg;
+      const typeBd    = rs==='reapply' ? 'var(--blue-bd)' : grp.bd;
+      const badgeCls  = rs==='active'?'b-rev':rs==='reapply'?'b-reapply':rs==='revpending'?'b-revpending':'b-revdone';
 
       // Sales Revision Request summary for this company
       const salesReq   = co.salesRevRequest || {};
@@ -448,7 +452,7 @@ function buildRevDetailTable() {
       tr.innerHTML = `
         <td style="color:var(--txt3);font-size:13px;cursor:pointer;padding:8px 10px" onclick="openDrawer('${co.code}')">↗</td>
         <td><div class="t-code" onclick="openDrawer('${co.code}')">${co.code}</div><div class="t-sub">${co.group}</div></td>
-        <td style="font-size:11px;font-weight:600;color:${grp.tc}">${typeLbl}</td>
+        <td style="padding:6px 10px"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:${typeBg};color:${typeColor};border:1px solid ${typeBd};white-space:nowrap">${typeLbl}</span></td>
         <td class="t-r" style="vertical-align:top">
           ${(() => {
             const breakdown = getObtainedProdBreakdown(co);
@@ -478,19 +482,20 @@ function sortS(col) { if(spiSortS.col===col)spiSortS.dir*=-1; else{spiSortS.col=
 function updateSPICounts() {
   const base = filteredSPI();
   const nCompleted = base.filter(d=>revisionStatus(d)==='clean'||revisionStatus(d)==='completed').length;
-  const nActive  = base.filter(d=>revisionStatus(d)==='active').length;
-  const nReapply = base.filter(d=>revisionStatus(d)==='reapply').length;
-  const nPending = base.filter(d=>revisionStatus(d)==='revpending').length;
-  const nNewSub  = filteredPending().length;
+  const nActive   = base.filter(d=>revisionStatus(d)==='active').length;
+  const nReapply  = base.filter(d=>revisionStatus(d)==='reapply').length;
+  const nUnderRev = nActive + nReapply;  // merged tab
+  const nPending  = base.filter(d=>revisionStatus(d)==='revpending').length;
+  const nNewSub   = filteredPending().length;
   const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   s('pillAll',        base.length);
   s('pillClean',      nCompleted);
-  s('pillRev',        nActive);
-  s('pillReapply',    nReapply);
+  s('pillRev',        nUnderRev);   // merged: active + reapply
+  s('pillReapply',    nReapply);    // kept for compat
   s('pillRevPending', nPending);
   s('pillNewSub',     nNewSub);
   s('ntcClean', `✅ ${nCompleted} Completed`);
-  s('ntcActive',  `🔄 ${nActive} Under Revision`);
+  s('ntcActive',  `🔄 ${nUnderRev} Under Revision`);
   s('ntcPending', `⏳ ${nPending} PENDING`);
   // nav tab count
   const tab=document.querySelectorAll('.nav-tab')[1]; const cnt=tab&&tab.querySelector('.n-count'); if(cnt) cnt.textContent=base.length;
@@ -534,7 +539,7 @@ function renderSPI() {
     const mq = !q || d.code.toLowerCase().includes(q.toLowerCase()) || d.products.some(p=>p.toLowerCase().includes(q.toLowerCase()));
     const mf = spiFilter==='ALL'         ? true
              : spiFilter==='CLEAN'       ? (rs==='clean' || rs==='completed')
-             : spiFilter==='REV'         ? rs==='active'
+             : spiFilter==='REV'         ? (rs==='active' || rs==='reapply')
              : spiFilter==='REAPPLY'     ? rs==='reapply'
              : spiFilter==='REVPENDING'  ? rs==='revpending'
              : /* fallback */               false;

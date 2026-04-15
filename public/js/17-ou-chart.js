@@ -250,9 +250,22 @@ function buildOUChart() {
   const filtered    = getFilteredOUData(allRecords);
 
   /* ── KPI Summary Strip ── */
-  // Use company-level co.obtained / availableQuota as source of truth for totals
-  // (consistent with buildAvailableQuota and buildAvqPageKPIs)
-  const totalObtained = filteredSPI().reduce((s, co) => s + (co.obtained || 0), 0);
+  // Use cycle-based dedup obtained (same logic as Overview KPI 2 and buildAvqPageKPIs)
+  // Sum first occurrence of each Obtained #N cycle per company → consistent across all KPIs
+  const totalObtained = filteredSPI().reduce((s, co) => {
+    const seen = new Set();
+    let coObt = 0;
+    (co.cycles || []).forEach(c => {
+      if (!/^obtained #/i.test(c.type)) return;
+      const mt = typeof c.mt === 'number' ? c.mt : 0;
+      if (mt <= 0) return;
+      const key = c.type.toLowerCase().trim();
+      if (seen.has(key)) return;
+      seen.add(key);
+      coObt += mt;
+    });
+    return s + (coObt || co.obtained || 0);
+  }, 0);
   const totalUtilized = allRecords.reduce((s, r) => s + r.utilized, 0);
   // REMAINING: sum availableQuota (company-level) — same source of truth as 04-charts & 19-init
   const totalRemain   = filteredSPI().reduce((s, co) => {
@@ -734,104 +747,112 @@ function closeLeadTimeDrill() {
   if (modal) modal.style.display = 'none';
 }
 
+/* Build per-company realization monitoring rows (aggregated) */
+function buildRealizationRows() {
+  const OVERDUE_DAYS = 60; // 2 months
+  const rows = [];
+  filteredSPI().forEach(co => {
+    const obtained = co.obtained || 0;
+    if (obtained <= 0) return;
+    const allLots = Object.values(co.shipments || {}).flat();
+    const utilMT  = allLots.reduce((s, l) => s + (l.utilMT  || 0), 0);
+    const realMT  = allLots.reduce((s, l) => s + (l.realMT  || 0), 0);
+    const realPct = obtained > 0 ? Math.min(100, Math.round(realMT / obtained * 100)) : 0;
+    const leadTimes = [];
+    allLots.forEach(l => {
+      if (l.utilMT > 0 && l.pibDate && l.etaJKT) {
+        const d1 = new Date(l.etaJKT.split('/').reverse().join('-'));
+        const d2 = new Date(l.pibDate.split('/').reverse().join('-'));
+        if (!isNaN(d1) && !isNaN(d2) && d2 > d1) leadTimes.push((d2 - d1) / 86400000);
+      } else if (l.utilMT > 0 && !l.pibDate && l.etaJKT) {
+        const d1 = new Date(l.etaJKT.split('/').reverse().join('-'));
+        if (!isNaN(d1)) { const ds = Math.floor((Date.now() - d1) / 86400000); if (ds > 0) leadTimes.push(ds); }
+      }
+    });
+    const avgLeadDays = leadTimes.length ? Math.round(leadTimes.reduce((s,d)=>s+d,0)/leadTimes.length) : null;
+    const status = utilMT <= 0 ? 'no-util'
+                 : avgLeadDays !== null && avgLeadDays > OVERDUE_DAYS ? 'overdue'
+                 : 'waiting';
+    rows.push({ code: co.code, obtained, utilMT, realMT, realPct, avgLeadDays, status });
+  });
+  return rows.sort((a,b) => { const o=r=>r.status==='overdue'?0:r.status==='waiting'?1:2; return o(a)-o(b)||b.realPct-a.realPct; });
+}
+
 function refreshLtDrillModal() {
-  const records   = buildOUData();
-  const nearLimit = records.filter(r => r.leadDays !== null && r.leadDays > 10 && r.leadDays <= OU_LEAD_STD);
-  const overdue   = records.filter(r => r.leadStatus === 'overdue');
-  const normal    = records.filter(r => r.leadStatus === 'normal' && !(r.leadDays > 10));
-
-  // subtitle
+  const rows    = buildRealizationRows();
+  const overdue = rows.filter(r => r.status === 'overdue');
+  const waiting = rows.filter(r => r.status === 'waiting');
   const sub = document.getElementById('ltDrillSubtitle');
-  if (sub) sub.textContent = `${records.length} company–product pairs · ${overdue.length} overdue · ${nearLimit.length} near limit · ${normal.length} normal`;
-
-  // KPI strip — compact, horizontal
+  if (sub) sub.textContent = `${rows.length} companies · ${overdue.length} overdue · ${waiting.length} waiting`;
   const strip = document.getElementById('ltDrillSummary');
   if (strip) strip.innerHTML = `
     <div style="display:flex;border-bottom:1px solid var(--border)">
       <div style="flex:1;padding:10px 18px;border-right:1px solid var(--border);background:#fef2f2">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#dc2626">⚠ Overdue</div>
         <div style="font-size:22px;font-weight:800;color:#dc2626;line-height:1.2">${overdue.length}</div>
-        <div style="font-size:10px;color:var(--txt3)">companies &gt;14 days</div>
+        <div style="font-size:10px;color:var(--txt3)">companies &gt;2 months</div>
       </div>
       <div style="flex:1;padding:10px 18px;border-right:1px solid var(--border);background:#fffbeb">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--amber)">⏱ Near Limit</div>
-        <div style="font-size:22px;font-weight:800;color:var(--amber);line-height:1.2">${nearLimit.length}</div>
-        <div style="font-size:10px;color:var(--txt3)">companies 10–14 days</div>
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--amber)">⏱ Waiting</div>
+        <div style="font-size:22px;font-weight:800;color:var(--amber);line-height:1.2">${waiting.length}</div>
+        <div style="font-size:10px;color:var(--txt3)">companies ≤2 months</div>
       </div>
       <div style="flex:1;padding:10px 18px;border-right:1px solid var(--border);background:var(--green-bg)">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--green)">✓ Normal</div>
-        <div style="font-size:22px;font-weight:800;color:var(--green);line-height:1.2">${normal.length}</div>
-        <div style="font-size:10px;color:var(--txt3)">companies ≤14 days</div>
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--green)">Total Obtained</div>
+        <div style="font-size:20px;font-weight:800;color:var(--green);line-height:1.2">${rows.reduce((s,r)=>s+r.obtained,0).toLocaleString()}</div>
+        <div style="font-size:10px;color:var(--txt3)">MT · ${rows.length} co.</div>
       </div>
       <div style="flex:1;padding:10px 18px;">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--txt3)">Standard</div>
-        <div style="font-size:22px;font-weight:800;color:var(--navy);line-height:1.2">14d</div>
-        <div style="font-size:10px;color:var(--txt3)">PERTEK → First Util</div>
+        <div style="font-size:20px;font-weight:800;color:var(--navy);line-height:1.2">2 mo.</div>
+        <div style="font-size:10px;color:var(--txt3)">Util → Realization</div>
       </div>
     </div>`;
-
   renderLtDrillTable();
 }
 
 function renderLtDrillTable() {
-  const records = buildOUData();
-  let rows = [...records].sort((a, b) => {
-    const order = r => r.leadStatus === 'overdue' ? 0 : (r.leadDays > 10) ? 1 : 2;
-    const diff = order(a) - order(b);
-    return diff !== 0 ? diff : (b.leadDays || 0) - (a.leadDays || 0);
-  });
-
-  if (ltDrillTabMode === 'OVERDUE') rows = rows.filter(r => r.leadStatus === 'overdue');
-  else if (ltDrillTabMode === 'NEAR')   rows = rows.filter(r => r.leadDays !== null && r.leadDays > 10 && r.leadDays <= OU_LEAD_STD);
-  else if (ltDrillTabMode === 'NORMAL') rows = rows.filter(r => r.leadStatus === 'normal' && !(r.leadDays > 10));
+  let rows = buildRealizationRows();
+  if (ltDrillTabMode === 'OVERDUE') rows = rows.filter(r => r.status === 'overdue');
+  else if (ltDrillTabMode === 'NEAR')   rows = rows.filter(r => r.status === 'waiting');
+  else if (ltDrillTabMode === 'NORMAL') rows = rows.filter(r => r.status !== 'overdue');
 
   const tbody = document.getElementById('ltDrillBody');
   if (!tbody) return;
 
   tbody.innerHTML = rows.map(r => {
-    const isOverdue = r.leadStatus === 'overdue';
-    const isNear    = r.leadDays !== null && r.leadDays > 10 && r.leadDays <= OU_LEAD_STD;
-    const rowBg     = isOverdue ? 'background:#fff8f8' : isNear ? 'background:#fffcf0' : '';
-    const leftBd    = isOverdue ? 'border-left:3px solid #dc2626' : isNear ? 'border-left:3px solid var(--amber-lt)' : 'border-left:3px solid transparent';
-    const c         = ouPC(r.product);
-    const utilPct   = r.obtained > 0 ? Math.round(r.utilized / r.obtained * 100) : 0;
-
-    // Status badge
+    const isOverdue = r.status === 'overdue';
+    const isWaiting = r.status === 'waiting';
+    const rowBg  = isOverdue ? 'background:#fff8f8' : isWaiting ? 'background:#fffcf0' : '';
+    const leftBd = isOverdue ? 'border-left:3px solid #dc2626' : isWaiting ? 'border-left:3px solid var(--amber-lt)' : 'border-left:3px solid transparent';
     let badge;
-    if (isOverdue) badge = `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca">⚠ Overdue</span>`;
-    else if (isNear) badge = `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;background:#fffbeb;color:var(--amber);border:1px solid #fde68a">⏱ Near Limit</span>`;
-    else badge = `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">✓ Normal</span>`;
-
-    // % util bar
-    const barColor = isOverdue ? '#dc2626' : isNear ? '#d97706' : c.solid;
-    const utilBar  = `<div style="display:flex;align-items:center;gap:6px">
+    if (isOverdue)      badge = `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca">⚠ Overdue</span>`;
+    else if (isWaiting) badge = `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;background:#fffbeb;color:var(--amber);border:1px solid #fde68a">⏱ Waiting</span>`;
+    else                badge = `<span style="font-size:10px;font-weight:700;padding:3px 10px;border-radius:4px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">✓ Normal</span>`;
+    const barColor = isOverdue ? '#dc2626' : r.realPct >= 60 ? 'var(--green)' : '#d97706';
+    const realBar  = `<div style="display:flex;align-items:center;gap:6px">
       <div style="flex:1;height:7px;background:#e2e8f0;border-radius:4px;min-width:50px">
-        <div style="width:${Math.min(100,utilPct)}%;height:100%;background:${barColor};border-radius:4px"></div>
+        <div style="width:${Math.min(100,r.realPct)}%;height:100%;background:${barColor};border-radius:4px"></div>
       </div>
-      <span style="font-size:11.5px;font-weight:700;color:${barColor};white-space:nowrap;min-width:34px;text-align:right">${utilPct}%</span>
+      <span style="font-size:11.5px;font-weight:700;color:${barColor};white-space:nowrap;min-width:34px;text-align:right">${r.realPct}%</span>
     </div>`;
-
-    return `<tr style="${rowBg}" onclick="closeLeadTimeDrill();openDrawer('${r.code}')" style="cursor:pointer" title="Click to open ${r.code}">
-      <td style="padding:10px 14px;${leftBd};cursor:pointer">
-        <span style="font-weight:700;font-size:13px;color:var(--blue)">${r.code}</span>
-      </td>
-      <td style="padding:10px 10px">
-        <span style="display:inline-flex;align-items:center;gap:5px">
-          <span style="width:9px;height:9px;border-radius:2px;background:${c.solid};flex-shrink:0"></span>
-          <span style="font-size:12px;font-weight:600;color:var(--txt)">${r.product}</span>
-        </span>
-      </td>
-      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt2)">${r.obtained.toLocaleString()} MT</td>
-      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:${c.solid}">${r.utilized > 0 ? r.utilized.toLocaleString() + ' MT' : '<span style="color:var(--txt3)">— MT</span>'}</td>
-      <td style="padding:10px 14px;min-width:130px">${utilBar}</td>
+    const leadStr = r.avgLeadDays !== null ? `${r.avgLeadDays}d` : '—';
+    return `<tr style="${rowBg}" onclick="closeLeadTimeDrill();openDrawer('${r.code}')" title="Click to open ${r.code}" style="cursor:pointer">
+      <td style="padding:10px 14px;${leftBd};cursor:pointer"><span style="font-weight:700;font-size:13px;color:var(--blue)">${r.code}</span></td>
+      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--teal)">${r.obtained.toLocaleString()} MT</td>
+      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--blue)">${r.utilMT > 0 ? r.utilMT.toLocaleString() + ' MT' : '<span style="color:var(--txt3)">—</span>'}</td>
+      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:var(--green)">${r.realMT > 0 ? r.realMT.toLocaleString() + ' MT' : '<span style="color:var(--txt3)">—</span>'}</td>
+      <td style="padding:10px 10px;min-width:120px">${realBar}</td>
+      <td style="padding:10px 10px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt2)">${leadStr}</td>
       <td style="padding:10px 14px;text-align:center">${badge}</td>
     </tr>`;
   }).join('');
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="padding:28px;text-align:center;color:var(--txt3);font-size:12px">No records for this filter.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="padding:28px;text-align:center;color:var(--txt3);font-size:12px">No records for this filter.</td></tr>`;
   }
 }
+
 
 /* ════════════════════════════════════════════════════════════════
    SALES PRIORITY ANALYSIS ENGINE

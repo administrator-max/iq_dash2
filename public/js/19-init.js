@@ -88,15 +88,27 @@ function setAvqTab(tab, el) {
 
 /* ── KPI cards on Available Quota page ── */
 function buildAvqPageKPIs() {
-  // Use company-level availableQuota as source of truth (matches companies.available_quota in DB).
-  // This is the canonical value; buildAvailableQuota() in 04-charts.js also aligns to this.
+  // Compute Total Obtained using cycle-based dedup — matches Overview KPI 2 exactly.
+  // Includes Obtained #1 AND Obtained #2 (re-apply), deduped per company per cycleType.
   let totalObt = 0, totalUtil = 0, totalAvq = 0, coSet = new Set();
   filteredSPI().forEach(co => {
-    const obtained = co.obtained || 0;
-    if (obtained <= 0) return;
+    const allCycles = co.cycles || [];
+    const seenCycleTypes = new Set();
+    let coObt = 0;
+    allCycles.forEach(c => {
+      if (!/^obtained #/i.test(c.type)) return;
+      const mt = typeof c.mt === 'number' ? c.mt : 0;
+      if (mt <= 0) return;
+      const key = c.type.toLowerCase().trim();
+      if (seenCycleTypes.has(key)) return;
+      seenCycleTypes.add(key);
+      coObt += mt;
+    });
+    if (coObt === 0) coObt = co.obtained || 0;
+    if (coObt <= 0) return;
     const util  = co.utilizationMT  || 0;
-    const avail = co.availableQuota != null ? co.availableQuota : (obtained - util);
-    totalObt  += obtained;
+    const avail = co.availableQuota != null ? co.availableQuota : (coObt - util);
+    totalObt  += coObt;
     totalUtil += util;
     totalAvq  += avail;
     if (avail > 0) coSet.add(co.code);

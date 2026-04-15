@@ -212,7 +212,7 @@ function buildSalesRow(prod, idx, lot, obtMT) {
               id="util-save-${pid}-${idx}"
               data-prod="${prod}" data-idx="${idx}"
               onclick="saveSalesUtil('${prod}',${idx})"
-              style="background:var(--blue);color:#fff;border-color:var(--blue)">Simpan</button>
+             >Simpan</button>
           </div>
           <div class="val-err" id="util-err-${pid}-${idx}"></div>
         </div>
@@ -382,6 +382,29 @@ function onSalesDirectChange(inp) {
 function onSalesAddChange(inp) { onSalesDirectChange(inp); }
 
 /* ── Sales: Save direct utilization edit ── */
+/* ── Patch shipment + utilization data to PostgreSQL server ── */
+async function patchShipmentsToServer(co) {
+  if (!co || !co.code) return;
+  try {
+    const obtByProd = getObtainedByProd(co);
+    const totalUtil  = Object.keys(obtByProd).reduce((s, p) => s + totalUtilForProd(co.shipments || {}, p), 0);
+    const totalAvail = Math.max(0, (co.obtained || 0) - totalUtil);
+    const body = {
+      shipments: co.shipments || {},
+      utilization_mt:  totalUtil,
+      available_quota: totalAvail,
+    };
+    const resp = await fetch(`/api/company/${co.code}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) console.error(`PATCH /api/company/${co.code} failed`);
+  } catch (err) {
+    console.error('patchShipmentsToServer error:', err);
+  }
+}
+
 function saveSalesUtil(prod, idx) {
   const co = getCurrentEditCo();
   if (!co) return;
@@ -473,6 +496,15 @@ function saveSalesUtil(prod, idx) {
   // Sync Ops column
   syncOpsUtilDisplay(co, prod);
   livePreview();
+
+  // Sync co-level totals so Available Quota KPI updates immediately
+  const _obtByProd2 = getObtainedByProd(co);
+  co.utilizationMT  = Object.keys(_obtByProd2).reduce((s, p) => s + totalUtilForProd(co.shipments, p), 0);
+  co.availableQuota = Math.max(0, (co.obtained || 0) - co.utilizationMT);
+
+  // Persist to localStorage + server DB
+  if (typeof saveToStorage === 'function') saveToStorage();
+  patchShipmentsToServer(co);
 }
 
 /* ── Sync Ops read-only Util MT column when Sales changes ── */
@@ -801,7 +833,7 @@ function buildRevisionRequestTable(co) {
       const isLast  = i === targets.length - 1;
       const canDel  = targets.length > 1;
       return `<div class="revreq-target-row" data-source="${sourceProd}" data-idx="${i}"
-        style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+       >
         <div style="width:14px;flex-shrink:0;font-size:10px;color:var(--txt3);text-align:center">→</div>
         <select class="fi revreq-newprod-inp" data-prod="${sourceProd}" data-idx="${i}"
           ${disabled ? 'disabled' : ''}
@@ -813,7 +845,7 @@ function buildRevisionRequestTable(co) {
           value="${mt}" placeholder="MT (e.g. 123.50)"
           oninput="fmtThousandInline(this);syncRevReqTotal('${sourceProd}')"
           ${disabled ? 'disabled' : ''}
-          style="width:80px;flex-shrink:0;text-align:right">
+         >
         ${canDel && !disabled ? `<button onclick="removeRevReqTarget('${sourceProd}',${i})"
           style="flex-shrink:0;width:22px;height:22px;border:1px solid var(--border2);border-radius:4px;background:var(--red-bg);color:var(--red2);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;padding:0"
           title="Hapus baris ini">✕</button>` : '<div style="width:22px"></div>'}
@@ -848,7 +880,7 @@ function buildRevisionRequestTable(co) {
         <input type="checkbox" class="revreq-chk" data-prod="${p}" data-pid="${pid}"
           ${isReq ? 'checked' : ''} ${canSales?'':'disabled'}
           onchange="toggleRevReqRow('${pid}',this.checked)"
-          style="margin-top:3px;flex-shrink:0"
+         
           title="Request revision for ${p}">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -920,7 +952,7 @@ function addRevReqTarget(sourceProd) {
     <input type="text" inputmode="decimal" class="pmt-mt-inp revreq-target-mt" data-prod="${sourceProd}" data-idx="${idx}"
       value="" placeholder="MT (e.g. 123.50)"
       oninput="fmtThousandInline(this);syncRevReqTotal('${sourceProd}')"
-      style="width:80px;flex-shrink:0;text-align:right">
+     >
     <button onclick="removeRevReqTarget('${sourceProd}',${idx})"
       style="flex-shrink:0;width:22px;height:22px;border:1px solid var(--border2);border-radius:4px;background:var(--red-bg);color:var(--red2);cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;padding:0"
       title="Hapus baris ini">✕</button>`;
