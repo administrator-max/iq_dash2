@@ -10,27 +10,27 @@ function exportExecutivePDF() {
   const genDate = new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'long',year:'numeric'});
 
   // KPI 1 — Total Submitted (Submit #N, filter by Submit MOI date)
+  // CRITICAL FIX: dedup by cycleType per company — prevents duplicate cycle rows inflating total
   let s1_mt = 0; const s1_co = new Set();
   [...SPI, ...PENDING].forEach(co => {
+    const _seenSubmitTypes = new Set();
     (co.cycles||[]).forEach(c => {
-      if (!/^submit #\d/i.test(c.type)) return;
+      if (!/^submit #?\d/i.test(c.type) || /obtained/i.test(c.type)) return;
+      const cycleKey = c.type.toLowerCase().trim();
+      if (_seenSubmitTypes.has(cycleKey)) return;
+      _seenSubmitTypes.add(cycleKey);
       const mt = typeof c.mt === 'number' ? c.mt : 0;
       if (mt <= 0) return;
       if (!PERIOD.active || inPd(pDate(c.submitDate))) { s1_mt += mt; s1_co.add(co.code); }
     });
   });
 
-  // KPI 2 — Obtained: only Obtained #N (non-revision) cycles. Same rule as overview.
+  // KPI 2 — Obtained: use canonicalObtainedFiltered for consistency with Overview KPI2
+  // Same formula: Obtained #N cycles with valid PERTEK Terbit, deduped, no _fromRevReq
   let s2_mt = 0; const s2_co = new Set();
-  SPI.forEach(co => {
-    const ac = co.cycles||[];
-    ac.forEach(c => {
-      if (!/^obtained #/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const pt = getPertekTerbitForObtained(c, ac);
-      if (!PERIOD.active || inPd(pt)) { s2_mt += mt; s2_co.add(co.code); }
-    });
+  [...SPI, ...PENDING].forEach(co => {
+    const coObt = canonicalObtainedFiltered(co);
+    if (coObt > 0) { s2_mt += coObt; s2_co.add(co.code); }
   });
 
   // KPI 3 — Realized: filter by arrivalDate (YYYY-MM-DD). etaJKT is display text only.
@@ -57,12 +57,10 @@ function exportExecutivePDF() {
   const appRate     = s1_mt > 0 ? (s2_mt/s1_mt*100).toFixed(1) : '—';
   const periodLabel = PERIOD.active ? PERIOD.label : 'All Time';
 
-  // Available Quota KPI — source: Excel "Available (MT)" rows (pre-seeded in data)
-  // Rule: Available = PERTEK Terbit MT (obtained) − Utilization MT
-  // Revision TBA / Submit #2 TBA: use original obtained #1 only (already correct in data)
-  // All companies with obtained > 0 are included (util=0 means full quota available)
+  // Available Quota KPI — Canonical Obtained − Utilization
+  // Uses canonicalObtained (same as KPI2) not raw co.obtained
   const availQuotaTotal = filteredSPI().reduce((sum, co) => {
-    const obtained = typeof co.obtained === 'number' ? co.obtained : 0;
+    const obtained = canonicalObtainedFiltered(co) || (typeof co.obtained === 'number' ? co.obtained : 0);
     if (obtained <= 0) return sum;
     if (co.availableQuota != null) return sum + co.availableQuota;
     const utilMT = co.utilizationMT != null ? co.utilizationMT : 0;

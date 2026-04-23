@@ -323,6 +323,7 @@ app.patch('/api/company/:code', async (req, res) => {
 
     // Build dynamic SET clause — only update fields present in body
     const allowed = [
+      'submit1','obtained',
       'rev_type','rev_note','rev_submit_date','rev_status','rev_mt',
       'remarks','spi_ref','status_update','pertek_no','spi_no',
       'utilization_mt','available_quota','updated_by','updated_date',

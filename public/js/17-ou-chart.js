@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════
-   OBTAIN vs UTILIZATION CHART MODULE
+   OBTAIN vs REALIZATION CHART MODULE
    buildOUChart, buildOUChartOverview,
    Lead-time drill, overview KPIs
 ═══════════════════════════════════════ */
@@ -250,27 +250,16 @@ function buildOUChart() {
   const filtered    = getFilteredOUData(allRecords);
 
   /* ── KPI Summary Strip ── */
-  // Use cycle-based dedup obtained (same logic as Overview KPI 2 and buildAvqPageKPIs)
-  // Sum first occurrence of each Obtained #N cycle per company → consistent across all KPIs
-  const totalObtained = filteredSPI().reduce((s, co) => {
-    const seen = new Set();
-    let coObt = 0;
-    (co.cycles || []).forEach(c => {
-      if (!/^obtained #/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const key = c.type.toLowerCase().trim();
-      if (seen.has(key)) return;
-      seen.add(key);
-      coObt += mt;
-    });
-    return s + (coObt || co.obtained || 0);
-  }, 0);
+  // Use canonicalObtained — single source of truth matching Overview KPI2 exactly.
+  // CRITICAL: do NOT use coObt || co.obtained fallback — co.obtained (DB raw)
+  // may include in-process cycles and inflates the total.
+  const totalObtained = filteredSPI().reduce((s, co) => s + canonicalObtainedFiltered(co), 0);
   const totalUtilized = allRecords.reduce((s, r) => s + r.utilized, 0);
-  // REMAINING: sum availableQuota (company-level) — same source of truth as 04-charts & 19-init
+  // REMAINING: canonical obtained − utilization (consistent formula)
   const totalRemain   = filteredSPI().reduce((s, co) => {
+    const obt   = canonicalObtainedFiltered(co);
     const util  = co.utilizationMT  || 0;
-    const avail = co.availableQuota != null ? co.availableQuota : (co.obtained || 0) - util;
+    const avail = co.availableQuota != null ? co.availableQuota : Math.max(0, obt - util);
     return s + Math.max(0, avail);
   }, 0);
   const overdueCount  = allRecords.filter(r => r.leadStatus === 'overdue').length;
@@ -566,7 +555,7 @@ function buildOUChart() {
   tbody.innerHTML = html || `<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--txt3);font-size:12px">No data matching current filters.</td></tr>`;
 }
 
-/** Build the condensed Obtain vs Util chart on the Overview page (with filter support) */
+/** Build the condensed Obtain vs Real chart on the Overview page (with filter support) */
 function buildOUChartOverview() {
   const allRecords = buildOUData();
 
@@ -673,11 +662,16 @@ function buildOUChartOverview() {
   });
 }
 
-/** Update the Obtain vs Utilization lead time insight card on Overview */
+/** Update the Obtain vs Realization insight card on Overview.
+ *  Uses buildRealizationRows() — same data source as the "Obtained vs Realization Monitoring"
+ *  modal — so KPI card count always matches what you see when you open the modal.
+ *  Standard: 2 months (60 days) Utilization → Realization.
+ */
 function updateOUOverviewKPIs() {
-  const records   = buildOUData();
-  const nearLimit = records.filter(r => r.leadDays !== null && r.leadDays > 10 && r.leadDays <= OU_LEAD_STD);
-  const overdue   = records.filter(r => r.leadStatus === 'overdue');
+  // Use realization rows — SAME source as the modal (consistent counts)
+  const rows    = (typeof buildRealizationRows === 'function') ? buildRealizationRows() : [];
+  const overdue = rows.filter(r => r.status === 'overdue');
+  const waiting = rows.filter(r => r.status === 'waiting');
 
   const ico    = document.getElementById('ouInsightIco');
   const lbl    = document.getElementById('ouInsightLbl');
@@ -688,35 +682,41 @@ function updateOUOverviewKPIs() {
 
   if (!val) return;
 
-  // Always show both counts
-  const overdueCount   = overdue.length;
-  const nearCount      = nearLimit.length;
+  const overdueCount = overdue.length;
+  const waitingCount = waiting.length;
 
   if (overdueCount > 0) {
     if (ico)    ico.textContent = '⚠';
-    if (lbl)    { lbl.textContent = 'Obtain vs Utilization'; lbl.style.color = 'var(--red2)'; }
-    if (val)    val.innerHTML   =
+    if (lbl)    { lbl.textContent = 'Obtain vs Realization'; lbl.style.color = 'var(--red2)'; }
+    if (val)    val.innerHTML =
       `<span style="color:var(--red2);font-weight:800">${overdueCount} Overdue</span>` +
-      (nearCount > 0 ? ` · <span style="color:var(--amber);font-weight:700">${nearCount} Near limit</span>` : '');
-    if (sub)    sub.textContent = `>${OU_LEAD_STD}d without utilization · 14-day standard`;
+      (waitingCount > 0 ? ` · <span style="color:var(--amber);font-weight:700">${waitingCount} Waiting</span>` : '');
+    if (sub)    sub.textContent = `>2 months Util→Realization · 2-month standard`;
     if (accent) accent.style.background = 'var(--red-lt)';
     if (card)   { card.style.borderColor = 'var(--red-bd)'; card.style.background = '#fff8f8'; }
-  } else if (nearCount > 0) {
+  } else if (waitingCount > 0) {
     if (ico)    ico.textContent = '⏱';
-    if (lbl)    { lbl.textContent = 'Obtain vs Utilization'; lbl.style.color = 'var(--amber)'; }
-    if (val)    val.innerHTML   =
-      `<span style="color:var(--amber);font-weight:800">${nearCount} Near limit</span>` +
+    if (lbl)    { lbl.textContent = 'Obtain vs Realization'; lbl.style.color = 'var(--amber)'; }
+    if (val)    val.innerHTML =
+      `<span style="color:var(--amber);font-weight:800">${waitingCount} Waiting</span>` +
       ` · <span style="color:var(--green);font-weight:700">0 Overdue</span>`;
-    if (sub)    sub.textContent = `10–14 days lead time · monitor closely`;
+    if (sub)    sub.textContent = `≤2 months since utilization · monitor closely`;
     if (accent) accent.style.background = 'linear-gradient(90deg,var(--amber-lt),var(--green-lt))';
     if (card)   { card.style.borderColor = 'var(--amber-bd)'; card.style.background = '#fffcf0'; }
-  } else {
+  } else if (rows.length > 0) {
     if (ico)    ico.textContent = '✅';
-    if (lbl)    { lbl.textContent = 'Obtain vs Utilization'; lbl.style.color = 'var(--green)'; }
-    if (val)    val.innerHTML   = `<span style="color:var(--green);font-weight:800">All On Track</span>`;
-    if (sub)    sub.textContent = `${records.filter(r=>r.leadStatus==='normal').length} products within 14-day standard`;
+    if (lbl)    { lbl.textContent = 'Obtain vs Realization'; lbl.style.color = 'var(--green)'; }
+    if (val)    val.innerHTML = `<span style="color:var(--green);font-weight:800">All On Track</span>`;
+    if (sub)    sub.textContent = `${rows.length} companies within 2-month standard`;
     if (accent) accent.style.background = 'var(--green-lt)';
     if (card)   { card.style.borderColor = 'var(--green-bd)'; card.style.background = '#f0fdf4'; }
+  } else {
+    if (ico)    ico.textContent = '\u2014';
+    if (lbl)    { lbl.textContent = 'Obtain vs Realization'; lbl.style.color = 'var(--txt3)'; }
+    if (val)    val.innerHTML = `<span style="color:var(--txt3);font-weight:700">No Data</span>`;
+    if (sub)    sub.textContent = `No utilization recorded yet`;
+    if (accent) accent.style.background = 'var(--border)';
+    if (card)   { card.style.borderColor = 'var(--border)'; card.style.background = 'var(--bg)'; }
   }
 }
 

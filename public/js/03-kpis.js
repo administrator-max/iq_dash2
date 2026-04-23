@@ -6,22 +6,25 @@ function updateOverviewKPIs() {
   const kpis = document.querySelectorAll('#page-overview .kpi');
 
   /* ── KPI 1: Total Submitted ──────────────────────────────────────────── */
+  // FIX: use co.submit1 from DB (single ground-truth value per company).
+  // Iterating cycles causes 5–15× inflation due to duplicate cycle rows per product.
+  // Period filter: check if ANY submit cycle falls within period — if yes, include co.submit1.
   let totalSubmitMT = 0, submitCoSet = new Set();
-  const allForSubmit = [...SPI, ...PENDING]; // includes PERTEK Pending companies
+  const allForSubmit = [...SPI, ...PENDING];
   allForSubmit.forEach(co => {
-    (co.cycles || []).forEach(c => {
-      // Match Submit cycles only — Revision cycles are product modifications, not new MT
-      // Same logic as breakdown grand total (revision shown informational only)
-      const isSubmit = /^submit/i.test(c.type) && !/obtained/i.test(c.type);
-      if (!isSubmit) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const d = pDate(c.submitDate);
-      if (!PERIOD.active || inPd(d)) {
-        totalSubmitMT += mt;
-        submitCoSet.add(co.code);
-      }
-    });
+    const submitMT = co.submit1 || 0;
+    if (submitMT <= 0) return;
+    if (!PERIOD.active) {
+      totalSubmitMT += submitMT;
+      submitCoSet.add(co.code);
+    } else {
+      // Period filter: does any submit cycle land in the active period?
+      const inPeriod = (co.cycles || []).some(c => {
+        if (!/^submit/i.test(c.type) || /obtained/i.test(c.type)) return false;
+        return inPd(pDate(c.submitDate));
+      });
+      if (inPeriod) { totalSubmitMT += submitMT; submitCoSet.add(co.code); }
+    }
   });
 
   /* ── KPI 2: SPI/PERTEK Obtained — filter by PERTEK Terbit date ────────
@@ -37,6 +40,7 @@ function updateOverviewKPIs() {
     const _seenCycleTypes = new Set();
     allCycles.forEach(c => {
       if (!/^obtained #/i.test(c.type)) return;
+      if (c._fromRevReq) return; // re-allocation via revision request ≠ new MT from Ministry
       const mt = typeof c.mt === 'number' ? c.mt : 0;
       if (mt <= 0) return;
       const cycleKey = c.type.toLowerCase().trim();
@@ -280,12 +284,49 @@ function refreshRealizedDrill() {
 /* ─────────────────────────────────────────────────────────────────
    AVAILABLE QUOTA DRILL-DOWN MODAL
    ───────────────────────────────────────────────────────────────── */
-function openAvqDrill()  { const m=document.getElementById('avqDrillModal'); if(!m) return; refreshAvqDrill(); m.style.display='block'; }
+/* ── HS Code filter state for Available Quota Drill ── */
+let _avqHsFilter  = '';   // '' = All
+let _avqHsSearch  = '';   // free-text search across product/HS
+
+function avqSetHsFilter(hs, el) {
+  _avqHsFilter = hs;
+  _avqHsSearch = '';
+  // Sync the select dropdown value
+  const sel = document.getElementById('avqHsSearch'); if (sel) sel.value = hs;
+  document.querySelectorAll('.avq-hs-chip').forEach(c => c.classList.remove('avq-chip-on'));
+  if (el) el.classList.add('avq-chip-on');
+  refreshAvqDrill();
+}
+function avqApplyHsSearch(val) {
+  // Now triggered by dropdown select — val is the exact HS code or ''
+  _avqHsFilter = val.trim();
+  _avqHsSearch = '';
+  document.querySelectorAll('.avq-hs-chip').forEach(c => c.classList.remove('avq-chip-on'));
+  const matchChip = document.querySelector(`.avq-hs-chip[data-hs="${val}"]`);
+  if (matchChip) matchChip.classList.add('avq-chip-on');
+  refreshAvqDrill();
+}
+/* Populate the HS dropdown with unique HS codes from current data */
+function _populateAvqHsDropdown(allRows) {
+  const sel = document.getElementById('avqHsSearch');
+  if (!sel) return;
+  const hsSet = new Set(allRows.map(r => r.hs).filter(h => h && h !== '—'));
+  const current = sel.value;
+  // Keep "All" option + unique HS codes sorted
+  sel.innerHTML = '<option value="">— Semua HS Code —</option>' +
+    Array.from(hsSet).sort().map(hs =>
+      `<option value="${hs}" ${current===hs?'selected':''}>${hs} · ${
+        allRows.filter(r=>r.hs===hs).map(r=>r.product).filter((v,i,a)=>a.indexOf(v)===i).join(', ')
+      }</option>`
+    ).join('');
+}
+
+function openAvqDrill()  { _avqHsFilter=''; _avqHsSearch=''; const m=document.getElementById('avqDrillModal'); if(!m) return; refreshAvqDrill(); m.style.display='block'; }
 function closeAvqDrill() { const m=document.getElementById('avqDrillModal'); if(m) m.style.display='none'; }
 
 function refreshAvqDrill() {
-  // Build rows using exact same logic as buildAvailableQuota() — single source of truth
-  const rows = [];
+  // Build ALL rows (unfiltered) — single source of truth
+  const allRows = [];
   filteredSPI().forEach(co => {
     const obtained = typeof co.obtained === 'number' ? co.obtained : 0;
     if (obtained <= 0) return;
@@ -304,35 +345,73 @@ function refreshAvqDrill() {
       });
     });
 
+    const push = (prod, obtP, utilP, avq) => {
+      const hs = (typeof PROD_HS_CODES !== 'undefined' ? (PROD_HS_CODES[prod] || '—') : '—');
+      allRows.push({ code:co.code, group:co.group, product:prod, hs, obtained:obtP, utilMT:utilP, avq });
+    };
+
     if (Object.keys(aProd).length > 0) {
       Object.entries(aProd).forEach(([prod, avq]) => {
         const utilP = uProd[prod] || 0;
         const obtP  = cycleProds[prod] || (avq + utilP);
-        rows.push({ code:co.code, group:co.group, product:prod, obtained:obtP, utilMT:utilP, avq });
+        push(prod, obtP, utilP, avq);
       });
       Object.entries(uProd).forEach(([prod, util]) => {
         if (aProd[prod] != null) return;
-        rows.push({ code:co.code, group:co.group, product:prod, obtained:cycleProds[prod]||util, utilMT:util, avq:0 });
+        push(prod, cycleProds[prod]||util, util, 0);
       });
     } else {
       const prodEntries = Object.entries(cycleProds);
       if (prodEntries.length > 0) {
         const cycleTotal = prodEntries.reduce((s,[,v])=>s+v, 0);
         prodEntries.forEach(([prod, mt]) => {
-          rows.push({ code:co.code, group:co.group, product:prod,
-            obtained: mt,
-            utilMT:  cycleTotal>0 ? Math.round(totalUtil * mt/cycleTotal) : 0,
-            avq:     cycleTotal>0 ? Math.round(totalAvq  * mt/cycleTotal) : 0,
-          });
+          push(prod, mt,
+            cycleTotal>0 ? Math.round(totalUtil * mt/cycleTotal) : 0,
+            cycleTotal>0 ? Math.round(totalAvq  * mt/cycleTotal) : 0);
         });
       } else {
-        rows.push({ code:co.code, group:co.group, product:(co.products||[])[0]||'—', obtained, utilMT:totalUtil, avq:totalAvq });
+        push((co.products||[])[0]||'—', obtained, totalUtil, totalAvq);
       }
     }
   });
 
-  rows.sort((a,b) => a.code.localeCompare(b.code) || a.product.localeCompare(b.product));
+  allRows.sort((a,b) => a.code.localeCompare(b.code) || a.product.localeCompare(b.product));
 
+  // Populate the HS Code dropdown with unique codes from current data
+  _populateAvqHsDropdown(allRows);
+
+  // ── Build HS filter chip bar from all unique HS codes in data ──────────
+  const hsSet = new Set(allRows.map(r => r.hs).filter(h => h && h !== '—'));
+  const hsSorted = ['', ...Array.from(hsSet).sort()];
+  const chipsEl = document.getElementById('avqHsChips');
+  if (chipsEl) {
+    chipsEl.innerHTML = hsSorted.map(hs => {
+      const label     = hs === '' ? 'All' : hs;
+      const prodMatch = hs === '' ? '' : ` · ${allRows.filter(r=>r.hs===hs).map(r=>r.product).filter((v,i,a)=>a.indexOf(v)===i).join(', ')}`;
+      const isOn      = (_avqHsFilter === hs && !_avqHsSearch) || (hs==='' && !_avqHsFilter && !_avqHsSearch);
+      return `<button class="avq-hs-chip${isOn?' avq-chip-on':''}" data-hs="${hs}"
+        onclick="avqSetHsFilter('${hs}',this)"
+        title="${hs ? hs + prodMatch : 'Show all HS codes'}"
+        style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;cursor:pointer;
+          border:1px solid ${isOn?'var(--navy)':'var(--border2)'};
+          background:${isOn?'var(--navy)':'var(--bg)'};
+          color:${isOn?'#fff':'var(--txt3)'};
+          transition:all .15s;white-space:nowrap">
+        ${label}
+      </button>`;
+    }).join('');
+  }
+
+  // ── Apply filter ─────────────────────────────────────────────────────
+  let rows = allRows;
+  if (_avqHsFilter)  rows = rows.filter(r => r.hs === _avqHsFilter);
+  if (_avqHsSearch)  rows = rows.filter(r =>
+    r.product.toLowerCase().includes(_avqHsSearch) ||
+    r.hs.toLowerCase().includes(_avqHsSearch) ||
+    r.code.toLowerCase().includes(_avqHsSearch)
+  );
+
+  // ── Summary stats (on filtered rows) ─────────────────────────────────
   const totalAvq  = rows.reduce((s,r) => s+r.avq,    0);
   const totalUtil = rows.reduce((s,r) => s+r.utilMT,  0);
   const totalObt  = rows.reduce((s,r) => s+r.obtained,0);
@@ -340,8 +419,9 @@ function refreshAvqDrill() {
   const utilRate  = totalObt > 0 ? (totalUtil/totalObt*100).toFixed(1) : '—';
   const avqRate   = totalObt > 0 ? (totalAvq /totalObt*100).toFixed(1) : '—';
 
+  const activeHsLabel = _avqHsFilter ? ` · HS ${_avqHsFilter}` : (_avqHsSearch ? ` · "${_avqHsSearch}"` : '');
   document.getElementById('avqDrillSubtitle').textContent =
-    `${uniqueCos} companies · ${rows.length} product-rows · Obtained − Utilized`;
+    `${uniqueCos} companies · ${rows.length} product-rows · Obtained − Utilized${activeHsLabel}`;
 
   document.getElementById('avqDrillSummary').innerHTML = [
     ['Available (MT)',  totalAvq.toLocaleString()+' MT',  '#0891b2',       '#ecfeff',           '#a5f3fc'],
@@ -357,7 +437,8 @@ function refreshAvqDrill() {
 
   const body = document.getElementById('avqDrillBody');
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--txt3)">No available quota data found</td></tr>`;
+    const msg = _avqHsFilter ? `HS ${_avqHsFilter}` : _avqHsSearch ? `"${_avqHsSearch}"` : 'the current filter';
+    body.innerHTML = `<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--txt3)">No data for ${msg}</td></tr>`;
     return;
   }
 
@@ -366,16 +447,20 @@ function refreshAvqDrill() {
   body.innerHTML = rows.map(r => {
     const isFirst = r.code !== lastCode; lastCode = r.code;
     const utilPct  = r.obtained > 0 ? r.utilMT / r.obtained : 0;
-    const avqPct   = r.obtained > 0 ? r.avq    / r.obtained : 0;
     const barW     = (r.avq / maxAvq * 100).toFixed(1);
     const avqCol   = r.avq > 0 ? '#0891b2' : r.avq === 0 ? 'var(--txt3)' : 'var(--red2)';
     const coSpi    = getSPI(r.code);
     const badge    = coSpi ? statusBadge(coSpi) : '';
     const rowBg    = isFirst ? '' : 'background:#f9fafb';
     const lBorder  = isFirst ? 'border-left:3px solid #0891b2' : 'border-left:3px solid #a5f3fc';
+    // Highlight matching HS code
+    const hsHl     = (_avqHsFilter && r.hs === _avqHsFilter)
+      ? `font-weight:700;color:var(--navy);background:var(--blue-bg);padding:2px 6px;border-radius:4px;border:1px solid var(--blue-bd)`
+      : `color:var(--txt3)`;
     return `<tr style="border-bottom:1px solid var(--border);${rowBg};cursor:pointer" onclick="closeAvqDrill();setTimeout(()=>openDrawer('${r.code}'),100)">
       <td style="padding:8px 14px;font-weight:700;color:var(--navy);${lBorder};padding-left:11px">${isFirst ? r.code : ''}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--txt2)">${r.product}</td>
+      <td style="padding:8px 10px;font-size:10.5px;font-family:'DM Mono',monospace;${hsHl}">${r.hs}</td>
       <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--txt3)">${r.obtained.toLocaleString()}</td>
       <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--blue)">${r.utilMT > 0 ? r.utilMT.toLocaleString() : '—'}</td>
       <td style="padding:8px 10px;text-align:center;color:var(--blue);font-weight:600">${r.obtained>0?(utilPct*100).toFixed(0)+'%':'—'}</td>

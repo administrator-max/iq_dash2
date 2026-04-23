@@ -97,9 +97,10 @@ function buildPipeline() {
   const reapplyMT   = reapplyPool.reduce((s,r) => s + (r.obtained||0), 0);
   const reapplyN    = reapplyPool.length;
 
-  // Update pipeline sidebar stats dynamically
+  // Update pipeline sidebar stats dynamically — use canonicalObtained for accuracy
+  const _pipeObt = co => (typeof canonicalObtained==='function') ? canonicalObtained(co) : (co.obtained||0);
   const ps = document.getElementById('pipelineSpiStat');
-  if (ps) ps.textContent = `${spiPool.reduce((s,d)=>s+d.obtained,0).toLocaleString()} MT · ${spiPool.length} co.`;
+  if (ps) ps.textContent = `${spiPool.reduce((s,d)=>s+_pipeObt(d),0).toLocaleString()} MT · ${spiPool.length} co.`;
   const pr = document.getElementById('pipelineReapplyStat');
   if (pr) pr.textContent = `${reapplyN} co.`;
 
@@ -112,7 +113,7 @@ function buildPipeline() {
         `Pertek Pending (${filteredPending().length})`
       ],
       datasets: [{ data: [
-        spiPool.reduce((s,d)=>s+d.obtained,0),
+        spiPool.reduce((s,d)=>s+_pipeObt(d),0),
         reapplyMT,
         filteredPending().reduce((s,d)=>s+d.mt,0)
       ], backgroundColor: ['#0c7c84','#8b5cf6','#dc2626'], borderColor:'#fff', borderWidth:3, hoverOffset:6 }]
@@ -249,7 +250,9 @@ function buildAvailableQuota() {
   // get ONE ROW PER PRODUCT so that product-filter pills show correct per-product MT.
   const rows = [];
   filteredSPI().forEach(co => {
-    const obtained = typeof co.obtained === 'number' ? co.obtained : 0;
+    // CRITICAL: use canonicalObtained — not raw co.obtained (may include in-process cycles)
+    const obtained = (typeof canonicalObtained === 'function' ? canonicalObtained(co) : null)
+                     || (typeof co.obtained === 'number' ? co.obtained : 0);
     if (obtained <= 0) return;
     const totalUtil = co.utilizationMT  != null ? co.utilizationMT  : 0;
     // SOURCE OF TRUTH: always use company-level availableQuota (from companies.available_quota).
@@ -695,8 +698,11 @@ function buildFlowKPIStrip() {
   const arrived   = fRa.filter(r => r.cargoArrived);
   const inShip    = fRa.filter(r => !r.cargoArrived);
 
-  // ① Obtained — total from ALL SPI companies (not just RA subset)
-  const totalObtained = filteredSPI().reduce((s, co) => s + (co.obtained || 0), 0);
+  // ① Obtained — total from ALL SPI companies using canonicalObtainedFiltered
+  // (consistent with Overview KPI2, OU chart, and Available Quota page)
+  const totalObtained = (typeof canonicalObtainedFiltered === 'function')
+    ? filteredSPI().reduce((s, co) => s + canonicalObtainedFiltered(co), 0)
+    : filteredSPI().reduce((s, co) => s + (co.obtained || 0), 0);
   // ② Utilized — sum of utilizationByProd across ALL SPI companies
   //    This is the SINGLE source of truth: same data used by Detail — Company & Product Level
   const totalUtilized = filteredSPI().reduce((s, co) => {

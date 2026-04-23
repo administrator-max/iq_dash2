@@ -224,12 +224,22 @@
       </div>
     </div>
     <div id="avqDrillSummary" style="padding:12px 20px;border-bottom:1px solid var(--border);display:flex;gap:14px;flex-wrap:wrap;background:var(--bg2);flex-shrink:0"></div>
+    <!-- HS Code Filter Bar — dropdown only -->
+    <div id="avqHsFilterBar" style="padding:8px 20px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3);white-space:nowrap">HS CODE:</span>
+      <select id="avqHsSearch"
+        onchange="avqApplyHsSearch(this.value)"
+        style="padding:4px 10px;font-size:11px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--txt);width:220px;outline:none">
+        <option value="">— Semua HS Code —</option>
+      </select>
+    </div>
     <div style="overflow-y:auto;flex:1">
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead>
           <tr style="position:sticky;top:0;background:var(--bg2);z-index:20">
             <th style="padding:9px 14px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Company</th>
             <th style="padding:9px 10px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Product</th>
+            <th style="padding:9px 10px;text-align:left;font-weight:700;color:var(--navy);font-size:10.5px;border-bottom:2px solid var(--navy)">HS Code</th>
             <th style="padding:9px 10px;text-align:right;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Obtained (MT)</th>
             <th style="padding:9px 10px;text-align:right;font-weight:700;color:var(--blue);font-size:10.5px;border-bottom:2px solid var(--blue)">Utilized (MT)</th>
             <th style="padding:9px 10px;text-align:center;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Util. %</th>
@@ -470,8 +480,8 @@
 <div id="page-overview" class="page active">
 <div class="wrap">
 
-  <!-- 5 KPI CARDS -->
-  <div class="g7 mb14">
+  <!-- 6 KPI CARDS -->
+  <div class="g6 mb14">
     <div class="kpi" onclick="openSubmitDrill()" style="cursor:pointer" title="Click to see submission breakdown">
       <div class="kpi-accent" style="background:var(--navy)"></div>
       <div class="kpi-lbl">Total Submitted</div>
@@ -531,17 +541,7 @@
         <span>🔵 3 Submitted · 0 Eligible</span><span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
       </div>
     </div>
-    <div class="kpi" onclick="openPendingDrill()" style="cursor:pointer" title="Click to see pending breakdown">
-      <div class="kpi-accent" style="background:var(--red-lt)"></div>
-      <div class="kpi-lbl">New Submission</div>
-      <div class="kpi-val" id="kpiPendVal">15,000</div>
-      <div class="kpi-unit" id="kpiPendUnit">MT · 4 companies</div>
-      <div class="kpi-bar"><div class="kpi-fill" style="width:100%;background:var(--red-lt)"></div></div>
-      <div class="kpi-tag" style="background:var(--red-bg);color:var(--red);display:flex;align-items:center;justify-content:space-between">
-        <span>Awaiting PERTEK / SPI</span>
-        <span style="font-size:9px;opacity:.6;margin-left:6px">↗ detail</span>
-      </div>
-    </div>
+
   </div>
 
   <!-- KEY INSIGHTS STRIP -->
@@ -1123,12 +1123,23 @@
 
     <!-- TABLE VIEW -->
     <div id="avqViewTable" style="display:none">
+      <!-- HS Code filter bar for table view -->
+      <div style="padding:8px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3);white-space:nowrap">HS Code Filter:</span>
+        <div id="avqTableHsChips" style="display:flex;gap:5px;flex-wrap:wrap"></div>
+        <select id="avqTableHsSearch"
+          onchange="avqTableApplyHsSearch(this.value)"
+          style="margin-left:auto;padding:4px 10px;font-size:11px;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--txt);width:200px;outline:none">
+          <option value="">— Semua HS Code —</option>
+        </select>
+      </div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
             <th>Company</th>
             <th>Group</th>
             <th>Product</th>
+            <th style="color:var(--navy)">HS Code</th>
             <th class="t-r">Obtained (MT)</th>
             <th class="t-r">Utilized (MT)</th>
             <th class="t-r">Available (MT)</th>

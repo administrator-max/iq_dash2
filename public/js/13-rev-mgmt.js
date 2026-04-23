@@ -32,19 +32,37 @@ const RR_APPROVAL_STAGES = [
 function rrGetCategory(co) {
   if (!co) return 'unknown';
   if (co.revType === 'active') {
+    // Check for Submit #2 cycle OR salesRevReqType === 'Re-Apply'
     const hasSubmit2 = (co.cycles||[]).some(c => /^submit\s*#[2-9]/i.test(c.type));
-    return hasSubmit2 ? 'submit2' : 'revision';
+    const salesType  = co.salesRevReqType || (() => {
+      if (co.salesRevRequest && typeof co.salesRevRequest === 'object') {
+        for (const v of Object.values(co.salesRevRequest)) {
+          if (v && v.revisionType) return v.revisionType;
+        }
+      }
+      return '';
+    })();
+    const isReapply = hasSubmit2 || salesType === 'Re-Apply';
+    return isReapply ? 'submit2' : 'revision';
   }
-  if (co.revType === 'complete') return 'complete';
+  if (co.revType === 'complete') {
+    // 'complete' BUT still has Obtained #2 without SPI → show edit form as 'complete_pending'
+    const hasObt2WithoutSPI = (co.cycles||[]).some(c =>
+      /^obtained\s*#[2-9]|^obtained.*revision/i.test(c.type) &&
+      (!c.releaseDate || c.releaseDate === 'TBA')
+    );
+    return hasObt2WithoutSPI ? 'complete_pending' : 'complete';
+  }
   return 'clean';
 }
 
 function rrCategoryLabel(cat) {
   switch (cat) {
-    case 'submit2':   return { cls:'rr-cat-active',   ico:'🔄', txt:'Submit #2 / Additional — Awaiting Approval' };
-    case 'revision':  return { cls:'rr-cat-active',   ico:'🔄', txt:'Revision Active — Awaiting Approval' };
-    case 'complete':  return { cls:'rr-cat-complete',  ico:'✓',  txt:'Revision / Submit #2 — Approved & Complete' };
-    default:          return { cls:'rr-cat-clean',     ico:'✅', txt:'Completed — SPI Active' };
+    case 'submit2':          return { cls:'rr-cat-active',   ico:'🔄', txt:'Submit #2 / Additional — Awaiting Approval' };
+    case 'revision':         return { cls:'rr-cat-active',   ico:'🔄', txt:'Revision Active — Awaiting Approval' };
+    case 'complete':         return { cls:'rr-cat-complete',  ico:'✓',  txt:'Revision / Submit #2 — Approved & Complete' };
+    case 'complete_pending': return { cls:'rr-cat-active',   ico:'⏳', txt:'Revision/Submit #2 Approved — SPI Belum Terbit' };
+    default:                 return { cls:'rr-cat-clean',     ico:'✅', txt:'Completed — SPI Active' };
   }
 }
 
@@ -253,7 +271,7 @@ function buildRevMgmtSection(co) {
   html += `</div>`;
 
   // ── 4. Editable fields for active revision / Submit #2 ─────────────────
-  if (cat === 'revision' || cat === 'submit2') {
+  if (cat === 'revision' || cat === 'submit2' || cat === 'complete_pending') {
     const stageVal  = co.revStatus || '';
     const dateVal   = co.revSubmitDate || '';
     const noteVal   = co.revNote || '';
@@ -860,6 +878,16 @@ function saveEdit() {
   const hasPERTEK = newPertekDate !== '' && newPertekDate != null;
   const hasSPI    = newSpiDate    !== '' && newSpiDate    != null;
 
+  // ── Auto-extract PERTEK date from status text if not formally filled ──────
+  // CorpSec sometimes types "PERTEK TERBIT 14/04/2026" in the Status Update field
+  // instead of using the formal PERTEK Date input → extract it automatically
+  let _autoPertekDate = newPertekDate;
+  if (!hasPERTEK && newStatusUpdate) {
+    const m = newStatusUpdate.match(/pertek\s*terbit[:\s]+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/i);
+    if (m) _autoPertekDate = m[1].replace(/-/g, '/');
+  }
+  const _hasPERTEK = _autoPertekDate !== '' && _autoPertekDate != null;
+
   /* ── 1. Locate or promote company ── */
   let co = getSPI(c);
   let promotedFromPending = false;
@@ -868,13 +896,11 @@ function saveEdit() {
     // In PENDING — if PERTEK date now filled, promote to SPI array
     const pi = PENDING.findIndex(p => p.code === c);
     if (pi >= 0) {
-      if (hasPERTEK && newPertekDate) {
+      if (_hasPERTEK && _autoPertekDate) {
         const pr = PENDING.splice(pi, 1)[0];
         const prods = pr.products || [];
-        // Use per-product data from tables, fall back to aggregate
         const submitMT  = newSubmitMT   != null ? newSubmitMT   : (pr.mt || 0);
         const obtMT     = newObtainedMT != null ? newObtainedMT : 0;
-        // Per-product breakdown for cycles.products
         const subProdObj = Object.keys(newSubmitProds).length > 0
           ? newSubmitProds
           : (pr.cycles && pr.cycles[0] ? pr.cycles[0].products
@@ -882,31 +908,32 @@ function saveEdit() {
         const obtProdObj = Object.keys(newObtainedProds).length > 0
           ? newObtainedProds
           : prods.reduce((o, p) => { o[p] = Math.round(obtMT / Math.max(prods.length,1)); return o; }, {});
+        const _pertekDateFinal = _autoPertekDate; // might be auto-extracted from status text
         const newRec = {
           code: pr.code, group: pr.group || 'CD',
           submit1: submitMT, obtained: obtMT, products: prods,
-          revType: 'complete', revSubmitDate: newPertekDate,
+          revType: 'complete', revSubmitDate: _pertekDateFinal,
           revStatus: hasSPI
             ? `SPI TERBIT ${newSpiDate}`
-            : `PERTEK TERBIT ${newPertekDate} — SPI belum terbit`,
+            : `PERTEK TERBIT ${_pertekDateFinal} — SPI belum terbit`,
           revNote: hasSPI
             ? `SPI TERBIT ${newSpiDate}`
-            : `PERTEK TERBIT ${newPertekDate} — SPI belum terbit`,
+            : `PERTEK TERBIT ${_pertekDateFinal} — SPI belum terbit`,
           revFrom: [], revTo: [], revMT: 0,
           remarks: newRem || pr.remarks || '',
-          spiRef: hasSPI ? `SPI TERBIT ${newSpiDate}` : `PERTEK TERBIT ${newPertekDate}`,
+          spiRef: hasSPI ? `SPI TERBIT ${newSpiDate}` : `PERTEK TERBIT ${_pertekDateFinal}`,
           pertekNo: newPertekNo, spiNo: newSpiNo,
-          // statusUpdate is submission-level (one note, all products)
           statusUpdate: newStatusUpdate || '',
           cycles: [
             { type: 'Submit #1', mt: submitMT, products: subProdObj,
               submitType: 'Submit MOI', submitDate: newSubmitDate || (pr.cycles&&pr.cycles[0]?pr.cycles[0].submitDate:''),
-              releaseType: 'PERTEK', releaseDate: newPertekDate,
-              status: newStatusUpdate ? `PERTEK TERBIT ${newPertekDate} · ${newStatusUpdate}` : `PERTEK TERBIT ${newPertekDate}` },
+              releaseType: 'PERTEK', releaseDate: _pertekDateFinal,
+              pertekDate: _pertekDateFinal,
+              status: newStatusUpdate ? `PERTEK TERBIT ${_pertekDateFinal} · ${newStatusUpdate}` : `PERTEK TERBIT ${_pertekDateFinal}` },
             { type: 'Obtained #1', mt: obtMT, products: obtProdObj,
               submitType: 'Submit MOT', submitDate: 'TBA',
               releaseType: 'SPI', releaseDate: hasSPI ? newSpiDate : 'TBA',
-              status: hasSPI ? `SPI TERBIT ${newSpiDate}` : `PERTEK Terbit: ${newPertekDate} · SPI: belum terbit` },
+              status: hasSPI ? `SPI TERBIT ${newSpiDate}` : `PERTEK Terbit: ${_pertekDateFinal} · SPI: belum terbit` },
           ],
         };
         SPI.push(newRec);
@@ -1106,10 +1133,20 @@ function saveEdit() {
     patchToServer(co).then(() => {
       showSaveToast(new Date().toISOString());
     }).catch(err => {
-      console.warn('Server PATCH failed, data saved locally only:', err);
+      console.error('Server PATCH failed:', err);
+      // Show visible error to user — not just silent console warning
+      const errMsg = `⚠️ Data tersimpan di browser, tapi gagal sync ke server: ${err.message}. Coba refresh dan input ulang.`;
+      setTimeout(() => alert(errMsg), 300);
       showSaveToast(new Date().toISOString());
     });
   } else {
+    // Also save PENDING company changes to server
+    const pi2 = PENDING.findIndex(p => p.code === c);
+    if (pi2 >= 0) {
+      patchToServer(PENDING[pi2]).catch(err =>
+        console.error('PENDING PATCH failed:', err)
+      );
+    }
     showSaveToast(new Date().toISOString());
   }
 

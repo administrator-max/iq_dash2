@@ -88,26 +88,14 @@ function setAvqTab(tab, el) {
 
 /* ── KPI cards on Available Quota page ── */
 function buildAvqPageKPIs() {
-  // Compute Total Obtained using cycle-based dedup — matches Overview KPI 2 exactly.
-  // Includes Obtained #1 AND Obtained #2 (re-apply), deduped per company per cycleType.
+  // Use canonicalObtainedFiltered — single source of truth matching Overview KPI2.
+  // This ensures all pages show identical Obtained figures.
   let totalObt = 0, totalUtil = 0, totalAvq = 0, coSet = new Set();
-  filteredSPI().forEach(co => {
-    const allCycles = co.cycles || [];
-    const seenCycleTypes = new Set();
-    let coObt = 0;
-    allCycles.forEach(c => {
-      if (!/^obtained #/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const key = c.type.toLowerCase().trim();
-      if (seenCycleTypes.has(key)) return;
-      seenCycleTypes.add(key);
-      coObt += mt;
-    });
-    if (coObt === 0) coObt = co.obtained || 0;
+  [...filteredSPI(), ...PENDING].forEach(co => {
+    const coObt = canonicalObtainedFiltered(co);
     if (coObt <= 0) return;
     const util  = co.utilizationMT  || 0;
-    const avail = co.availableQuota != null ? co.availableQuota : (coObt - util);
+    const avail = co.availableQuota != null ? co.availableQuota : Math.max(0, coObt - util);
     totalObt  += coObt;
     totalUtil += util;
     totalAvq  += avail;
@@ -317,17 +305,42 @@ function closeProdCoPopup() {
 }
 
 /* ── Table view ── */
+/* ── HS filter state for the full-detail avqTable ── */
+let _avqTableHsFilter = '';
+let _avqTableHsSearch = '';
+
+function avqTableSetHsFilter(hs, el) {
+  _avqTableHsFilter = hs;
+  _avqTableHsSearch = '';
+  const si = document.getElementById('avqTableHsSearch'); if (si) si.value = '';
+  document.querySelectorAll('.avq-tbl-hs-chip').forEach(c => c.classList.remove('avq-chip-on'));
+  if (el) el.classList.add('avq-chip-on');
+  buildAvqTable();
+}
+function avqTableApplyHsSearch(val) {
+  _avqTableHsSearch = val.trim().toLowerCase();
+  _avqTableHsFilter = '';
+  document.querySelectorAll('.avq-tbl-hs-chip').forEach(c => c.classList.remove('avq-chip-on'));
+  const allChip = document.querySelector('.avq-tbl-hs-chip[data-hs=""]');
+  if (!_avqTableHsSearch && allChip) allChip.classList.add('avq-chip-on');
+  buildAvqTable();
+}
+
 function buildAvqTable() {
   const tbody = document.getElementById('avqTableBody');
   if (!tbody) return;
-  const rows = [];
+
+  // Build all rows with HS code
+  const allRows = [];
   filteredSPI().forEach(co => {
-    const obtained = co.obtained || 0;
+    // Use canonical obtained — not raw co.obtained from DB
+    const obtained = canonicalObtained(co) || co.obtained || 0;
     if (obtained <= 0) return;
     const ap = co.availableByProd || {};
     const up = co.utilizationByProd || {};
     const spi = getSPI(co.code);
     const grp = spi ? spi.group : '';
+    const getHS = p => (typeof PROD_HS_CODES !== 'undefined' ? (PROD_HS_CODES[p] || '—') : '—');
     if (Object.keys(ap).length > 0) {
       (co.products || []).forEach(p => {
         const cycleObt = (co.cycles||[]).filter(c=>/^obtained/i.test(c.type))
@@ -335,24 +348,58 @@ function buildAvqTable() {
         const obt  = cycleObt || (obtained / (co.products||[]).length);
         const util = up[p] || 0;
         const avq  = ap[p] != null ? ap[p] : (obt - util);
-        rows.push({ code:co.code, grp, prod:p, obt, util, avq, updBy:co.updatedBy||'', updDate:co.updatedDate||'' });
+        allRows.push({ code:co.code, grp, prod:p, hs:getHS(p), obt, util, avq, updBy:co.updatedBy||'', updDate:co.updatedDate||'' });
       });
     } else {
       const util = co.utilizationMT || 0;
       const avq  = co.availableQuota != null ? co.availableQuota : (obtained - util);
       (co.products || [co.products[0] || '—']).forEach(p => {
-        rows.push({ code:co.code, grp, prod:p, obt:obtained/((co.products||[p]).length), util, avq, updBy:co.updatedBy||'', updDate:co.updatedDate||'' });
+        allRows.push({ code:co.code, grp, prod:p, hs:getHS(p), obt:obtained/((co.products||[p]).length), util, avq, updBy:co.updatedBy||'', updDate:co.updatedDate||'' });
       });
     }
   });
-  rows.sort((a,b) => b.avq - a.avq);
+  allRows.sort((a,b) => b.avq - a.avq);
+
+  // ── Build HS filter chip bar ──────────────────────────────────────
+  const hsSet    = new Set(allRows.map(r => r.hs).filter(h => h && h !== '—'));
+  const hsSorted = ['', ...Array.from(hsSet).sort()];
+  const chipsEl  = document.getElementById('avqTableHsChips');
+  if (chipsEl) {
+    chipsEl.innerHTML = hsSorted.map(hs => {
+      const label  = hs === '' ? 'All' : hs;
+      const isOn   = (_avqTableHsFilter === hs && !_avqTableHsSearch) || (hs==='' && !_avqTableHsFilter && !_avqTableHsSearch);
+      return `<button class="avq-tbl-hs-chip${isOn?' avq-chip-on':''}" data-hs="${hs}"
+        onclick="avqTableSetHsFilter('${hs}',this)"
+        style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:20px;cursor:pointer;
+          border:1px solid ${isOn?'var(--navy)':'var(--border2)'};
+          background:${isOn?'var(--navy)':'var(--bg)'};
+          color:${isOn?'#fff':'var(--txt3)'};
+          transition:all .15s;white-space:nowrap">
+        ${label}
+      </button>`;
+    }).join('');
+  }
+
+  // ── Apply filter ──────────────────────────────────────────────────
+  let rows = allRows;
+  if (_avqTableHsFilter) rows = rows.filter(r => r.hs === _avqTableHsFilter);
+  if (_avqTableHsSearch) rows = rows.filter(r =>
+    r.prod.toLowerCase().includes(_avqTableHsSearch) ||
+    r.hs.toLowerCase().includes(_avqTableHsSearch) ||
+    r.code.toLowerCase().includes(_avqTableHsSearch)
+  );
+
   tbody.innerHTML = rows.map(r => {
     const utilPct = r.obt > 0 ? (r.util / r.obt * 100) : 0;
     const fill = utilPct >= 80 ? 'var(--red2)' : utilPct >= 50 ? 'var(--amber-lt)' : 'var(--green-lt)';
+    const hsHl = (_avqTableHsFilter && r.hs === _avqTableHsFilter)
+      ? 'font-weight:700;color:var(--navy)'
+      : 'color:var(--txt3)';
     return `<tr>
       <td><div class="t-code" onclick="openDrawer('${r.code}')">${r.code}</div></td>
       <td style="font-size:11.5px;font-weight:600">${r.grp}</td>
       <td><span class="chip" style="background:#f0f9ff;color:#0369a1;font-size:10px;padding:2px 7px">${r.prod}</span></td>
+      <td style="font-size:10.5px;font-family:'DM Mono',monospace;${hsHl}">${r.hs}</td>
       <td class="t-r t-mono">${r.obt.toLocaleString()}</td>
       <td class="t-r t-mono" style="color:var(--green)">${r.util > 0 ? r.util.toLocaleString() : '<span style="color:var(--txt3)">—</span>'}</td>
       <td class="t-r t-mono" style="color:#0891b2;font-weight:700">${r.avq.toLocaleString()}</td>

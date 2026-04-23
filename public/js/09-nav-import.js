@@ -55,7 +55,9 @@ function hdAnswer(q) {
     return `<strong>Top realization:</strong><br>${top.map(r=>`${r.code}: ${(r.realPct*100).toFixed(0)}% (${r.berat.toLocaleString()} MT)`).join('<br>')}`;
   }
   if (ql.includes('total')||ql.includes('summary')) {
-    const spiT = SPI.reduce((s,d)=>s+d.obtained,0);
+    const spiT = (typeof canonicalObtained === 'function')
+      ? SPI.reduce((s,d)=>s+canonicalObtained(d),0)
+      : SPI.reduce((s,d)=>s+d.obtained,0);
     const pendT = PENDING.reduce((s,d)=>s+d.mt,0);
     return `<strong>Summary:</strong><br>Obtained: ${spiT.toLocaleString()} MT · ${SPI.length} co.<br>Pending: ${pendT.toLocaleString()} MT · ${PENDING.length} co.<br>Re-Apply Eligible: ${SPI.length} co. · ${spiT.toLocaleString()} MT quota<br>Re-Apply Submitted (Stage 2): ${RA.filter(isReapplySubmitted).length} co.<br>Realized (cargo arrived): ${RA.filter(r=>r.cargoArrived).length} co.<br><br>Eligibility rule: Realization ≥ 60% AND cargo arrived at JKT`;
   }

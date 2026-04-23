@@ -60,8 +60,10 @@ function computeLeadTimes() {
       const spiTerbit    = obtCycle ? pDate(obtCycle.releaseDate) : null;
 
       // Period filter: use Submit MOI date of the submit cycle
-      if (PERIOD.active && !inPd(submitMOI)) { i++; continue; }
-      if (!submitMOI) { i++; continue; }
+      if (PERIOD.active && submitMOI && !inPd(submitMOI)) { i++; continue; }
+      // Only skip if absolutely no date data at all (and not a Submit #2 worth tracking)
+      const isSubmit2orRev = /^submit\s*#[2-9]|^revision/i.test(c.type);
+      if (!submitMOI && !isSubmit2orRev) { i++; continue; }
 
       const s1 = pertekTerbit && submitMOI    ? Math.round((pertekTerbit-submitMOI)/(864e5))   : null;
       const s2 = submitMOT    && pertekTerbit ? Math.round((submitMOT-pertekTerbit)/(864e5))   : null;

@@ -808,6 +808,9 @@ function buildRevisionRequestTable(co) {
   const existing  = co.salesRevRequest || {};
   const canSales  = currentRole && (ROLE_PERMISSIONS[currentRole]||[]).includes('salesShipTable');
 
+  // Current revision type selection (persisted on co)
+  const currentRevType = co.salesRevReqType || '';
+
   // ── Build unique PID map (populate global _revReqPidMap) ──────────
   // Prevents collision: "ERW PIPE OD≤140mm" vs "ERW PIPE OD>140mm" → both "ERW_PIPE_OD_140mm"
   _revReqPidMap = {};
@@ -922,10 +925,48 @@ function buildRevisionRequestTable(co) {
       <span style="font-size:11px;font-weight:700;color:var(--txt2)">📋 Revision Request ke CorpSec</span>
       <span class="tti" data-tip="Centang produk yang ingin direvisi (kuantiti atau jenis produk). Satu produk bisa dipecah ke beberapa produk tujuan — klik + Tambah Produk Tujuan untuk split.">i</span>
     </div>
+    <!-- ── Type selector (mandatory) ──────────────────────────────── -->
+    <div style="margin-bottom:12px;padding:10px 12px;border:${canSales?'2px solid var(--blue-bd)':'1px solid var(--border)'};border-radius:7px;background:${canSales?'var(--blue-bg)':'var(--bg2)'};display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:10.5px;font-weight:700;color:var(--navy);white-space:nowrap">
+        🏷 Type <span style="color:var(--red2)">*</span>
+        <span class="tti" data-tip="Revision: mengubah produk atau tonnage yang sudah obtained (re-alokasi). Re-Apply: pengajuan baru untuk kuota tambahan (bukan modifikasi existing).">i</span>
+      </span>
+      <select id="salesRevReqType" class="fi"
+        style="padding:4px 10px;font-size:12px;font-weight:700;border:1px solid var(--border2);border-radius:6px;background:var(--bg);color:var(--txt);min-width:180px"
+        ${canSales ? '' : 'disabled'}
+        onchange="onSalesRevTypeChange(this,'${co.code}')">
+        <option value="">— Pilih Type —</option>
+        <option value="Revision" ${currentRevType==='Revision'?'selected':''}>✏️ Revision — ubah obtained existing</option>
+        <option value="Re-Apply" ${currentRevType==='Re-Apply'?'selected':''}>📨 Re-Apply — kuota tambahan baru</option>
+      </select>
+      <div id="salesRevTypeDesc" style="font-size:10px;color:var(--txt3);flex:1;min-width:160px;line-height:1.4">
+        ${currentRevType==='Revision' ? '✏️ <strong>Revision</strong>: Mengubah produk/qty dari obtained yang sudah ada. Tidak menambah kuota total.' :
+          currentRevType==='Re-Apply' ? '📨 <strong>Re-Apply</strong>: Pengajuan kuota tambahan baru. MT baru akan ditambahkan ke total obtained.' :
+          'Pilih type terlebih dahulu sebelum submit request.'}
+      </div>
+    </div>
     <div id="revreq-rows-wrap">${rows}</div>
     <div style="margin-top:8px;font-size:10px;color:var(--txt3)">
       <span class="tti tip-right" data-tip="Request ini tidak langsung mengubah data — CorpSec perlu konfirmasi terlebih dahulu sebelum perubahan berlaku" style="display:inline-flex;margin-top:2px">i</span>
     </div>`;
+}
+
+/* Handle revision type change — update description and store on co object */
+function onSalesRevTypeChange(sel, coCode) {
+  const val  = sel.value;
+  const desc = document.getElementById('salesRevTypeDesc');
+  if (desc) {
+    if (val === 'Revision') {
+      desc.innerHTML = '✏️ <strong>Revision</strong>: Mengubah produk/qty dari obtained yang sudah ada. Tidak menambah kuota total.';
+    } else if (val === 'Re-Apply') {
+      desc.innerHTML = '📨 <strong>Re-Apply</strong>: Pengajuan kuota tambahan baru. MT baru akan ditambahkan ke total obtained.';
+    } else {
+      desc.innerHTML = 'Pilih type terlebih dahulu sebelum submit request.';
+    }
+  }
+  // Store on active company object
+  const co = getSPI(coCode) || PENDING.find(p => p.code === coCode);
+  if (co) co.salesRevReqType = val;
 }
 
 /* Add a new target row for a source product */
@@ -1070,6 +1111,11 @@ function toggleRevReqRow(pid, checked) {
 function collectRevisionRequestData(co) {
   if (!co) return;
   co.salesRevRequest = co.salesRevRequest || {};
+
+  // Collect the type selection (mandatory field: "Revision" or "Re-Apply")
+  const typeEl = document.getElementById('salesRevReqType');
+  if (typeEl) co.salesRevReqType = typeEl.value || co.salesRevReqType || '';
+
   let hasAny = false;
   document.querySelectorAll('.revreq-chk').forEach(chk => {
     const prod = chk.dataset.prod;
@@ -1096,6 +1142,7 @@ function collectRevisionRequestData(co) {
       const first = targets[0] || {};
       co.salesRevRequest[prod] = {
         requested: true,
+        revisionType: co.salesRevReqType || '',   // "Revision" | "Re-Apply"
         newProduct:   first.product || null,
         requestedMT:  first.mt      || null,
         targetProducts: targets,

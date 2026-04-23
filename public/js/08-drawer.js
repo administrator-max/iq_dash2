@@ -16,9 +16,18 @@ function buildCycleTimeline(co) {
     if (t.startsWith('Obtained (Rev')) return {bg:'#f5f3ff',bd:'#ddd6fe',tx:'#5b21b6',ico:'✓'};
     return {bg:'#f8fafc',bd:'#e2e8f0',tx:'#4a5568',ico:'·'};
   };
-  const rows = co.cycles.map(c => {
+
+  // ── DEDUP: one entry per cycleType ─────────────────────────────────
+  const _seenCycleTypes = new Set();
+  const dedupedCycles = co.cycles.filter(c => {
+    const key = (c.type || '').toLowerCase().trim();
+    if (_seenCycleTypes.has(key)) return false;
+    _seenCycleTypes.add(key);
+    return true;
+  });
+
+  const rows = dedupedCycles.map(c => {
     const col = typeColor(c.type);
-    // Per-product MT chips — color-coded by product type
     const PDOT = {
       'GL BORON':'#0369a1','GI BORON':'#0f766e','BORDES ALLOY':'#dc2626',
       'AS STEEL':'#64748b','SHEETPILE':'#b45309','SEAMLESS PIPE':'#0d6946',
@@ -28,7 +37,7 @@ function buildCycleTimeline(co) {
     const prodStr = c.products && Object.keys(c.products).length
       ? Object.entries(c.products).map(([k,v]) => {
           const col = PDOT[k] || '#64748b';
-          const bg  = col + '18'; // 10% opacity hex approximation
+          const bg  = col + '18';
           const mtTxt = v !== 'TBA' && typeof v === 'number' ? v.toLocaleString() + ' MT' : (v || 'TBA');
           return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 6px;border-radius:3px;background:${bg};border:1px solid ${col}33;color:${col}">
             <span style="display:inline-block;width:6px;height:6px;border-radius:1px;background:${col};flex-shrink:0"></span>
@@ -62,13 +71,32 @@ function buildCycleTimeline(co) {
       </div>
     </div>`;
   }).join('');
-  return `<div class="d-sec">Submission Cycle Timeline</div>
-    <div style="padding:4px 0 8px">${rows}</div>`;
+
+  // ── COLLAPSIBLE wrapper ────────────────────────────────────────────
+  const cycleId = 'cyTl_' + (co.code || Math.random().toString(36).slice(2));
+  return `<div class="d-sec" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none"
+    onclick="(function(el){el.style.display=el.style.display==='none'?'block':'none';this.querySelector('.cy-arrow').textContent=el.style.display==='none'?'▶':'▼';}).call(this,document.getElementById('${cycleId}'))">
+    <span>Submission Cycle Timeline <span style="font-size:9px;color:var(--txt3);font-weight:400">(${dedupedCycles.length} cycles)</span></span>
+    <span class="cy-arrow" style="font-size:10px;color:var(--txt3)">▼</span>
+  </div>
+  <div id="${cycleId}" style="padding:4px 0 8px">${rows}</div>`;
 }
 
 function openDrawer(code) {
   const co = getSPI(code); if (!co) { openDrawerPending(code); return; }
   const ra = getRA(code);
+  // Silently refresh this company's data from server to ensure all users see latest
+  fetch(`/api/company/${encodeURIComponent(code)}`).then(r=>r.json()).then(fresh => {
+    // Merge fresh fields that might differ across sessions
+    const fieldsToSync = ['obtained','utilizationMT','availableQuota','pertekNo','spiNo',
+      'statusUpdate','updatedBy','updatedDate','spiRef','revType','revStatus','revSubmitDate'];
+    fieldsToSync.forEach(f => { if (fresh[f] !== undefined) co[f] = fresh[f]; });
+    if (fresh.cycles && fresh.cycles.length) co.cycles = fresh.cycles;
+    if (fresh.shipments) co.shipments = fresh.shipments;
+    if (fresh.utilizationByProd) co.utilizationByProd = fresh.utilizationByProd;
+    if (fresh.availableByProd)   co.availableByProd   = fresh.availableByProd;
+  }).catch(()=>{/* fallback to cached data — no-op */});
+
   document.getElementById('d-code').textContent = code;
   const _rs = revisionStatus(co);
   document.getElementById('d-grp').textContent = `Group ${co.group}  ·  ${_rs==='clean'?'Completed':_rs==='active'?'Under Revision':_rs==='revpending'?'PENDING — PERTEK Terbit, SPI Belum':'COMPLETE — SPI Terbit'}`;
@@ -225,17 +253,37 @@ function openDrawer(code) {
 
 function openDrawerPending(code) {
   const co = PENDING.find(d => d.code === code); if (!co) return;
+
+  // Check if this PENDING company has PERTEK Terbit — determines the proper status display
+  const hasCyclePertek = (co.cycles||[]).some(c =>
+    c.releaseDate && c.releaseDate !== 'TBA' && !(/^obtained/i.test(c.type))
+  );
+  const pertekFromStatus = (co.status||'').match(/pertek\s*terbit/i) ||
+    (co.remarks||'').match(/pertek\s*terbit/i);
+  const hasPertek = hasCyclePertek || !!pertekFromStatus;
+
+  const statusLabel = hasPertek
+    ? '⏳ PENDING — PERTEK Terbit, Menunggu SPI'
+    : '📬 New Submission — Awaiting PERTEK / SPI';
+  const statusColor = hasPertek ? 'var(--orange)' : 'var(--red2)';
+
   document.getElementById('d-code').textContent = code;
-  document.getElementById('d-grp').textContent = `Group ${co.group}  ·  New Submission`;
+  document.getElementById('d-grp').textContent = `Group ${co.group}  ·  ${hasPertek ? 'PENDING — PERTEK Terbit' : 'New Submission'}`;
   document.getElementById('d-body').innerHTML = `
-    <div class="notice n-red" style="margin-bottom:14px"><strong>📬 New Submission — Awaiting PERTEK / SPI</strong><br>${co.status} · ${co.date}</div>
+    <div class="notice ${hasPertek ? 'n-orange' : 'n-red'}" style="margin-bottom:14px">
+      <strong>${statusLabel}</strong><br>${co.status||''} · ${co.date||''}
+      ${hasPertek ? `<div style="margin-top:4px;font-size:10.5px;font-weight:600;color:var(--orange)">
+        ✅ PERTEK sudah terbit — CorpSec perlu input Obtained MT dan SPI data via Input Data form.
+      </div>` : ''}
+    </div>
     <div class="dl">
       <div class="dl-r"><div class="dl-k">Products</div><div class="dl-v">${chips(co.products)}</div></div>
-      <div class="dl-r"><div class="dl-k">Submitted</div><div class="dl-v t-mono">${co.mt.toLocaleString()} MT</div></div>
-      <div class="dl-r"><div class="dl-k">Submit Date</div><div class="dl-v">${co.remarks}</div></div>
-      <div class="dl-r"><div class="dl-k">Last Update</div><div class="dl-v">${co.date}</div></div>
-      <div class="dl-r"><div class="dl-k">Approval Stage</div><div class="dl-v"><span class="badge b-pending">${co.status}</span></div></div>
-    </div>`;
+      <div class="dl-r"><div class="dl-k">Submitted</div><div class="dl-v t-mono">${(co.mt||0).toLocaleString()} MT</div></div>
+      <div class="dl-r"><div class="dl-k">Submit Date</div><div class="dl-v">${co.remarks||'—'}</div></div>
+      <div class="dl-r"><div class="dl-k">Last Update</div><div class="dl-v">${co.date||'—'}</div></div>
+      <div class="dl-r"><div class="dl-k">Approval Stage</div><div class="dl-v"><span class="badge ${hasPertek?'b-revpending':'b-pending'}">${co.status||'—'}</span></div></div>
+    </div>
+    ${buildCycleTimeline(co)}`;
   document.getElementById('overlay').classList.add('open');
 }
 

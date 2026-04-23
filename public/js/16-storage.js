@@ -163,13 +163,17 @@ async function patchToServer(co) {
     });
   }
 
-  // Encode salesRevRequest into revNote for persistence
-  // (server stores it in rev_note field as JSON string)
-  const salesRevJson = co.salesRevRequest && Object.keys(co.salesRevRequest).length
-    ? JSON.stringify(co.salesRevRequest)
-    : null;
+  // Encode salesRevRequest + salesRevReqType into revNote for persistence
+  let salesRevJson = null;
+  if (co.salesRevRequest && Object.keys(co.salesRevRequest).length) {
+    const envelope = Object.assign({}, co.salesRevRequest);
+    if (co.salesRevReqType) envelope._revisionType = co.salesRevReqType;
+    salesRevJson = JSON.stringify(envelope);
+  }
 
   const body = {
+    submit1:       co.submit1       != null ? co.submit1      : null,
+    obtained:      co.obtained      != null ? co.obtained     : null,
     revType:       co.revType       || 'none',
     revNote:       salesRevJson || co.revNote || '',
     revSubmitDate: co.revSubmitDate || '',
@@ -218,6 +222,10 @@ async function patchCyclesToServer(co) {
     releaseDate: c.releaseDate || '',
     status:      c.status      || '',
     products:    c.products    || {},
+    // Include extra date fields that our cycle inline editor writes
+    pertekDate:  c.pertekDate  || '',
+    spiDate:     c.spiDate     || '',
+    _fromRevReq: c._fromRevReq || false,
   }));
   const res = await fetch(`/api/company/${encodeURIComponent(co.code)}/cycles`, {
     method:  'PATCH',
@@ -258,4 +266,19 @@ async function patchRAToServer(co, ra) {
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
   });
+}
+/* ── nsShowToast: alias for showSaveToast used in 13-rev-mgmt.js ────────────
+   nsShowToast is a notification-only toast (no timestamp) — shows a brief
+   success/info message from revision management operations.                 */
+function nsShowToast(msg) {
+  const toast = document.getElementById('saveToast');
+  if (!toast) return;
+  const prev = toast.innerHTML;
+  toast.innerHTML = `<span style="font-size:12px">${msg}</span>`;
+  toast.classList.add('show');
+  clearTimeout(toast._nsTimer);
+  toast._nsTimer = setTimeout(() => {
+    toast.classList.remove('show');
+    toast.innerHTML = prev;
+  }, 2200);
 }

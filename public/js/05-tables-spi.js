@@ -485,13 +485,14 @@ function updateSPICounts() {
   const nActive   = base.filter(d=>revisionStatus(d)==='active').length;
   const nReapply  = base.filter(d=>revisionStatus(d)==='reapply').length;
   const nUnderRev = nActive + nReapply;  // merged tab
-  const nPending  = base.filter(d=>revisionStatus(d)==='revpending').length;
-  const nNewSub   = filteredPending().length;
+  const nPendingPertek = filteredPending().filter(d => _pendingHasPertek(d)).length;
+  const nPending  = base.filter(d=>revisionStatus(d)==='revpending').length + nPendingPertek;
+  const nNewSub   = filteredPending().filter(d => !_pendingHasPertek(d)).length;
   const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   s('pillAll',        base.length);
   s('pillClean',      nCompleted);
-  s('pillRev',        nUnderRev);   // merged: active + reapply
-  s('pillReapply',    nReapply);    // kept for compat
+  s('pillRev',        nUnderRev);
+  s('pillReapply',    nReapply);
   s('pillRevPending', nPending);
   s('pillNewSub',     nNewSub);
   s('ntcClean', `✅ ${nCompleted} Completed`);
@@ -500,17 +501,29 @@ function updateSPICounts() {
   // nav tab count
   const tab=document.querySelectorAll('.nav-tab')[1]; const cnt=tab&&tab.querySelector('.n-count'); if(cnt) cnt.textContent=base.length;
 }
+/* Helper: returns true if a PENDING company has PERTEK Terbit evidence */
+function _pendingHasPertek(d) {
+  return (d.cycles||[]).some(c =>
+    c.releaseDate && c.releaseDate !== 'TBA' && !(/^obtained/i.test(c.type))
+  ) || /pertek\s*terbit/i.test(d.status||'')
+    || /pertek\s*terbit/i.test(d.remarks||'')
+    || /pertek\s*terbit/i.test(d.statusUpdate||'');
+}
+
 function renderSPI() {
   updateSPICounts();
   const q = (document.getElementById('spiQ')||{}).value||'';
   const tbody = document.getElementById('spiBody'); tbody.innerHTML = '';
 
-  /* ── NEW SUBMISSION tab: shows PENDING companies (KARA, AADC, PPGL, SNSD) ── */
+  /* ── NEW SUBMISSION tab: shows PENDING companies WITHOUT PERTEK only ── */
   if (spiFilter === 'NEWSUB') {
-    let pRows = filteredPending().filter(d =>
-      !q || d.code.toLowerCase().includes(q.toLowerCase()) ||
-      (d.products||[]).some(p => p.toLowerCase().includes(q.toLowerCase()))
-    );
+    let pRows = filteredPending().filter(d => {
+      if (!(!q || d.code.toLowerCase().includes(q.toLowerCase()) ||
+        (d.products||[]).some(p => p.toLowerCase().includes(q.toLowerCase())))) return false;
+      // Exclude PENDING companies with PERTEK (they show under REVPENDING tab)
+      const hasPendingPertek = _pendingHasPertek(d);
+      return !hasPendingPertek;
+    });
     pRows.forEach(d => {
       const cy = (d.cycles||[]).find(c => /submit/i.test(c.type) && !/obtained/i.test(c.type));
       const latestStatus = cy ? (cy.status || d.status) : d.status;
@@ -545,6 +558,38 @@ function renderSPI() {
              : /* fallback */               false;
     return mq && mf;
   });
+
+  // REVPENDING tab: also include PENDING companies with PERTEK (shown as sub-section)
+  if (spiFilter === 'REVPENDING') {
+    const pertekPending = filteredPending().filter(d =>
+      _pendingHasPertek(d) &&
+      (!q || d.code.toLowerCase().includes(q.toLowerCase()) ||
+       (d.products||[]).some(p => p.toLowerCase().includes(q.toLowerCase())))
+    );
+    pertekPending.forEach(d => {
+      const obtMT = d.obtained || 0;
+      const cy = (d.cycles||[]).find(c => /submit/i.test(c.type) && !/obtained/i.test(c.type));
+      const pertekDateTxt = (d.cycles||[]).map(c =>
+        (!(/^obtained/i.test(c.type)) && c.releaseDate && c.releaseDate !== 'TBA') ? c.releaseDate : null
+      ).find(Boolean) || (d.status||'').match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/)?.[1] || 'TBA';
+      const latestStatus = d.status || d.statusUpdate || '—';
+      const tr = document.createElement('tr'); tr.className = 'tr-rev';
+      tr.style.opacity = '0.9';
+      tr.innerHTML = `
+        <td><div class="t-code" onclick="openDrawerPending('${d.code}')">${d.code}</div></td>
+        <td style="font-size:11.5px;font-weight:600">${d.group}</td>
+        <td>${chips(d.products)}</td>
+        <td class="t-r t-mono">${(d.mt||0).toLocaleString()}</td>
+        <td class="t-r t-mono" style="color:${obtMT>0?'var(--teal)':'var(--txt3)'};font-weight:${obtMT>0?'700':'400'}">${obtMT>0?obtMT.toLocaleString():'—'}</td>
+        <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
+        <td><span class="badge b-revpending">⏳ PERTEK Terbit — Menunggu SPI</span></td>
+        <td style="font-size:11px;color:var(--orange);line-height:1.4">${latestStatus}</td>
+        <td style="font-size:10.5px;color:var(--txt3)">${d.remarks||'—'}</td>
+        <td style="font-size:10.5px;color:var(--orange)">${pertekDateTxt}</td>
+        <td style="color:var(--txt3);font-size:11px">—</td>`;
+      tbody.insertBefore(tr, tbody.firstChild); // prepend — show at top
+    });
+  }
   // Default sort A→Z by company code; override with column sort if active
   rows.sort((a,b) => a.code.localeCompare(b.code));
   if (spiSortS.col) rows.sort((a,b)=>(typeof a[spiSortS.col]==='number'?(a[spiSortS.col]-b[spiSortS.col]):String(a[spiSortS.col]).localeCompare(String(b[spiSortS.col])))*spiSortS.dir);

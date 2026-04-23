@@ -118,9 +118,11 @@ function renderUtilTable() {
     if (totalUtil <= 0) return;
     baseRA.push({
       code: co.code, product: (co.products||[]).join(' + '),
-      berat: totalUtil, obtained: co.obtained || 0,
+      // Use canonical obtained — consistent with KPI2 and OU chart
+      berat: totalUtil,
+      obtained: (typeof canonicalObtained === 'function' ? canonicalObtained(co) : null) || co.obtained || 0,
       cargoArrived: false, realPct: 0,
-      utilPct: Math.min(1, totalUtil/(co.obtained||1)),
+      utilPct: Math.min(1, totalUtil/((typeof canonicalObtained === 'function' ? canonicalObtained(co) : null) || co.obtained||1)),
       etaJKT: allLots.filter(l=>l.etaJKT).map(l=>l.etaJKT)[0] || '',
       reapplyStage: null,
     });
@@ -131,7 +133,8 @@ function renderUtilTable() {
   filteredSPI().forEach(co => {
     if (raMap[co.code]) return;
     if ((co.utilizationMT || 0) > 0) return;
-    if (!co.obtained || co.obtained <= 0) return;
+    const coObtWait = (typeof canonicalObtained === 'function' ? canonicalObtained(co) : null) || co.obtained || 0;
+    if (coObtWait <= 0) return;
     if (co.shipments) {
       const lots = Object.values(co.shipments).flat();
       if (lots.some(l => (l.utilMT||0) > 0)) return;

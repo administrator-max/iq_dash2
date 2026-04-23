@@ -337,6 +337,9 @@ function applyPeriodFilter() {
   buildGauge();          // ← fix: gauge must rebuild on filter change
   updateOverviewStats(); // ← fix: insight strip + gauge labels
   updateOverviewKPIs();  // ← fix: KPI cards (calls filteredSPI/RA/Pending)
+  buildAvailableQuota(); // ← fix: AVQ chart re-filters per period
+  buildFlowKPIStrip();   // ← fix: flow KPI strip re-calculates obtained/utilized
+  buildAvqPageKPIs();    // ← fix: Available Quota page KPI cards re-calculate
   // Refresh drill-down modal if currently open
   const drillModal = document.getElementById('obtainedDrillModal');
   if (drillModal && drillModal.style.display !== 'none') refreshObtainedDrill();

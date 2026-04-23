@@ -53,8 +53,21 @@ async function loadData() {
         co.availableByProd[prod]   = Math.max(0, obtMT - used);
         totalUtil += used;
       });
-      co.utilizationMT  = totalUtil;
-      co.availableQuota = Math.max(0, (co.obtained || 0) - totalUtil);
+      co.utilizationMT = totalUtil;
+      // CRITICAL FIX: use cycle-based canonical obtained (not raw DB co.obtained)
+      // co.obtained from DB may include in-process cycles not yet PERTEK-issued
+      // canonicalObtained() only counts cycles with valid PERTEK Terbit
+      const coObtCanon = canonicalObtained(co);
+      co.availableQuota = Math.max(0, (coObtCanon || co.obtained || 0) - totalUtil);
+    });
+    // Also set canonical obtained on each SPI company so other modules can use it
+    SPI.forEach(co => {
+      const canon = canonicalObtained(co);
+      if (canon > 0) co._canonicalObtained = canon;
+    });
+    PENDING.forEach(co => {
+      const canon = canonicalObtained(co);
+      if (canon > 0) co._canonicalObtained = canon;
     });
     _dataLoaded = true;
   } catch(err) {
@@ -105,3 +118,61 @@ const getSPI = c => SPI.find(s => s.code === c);
 const isReapplySubmitted = r => r && r.reapplyStage === 2;
 /* Eligibility: Realization ≥ 60% AND cargo arrived AND NOT yet submitted re-apply */
 const isEligible = r => r && r.realPct >= 0.6 && r.cargoArrived === true && !isReapplySubmitted(r);
+
+/* ════════════════════════════════════════════════════════════════════
+   CANONICAL OBTAINED — Single source of truth for company total obtained.
+   Rules (consistent with Overview KPI2 and all drill-downs):
+     1. Only count Obtained #N cycles (not Revision/Obtained-Revision cycles)
+     2. MUST have valid PERTEK Terbit date (paired Submit cycle has releaseDate)
+     3. Dedup by cycleType — first occurrence per company wins
+     4. Skip _fromRevReq cycles (revision re-allocation ≠ new MT)
+   This function is used by ALL KPIs, charts, and export to prevent
+   any source from using stale co.obtained from the DB.
+   ═══════════════════════════════════════════════════════════════════ */
+function canonicalObtained(co) {
+  if (!co) return 0;
+  const allCycles = co.cycles || [];
+  const seen      = new Set();
+  let   total     = 0;
+  allCycles.forEach(c => {
+    if (!/^obtained #/i.test(c.type)) return;          // only "Obtained #N" cycles
+    const mt = typeof c.mt === 'number' ? c.mt : 0;
+    if (mt <= 0) return;
+    const key = c.type.toLowerCase().trim();
+    if (seen.has(key)) return;                         // dedup cycleType
+    seen.add(key);
+    if (c._fromRevReq) return;                        // skip revision re-allocation
+    // Require valid PERTEK Terbit — cycles still in-process are NOT obtained yet
+    // (getPertekTerbitForObtained is defined in 02-period-filter.js, loaded first)
+    if (typeof getPertekTerbitForObtained === 'function') {
+      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
+      if (!pertekTerbit) return;
+    }
+    total += mt;
+  });
+  return total;
+}
+
+/* ── canonicalObtainedFiltered: period-aware version of canonicalObtained ── */
+function canonicalObtainedFiltered(co) {
+  if (!co) return 0;
+  const allCycles = co.cycles || [];
+  const seen      = new Set();
+  let   total     = 0;
+  allCycles.forEach(c => {
+    if (!/^obtained #/i.test(c.type)) return;
+    const mt = typeof c.mt === 'number' ? c.mt : 0;
+    if (mt <= 0) return;
+    const key = c.type.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (c._fromRevReq) return;
+    if (typeof getPertekTerbitForObtained === 'function') {
+      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
+      if (!pertekTerbit) return;
+      if (PERIOD.active && !inPd(pertekTerbit)) return;
+    }
+    total += mt;
+  });
+  return total;
+}
