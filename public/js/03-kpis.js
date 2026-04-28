@@ -5,53 +5,68 @@
 function updateOverviewKPIs() {
   const kpis = document.querySelectorAll('#page-overview .kpi');
 
-  /* ── KPI 1: Total Submitted ──────────────────────────────────────────── */
-  // FIX: use co.submit1 from DB (single ground-truth value per company).
-  // Iterating cycles causes 5–15× inflation due to duplicate cycle rows per product.
-  // Period filter: check if ANY submit cycle falls within period — if yes, include co.submit1.
+  /* ── KPI 1: Total Submitted ──────────────────────────────────────────────
+     Match the Excel "Total Submit (MT)" footer (222,150 MT in 240426 sheet).
+     Formula: Σ across all 33 companies of every Submit #N + Revision #N
+     cycle MT, deduped per (company, cycle_type) so legacy duplicate rows
+     in the DB don't inflate the number. Period filter (when active) keeps
+     only cycles whose submitDate falls in the window.
+  ────────────────────────────────────────────────────────────────────────── */
   let totalSubmitMT = 0, submitCoSet = new Set();
-  const allForSubmit = [...SPI, ...PENDING];
-  allForSubmit.forEach(co => {
-    const submitMT = co.submit1 || 0;
-    if (submitMT <= 0) return;
-    if (!PERIOD.active) {
-      totalSubmitMT += submitMT;
+  const allCompanies = [...SPI, ...PENDING];
+  allCompanies.forEach(co => {
+    const seen = new Set();
+    let coTotal = 0, anyInPeriod = false;
+    (co.cycles || []).forEach(c => {
+      // Match Excel rows: "Submit #N" or "Revision #N" (must have the # number;
+      // skip "Revision Request — XYZ" entries which aren't part of this footer).
+      if (!/^(submit|revision)\s*#\d/i.test(c.type)) return;
+      const key = c.type.toLowerCase().trim();
+      if (seen.has(key)) return; // dedup duplicates per (co, cycle_type)
+      seen.add(key);
+      const mt = typeof c.mt === 'number' ? c.mt : Number(c.mt) || 0;
+      if (mt <= 0) return;
+      if (PERIOD.active && !inPd(pDate(c.submitDate))) return;
+      coTotal += mt;
+      anyInPeriod = true;
+    });
+    if (anyInPeriod) {
+      totalSubmitMT += coTotal;
       submitCoSet.add(co.code);
-    } else {
-      // Period filter: does any submit cycle land in the active period?
-      const inPeriod = (co.cycles || []).some(c => {
-        if (!/^submit/i.test(c.type) || /obtained/i.test(c.type)) return false;
-        return inPd(pDate(c.submitDate));
-      });
-      if (inPeriod) { totalSubmitMT += submitMT; submitCoSet.add(co.code); }
     }
   });
 
-  /* ── KPI 2: SPI/PERTEK Obtained — filter by PERTEK Terbit date ────────
-     PERTEK Terbit = releaseDate of the Submit #N cycle paired with each
-     Obtained #N cycle. This is the "release date" that the filter period
-     refers to: "which PERTEK was officially issued in November 2025?"
-  ─────────────────────────────────────────────────────────────────────── */
+  /* ── KPI 2: Total Obtained ──────────────────────────────────────────────
+     Match the Excel "Total Obtained (MT)" footer (23,090 MT in 240426 sheet).
+     Formula: Σ across all 33 companies of every Obtained #N cycle MT,
+     deduped per (company, cycle_type). The Excel includes obtained rows
+     regardless of whether SPI has been issued (PERTEK-only counts), as
+     long as the obtained MT itself is set. Period filter (when active)
+     uses the obtained cycle's PERTEK Terbit date.
+  ────────────────────────────────────────────────────────────────────────── */
   let totalObtainedMT = 0, obtCoSet = new Set();
-  SPI.forEach(co => {
+  allCompanies.forEach(co => {
     const allCycles = co.cycles || [];
-    // Dedup: take only FIRST occurrence of each cycleType per company
-    // (prevents double-counting when DB has multiple rows per product for same cycle)
-    const _seenCycleTypes = new Set();
+    const seen = new Set();
+    let coObt = 0;
     allCycles.forEach(c => {
-      if (!/^obtained #/i.test(c.type)) return;
-      if (c._fromRevReq) return; // re-allocation via revision request ≠ new MT from Ministry
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
+      if (!/^obtained\s*#\d/i.test(c.type)) return;
+      if (c._fromRevReq) return; // re-allocation via revision request ≠ new MT
+      const key = c.type.toLowerCase().trim();
+      if (seen.has(key)) return;
+      seen.add(key);
+      const mt = typeof c.mt === 'number' ? c.mt : Number(c.mt) || 0;
       if (mt <= 0) return;
-      const cycleKey = c.type.toLowerCase().trim();
-      if (_seenCycleTypes.has(cycleKey)) return; // skip duplicates
-      _seenCycleTypes.add(cycleKey);
-      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
-      if (!PERIOD.active || inPd(pertekTerbit)) {
-        totalObtainedMT += mt;
-        obtCoSet.add(co.code);
+      if (PERIOD.active) {
+        const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
+        if (!inPd(pertekTerbit)) return;
       }
+      coObt += mt;
     });
+    if (coObt > 0) {
+      totalObtainedMT += coObt;
+      obtCoSet.add(co.code);
+    }
   });
 
   /* ── KPI 3: Total Realized (company count) ──────────────────────────── */
@@ -89,12 +104,17 @@ function updateOverviewKPIs() {
     if (inScope) { pendMT += p.mt; pendCoSet.add(p.code); }
   });
 
-  /* ── KPI 2b: Total Utilized MT ──────────────────────────────────────── */
-  const totalUtilizedMT = filteredSPI().reduce((s, co) => {
-    const ubp = co.utilizationByProd || {};
-    return s + Object.values(ubp).reduce((t, v) => t + (typeof v === 'number' ? v : 0), 0);
-  }, 0);
-  const utilCoCount = filteredSPI().filter(co => (co.utilizationMT || 0) > 0).length;
+  /* ── KPI 2b: Total Utilized MT ───────────────────────────────────────────
+     Match the Excel "Total Utilization (MT)" footer (15,181 MT in 240426).
+     Formula: Σ companies.utilization_mt across ALL companies (SPI + PENDING),
+     not just filteredSPI() — the Excel total covers every company in the sheet.
+     Period filter passes through filteredSPI semantics when active.
+  ────────────────────────────────────────────────────────────────────────── */
+  const utilPool = PERIOD.active
+    ? [...filteredSPI(), ...filteredPending()]
+    : allCompanies; // already SPI + PENDING from KPI 1
+  const totalUtilizedMT = utilPool.reduce((s, co) => s + (Number(co.utilizationMT) || 0), 0);
+  const utilCoCount     = utilPool.filter(co => (Number(co.utilizationMT) || 0) > 0).length;
 
   /* ── Update DOM ───────────────────────────────────────────────────── */
   if (kpis[0]) {

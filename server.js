@@ -1,25 +1,44 @@
 /**
  * server.js — IQ Dash Express API Server
  * Serves the static frontend and exposes REST endpoints
- * for all quota data backed by PostgreSQL (Neon).
+ * for all quota data backed by PostgreSQL (Neon or local).
  */
-require('dotenv').config();
+const fs      = require('fs');
+const path    = require('path');
+// Walk up the directory tree to find .env so the server still works
+// when it's launched from inside a git worktree (where the .env lives
+// at the main project root, several levels up).
+(function loadEnvUpwards() {
+  let dir = __dirname;
+  while (dir !== path.dirname(dir)) {
+    const envPath = path.join(dir, '.env');
+    if (fs.existsSync(envPath)) {
+      require('dotenv').config({ path: envPath });
+      return;
+    }
+    dir = path.dirname(dir);
+  }
+  require('dotenv').config(); // fallback: cwd
+})();
 const express = require('express');
 const cors    = require('cors');
-const path    = require('path');
 const { Pool } = require('pg');
-const fs      = require('fs');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ── DB Pool ──────────────────────────────────────────────────────
+// Respect the standard PGSSLMODE env var so the same code works
+// against managed Postgres (Neon → require SSL) and local instances
+// (no SSL). Set PGSSLMODE=disable in .env to opt out.
+const useSSL = process.env.PGSSLMODE && process.env.PGSSLMODE !== 'disable';
 const pool = new Pool({
   host:     process.env.PGHOST,
   database: process.env.PGDATABASE,
   user:     process.env.PGUSER,
   password: process.env.PGPASSWORD,
-  ssl:      { rejectUnauthorized: false },
+  port:     process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+  ssl:      useSSL ? { rejectUnauthorized: false } : false,
   max:      10,
 });
 
@@ -125,6 +144,7 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
 
   const obj = {
     code:           co.code,
+    fullName:       co.full_name || '',
     group:          co.grp,
     section:        co.section,
     products:       (products || []).sort((a,b)=>a.sort_order-b.sort_order).map(p=>p.product),
@@ -197,13 +217,432 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
   }
 })();
 
+// ── Seed `products` master table on first boot ──────────────────────
+// HS codes + colors live in DB so adding a new product or fixing a
+// wrong HS code doesn't require a code change. Idempotent: only seeds
+// when the table is empty.
+// Product master seed — canonical names + HS codes from product.xlsx
+// (the customer-supplied product library, treated as source of truth).
+// Older hardcoded names like 'GL BORON', 'SHEETPILE', etc. are kept as
+// aliases via PRODUCT_ALIAS_SEED so existing data still resolves.
+const PRODUCTS_SEED = [
+  // Hot-rolled
+  { name: 'HRC ≥3 mm to <4.75 mm', hs_code: '7208.38.00', color_solid: '#0369a1', color_light: '#e0f2fe', color_text: '#0369a1', sort_order: 1 },
+  { name: 'HRC <3 mm',             hs_code: '7208.39.90', color_solid: '#0284c7', color_light: '#e0f2fe', color_text: '#0369a1', sort_order: 2 },
+  // Alloy (matches old GL/GI BORON via aliases)
+  { name: 'HRPO ALLOY',            hs_code: '7225.30.90', color_solid: '#ca8a04', color_light: '#fef3c7', color_text: '#92400e', sort_order: 3 },
+  { name: 'BORDES ALLOY',          hs_code: '7225.40.90', color_solid: '#dc2626', color_light: '#fee2e2', color_text: '#991b1b', sort_order: 4 },
+  { name: 'ZAM ALLOY',             hs_code: '7225.92.20', color_solid: '#a16207', color_light: '#fef9c3', color_text: '#854d0e', sort_order: 5 },
+  { name: 'GI ALLOY',              hs_code: '7225.92.90', color_solid: '#0f766e', color_light: '#ccfbf1', color_text: '#0f766e', sort_order: 6 },
+  { name: 'GL ALLOY',              hs_code: '7225.99.90', color_solid: '#0369a1', color_light: '#e0f2fe', color_text: '#0369a1', sort_order: 7 },
+  // Structural
+  { name: 'AS STEEL',              hs_code: '7228.30.10', color_solid: '#64748b', color_light: '#f1f5f9', color_text: '#475569', sort_order: 8 },
+  { name: 'BEAM ALLOY',            hs_code: '7228.70.10', color_solid: '#475569', color_light: '#f1f5f9', color_text: '#334155', sort_order: 9 },
+  // Coated carbon
+  { name: 'ZAM >1.2 mm to ≤1.5 mm', hs_code: '7210.49.15', color_solid: '#fbbf24', color_light: '#fef9c3', color_text: '#854d0e', sort_order: 10 },
+  { name: 'ZAM >1.5 mm',            hs_code: '7210.49.16', color_solid: '#f59e0b', color_light: '#fef3c7', color_text: '#92400e', sort_order: 11 },
+  { name: 'GI CARBON',              hs_code: '7210.49.17', color_solid: '#0d9488', color_light: '#ccfbf1', color_text: '#0f766e', sort_order: 12 },
+  { name: 'GL CARBON',              hs_code: '7210.61.11', color_solid: '#0284c7', color_light: '#e0f2fe', color_text: '#0369a1', sort_order: 13 },
+  { name: 'PPGL CARBON',            hs_code: '7210.70.13', color_solid: '#7c3aed', color_light: '#ede9fe', color_text: '#5b21b6', sort_order: 14 },
+  { name: 'GL SLIT',                hs_code: '7212.50.24', color_solid: '#1e56c6', color_light: '#eff4ff', color_text: '#1e3a8a', sort_order: 15 },
+  // Sections
+  { name: 'CHANNEL',                hs_code: '7216.31.90', color_solid: '#9333ea', color_light: '#f3e8ff', color_text: '#6b21a8', sort_order: 16 },
+  { name: 'BEAM',                   hs_code: '7216.33.11', color_solid: '#a855f7', color_light: '#f3e8ff', color_text: '#6b21a8', sort_order: 17 },
+  { name: 'ANGLE',                  hs_code: '7216.40.90', color_solid: '#d946ef', color_light: '#fae8ff', color_text: '#86198f', sort_order: 18 },
+  // Sheet pile
+  { name: 'SHEET PILE',             hs_code: '7301.10.00', color_solid: '#b45309', color_light: '#fef9c3', color_text: '#92400e', sort_order: 19 },
+  { name: 'SHEET PILE (INTERLOCKS)', hs_code: '7301.20.00', color_solid: '#c2410c', color_light: '#fff7ed', color_text: '#9a3412', sort_order: 20 },
+  // Pipes
+  { name: 'SEAMLESS PIPE',          hs_code: '7304.19.00', color_solid: '#0d6946', color_light: '#d1fae5', color_text: '#065f46', sort_order: 21 },
+  { name: 'ERW PIPE (OD ≤ 140 mm)', hs_code: '7306.30.91', color_solid: '#9333ea', color_light: '#f3e8ff', color_text: '#6b21a8', sort_order: 22 },
+  { name: 'ERW PIPE (OD > 140mm)',  hs_code: '7306.30.99', color_solid: '#0891b2', color_light: '#e0f7fa', color_text: '#155e75', sort_order: 23 },
+  { name: 'HOLLOW PIPE',            hs_code: '7306.61.90', color_solid: '#78716c', color_light: '#f5f5f4', color_text: '#57534e', sort_order: 24 },
+  // Fabricated
+  { name: 'STRUCTURAL STEEL',       hs_code: '7308.90.99', color_solid: '#525252', color_light: '#f5f5f5', color_text: '#404040', sort_order: 25 },
+];
+// Variant → canonical product name. Two flavors here:
+//   1. Bridges from the previous hardcoded names ('GL BORON', 'SHEETPILE',
+//      'ERW PIPE OD≤140mm', etc.) to the new product.xlsx canonicals
+//      ('GL ALLOY', 'SHEET PILE', 'ERW PIPE (OD ≤ 140 mm)'). Without these
+//      existing rows in cycle_products / ra_records / realizations would
+//      orphan from product metadata after the seed swap.
+//   2. Short-forms found in the iq-dash-database JSON dump (RA records).
+const PRODUCT_ALIAS_SEED = [
+  // Old hardcoded → new Excel canonical
+  { alias: 'GL BORON',           canonical: 'GL ALLOY' },
+  { alias: 'GI BORON',           canonical: 'GI ALLOY' },
+  { alias: 'SHEETPILE',          canonical: 'SHEET PILE' },
+  { alias: 'ERW PIPE OD≤140mm',  canonical: 'ERW PIPE (OD ≤ 140 mm)' },
+  { alias: 'ERW PIPE OD>140mm',  canonical: 'ERW PIPE (OD > 140mm)' },
+  { alias: 'HRC/HRPO ALLOY',     canonical: 'HRPO ALLOY' },
+  // RA-record short-forms
+  { alias: 'GI',                 canonical: 'GI ALLOY' },
+  { alias: 'GL',                 canonical: 'GL ALLOY' },
+  { alias: 'GI Boron',           canonical: 'GI ALLOY' },
+  { alias: 'GL Boron',           canonical: 'GL ALLOY' },
+  { alias: 'PPGL',               canonical: 'PPGL CARBON' },
+];
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS products (
+        name         TEXT PRIMARY KEY,
+        hs_code      TEXT DEFAULT '',
+        color_solid  TEXT DEFAULT '#64748b',
+        color_light  TEXT DEFAULT '#f1f5f9',
+        color_text   TEXT DEFAULT '#475569',
+        sort_order   INT DEFAULT 0,
+        created_at   TIMESTAMPTZ DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM products`);
+    if ((rows[0] && rows[0].n) === 0) {
+      for (const p of PRODUCTS_SEED) {
+        await pool.query(
+          `INSERT INTO products (name, hs_code, color_solid, color_light, color_text, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (name) DO NOTHING`,
+          [p.name, p.hs_code, p.color_solid, p.color_light, p.color_text, p.sort_order]
+        );
+      }
+      console.log(`✅ Seeded ${PRODUCTS_SEED.length} products`);
+    }
+
+    // Aliases — only seeds when empty, idempotent.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS product_aliases (
+        alias       TEXT PRIMARY KEY,
+        canonical   TEXT NOT NULL REFERENCES products(name) ON DELETE CASCADE,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    const { rows: aliasRows } = await pool.query(`SELECT COUNT(*)::int AS n FROM product_aliases`);
+    if ((aliasRows[0] && aliasRows[0].n) === 0) {
+      for (const a of PRODUCT_ALIAS_SEED) {
+        await pool.query(
+          `INSERT INTO product_aliases (alias, canonical) VALUES ($1, $2)
+           ON CONFLICT (alias) DO NOTHING`,
+          [a.alias, a.canonical]
+        );
+      }
+      console.log(`✅ Seeded ${PRODUCT_ALIAS_SEED.length} product aliases`);
+    }
+  } catch (e) {
+    console.log('products migration skipped:', e.message);
+  }
+})();
+
+// ── Add CHECK constraints for enum-like columns ─────────────────
+// Wraps each ALTER in DO/EXCEPTION so re-runs don't error.
+// Values discovered by surveying the iq-dash-database JSON dump.
+(async () => {
+  const checks = [
+    { name: 'companies_section_chk',  sql: `ALTER TABLE companies ADD CONSTRAINT companies_section_chk  CHECK (section IN ('SPI','PENDING'))` },
+    { name: 'companies_grp_chk',      sql: `ALTER TABLE companies ADD CONSTRAINT companies_grp_chk      CHECK (grp IN ('AB','CD','NORMATIF'))` },
+    { name: 'companies_revtype_chk',  sql: `ALTER TABLE companies ADD CONSTRAINT companies_revtype_chk  CHECK (rev_type IN ('none','active','complete'))` },
+    { name: 'companies_updby_chk',    sql: `ALTER TABLE companies ADD CONSTRAINT companies_updby_chk    CHECK (updated_by IN ('CorpSec','Sales','Operations',''))` },
+    { name: 'revchanges_dir_chk',     sql: `ALTER TABLE revision_changes ADD CONSTRAINT revchanges_dir_chk CHECK (direction IN ('from','to'))` },
+    { name: 'ra_stage_chk',           sql: `ALTER TABLE ra_records ADD CONSTRAINT ra_stage_chk CHECK (reapply_stage IN (1,2))` },
+  ];
+  for (const c of checks) {
+    try {
+      await pool.query(`DO $$ BEGIN ${c.sql}; EXCEPTION WHEN duplicate_object THEN NULL; WHEN others THEN NULL; END $$;`);
+    } catch (e) {
+      // Constraint exists or table missing — fine
+    }
+  }
+
+  // Useful indexes on common filter columns
+  try {
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_companies_section ON companies(section)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_companies_revtype ON companies(rev_type)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_ra_reapply_stage  ON ra_records(reapply_stage)`);
+  } catch (e) { /* ignore */ }
+})();
+
+// ── Company Directory + companies.full_name column ──────────────
+// Master list of company name → abbreviation. Loaded from company.xlsx
+// via `npm run import-libraries`. The companies.full_name column is
+// added if missing (older deployments) so existing data isn't lost.
+(async () => {
+  try {
+    await pool.query(`
+      ALTER TABLE companies
+        ADD COLUMN IF NOT EXISTS full_name TEXT DEFAULT ''
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS company_directory (
+        full_name     TEXT PRIMARY KEY,
+        abbreviation  TEXT NOT NULL,
+        sort_order    INT  DEFAULT 0,
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_company_dir_abbr ON company_directory(abbreviation)`);
+  } catch (e) {
+    console.log('company_directory migration skipped:', e.message);
+  }
+})();
+
+// ── Realizations table (PIB import declarations) ────────────────
+// Created at boot so existing DBs pick up the new feature without
+// having to re-run schema.sql. Idempotent.
+(async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS realizations (
+        id               SERIAL PRIMARY KEY,
+        company_code     TEXT NOT NULL REFERENCES companies(code) ON DELETE CASCADE,
+        product          TEXT,
+        line_no          INT  DEFAULT 1,
+        description      TEXT DEFAULT '',
+        hs_code          TEXT DEFAULT '',
+        volume           NUMERIC,
+        unit             TEXT DEFAULT 'TNE',
+        value_usd        NUMERIC,
+        unit_price       NUMERIC,
+        kurs             NUMERIC,
+        country_origin   TEXT DEFAULT '',
+        port_destination TEXT DEFAULT '',
+        port_loading     TEXT DEFAULT '',
+        ls_no            TEXT DEFAULT '',
+        ls_date          TEXT DEFAULT '',
+        pib_no           TEXT DEFAULT '',
+        pib_date         TEXT DEFAULT '',
+        invoice_no       TEXT DEFAULT '',
+        invoice_date     TEXT DEFAULT '',
+        pengajuan_no     TEXT DEFAULT '',
+        pengajuan_date   TEXT DEFAULT '',
+        source           TEXT DEFAULT 'manual',
+        source_file      TEXT DEFAULT '',
+        imported_by      TEXT DEFAULT '',
+        created_at       TIMESTAMPTZ DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE (company_code, pib_no, line_no)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_realizations_co  ON realizations(company_code)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_realizations_pib ON realizations(pib_no)`);
+  } catch (e) {
+    console.log('realizations migration skipped:', e.message);
+  }
+})();
+
+// ── Pipeline reconciliation against IQ Dash - Quota Data 240426.xlsx ──
+// Two companies (AADC, KARA) had PERTEK Terbit issued but were still
+// marked as PENDING in the DB — inflating the "New Submission" pipeline
+// number by 9,000 MT and missing them from "SPI / PERTEK Obtained".
+// Per the audit:
+//   AADC: PERTEK 14/04/26, Obtained 150 MT (SPI still pending)
+//   KARA: PERTEK 16/04/26, Obtained 100 MT (SPI still pending)
+//
+// This IIFE corrects the misclassification at boot. Idempotent — only
+// fires if the wrong state still exists; safe across restarts and safe
+// against manual edits (we check before writing).
+const PIPELINE_CORRECTIONS = [
+  {
+    code: 'AADC',
+    obtained:    150,
+    submitMT:    3000,
+    pertekDate:  '14/04/2026',
+    pertekSerial: 46126,    // Excel date serial — for cycle pertek_date
+  },
+  {
+    code: 'KARA',
+    obtained:    100,
+    submitMT:    6000,
+    pertekDate:  '16/04/2026',
+    pertekSerial: 46128,
+  },
+];
+(async () => {
+  for (const fix of PIPELINE_CORRECTIONS) {
+    try {
+      // Only fire if the company is still wrongly in PENDING with obtained=0
+      const { rows } = await pool.query(
+        `SELECT section, obtained::numeric AS obtained FROM companies WHERE code = $1`,
+        [fix.code]
+      );
+      if (!rows.length) continue;
+      const cur = rows[0];
+      const wronglyPending = cur.section === 'PENDING' && Number(cur.obtained) === 0;
+      if (!wronglyPending) continue;
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        // 1. Move to SPI section + set submit1/obtained from Excel
+        //    (submit1 was previously null because the row was PENDING)
+        await client.query(
+          `UPDATE companies
+             SET section = 'SPI',
+                 submit1 = $1,
+                 obtained = $2,
+                 updated_at = NOW()
+           WHERE code = $3`,
+          [fix.submitMT, fix.obtained, fix.code]
+        );
+        // 2. Drop pending_meta — it's an SPI now
+        await client.query(`DELETE FROM pending_meta WHERE company_code = $1`, [fix.code]);
+        // 3. Insert Submit #1 + Obtained #1 cycles only if none exist (don't clobber)
+        const { rowCount } = await client.query(
+          `SELECT 1 FROM cycles WHERE company_code = $1 LIMIT 1`,
+          [fix.code]
+        );
+        if (!rowCount) {
+          await client.query(
+            `INSERT INTO cycles
+               (company_code, cycle_type, mt, submit_type, submit_date,
+                release_type, release_date, status, sort_order, pertek_date, spi_date)
+             VALUES
+               ($1, 'Submit #1',   $2, 'Submit MOI', '', 'PERTEK', $3, '', 0, $3, ''),
+               ($1, 'Obtained #1', $4, 'Submit MOT', '', 'SPI',    'TBA', '', 1, $3, 'TBA')`,
+            [fix.code, fix.submitMT, fix.pertekDate, fix.obtained]
+          );
+        }
+        await client.query('COMMIT');
+        console.log(`✅ Pipeline correction: ${fix.code} → SPI section · ${fix.obtained} MT obtained · PERTEK ${fix.pertekDate}`);
+      } catch (e) {
+        await client.query('ROLLBACK');
+        console.log(`⚠  Pipeline correction for ${fix.code} failed:`, e.message);
+      } finally {
+        client.release();
+      }
+    } catch (e) {
+      console.log(`Pipeline correction skipped for ${fix.code}:`, e.message);
+    }
+
+    // Follow-up: backfill submit1 if a previous run of this migration
+    // moved the company to SPI but didn't set submit1 (older version of
+    // this code). Idempotent — only writes when submit1 IS NULL.
+    try {
+      const upd = await pool.query(
+        `UPDATE companies
+           SET submit1 = $1, updated_at = NOW()
+         WHERE code = $2 AND submit1 IS NULL`,
+        [fix.submitMT, fix.code]
+      );
+      if (upd.rowCount) {
+        console.log(`✅ Backfilled submit1 for ${fix.code}: ${fix.submitMT} MT`);
+      }
+    } catch (e) {
+      console.log(`submit1 backfill failed for ${fix.code}:`, e.message);
+    }
+  }
+})();
+
+// ── KPI total reconciliation against IQ Dash - Quota Data 240426.xlsx ──
+// Per the Excel grand-total row (image shared 28-Apr-2026):
+//   Total Submit (MT)      = 222,150
+//   Total Obtained (MT)    =  23,090
+//   Total Utilization (MT) =  15,181
+//   Total Available (MT)   =   7,910
+//
+// The DB had three classes of drift from the Excel:
+//   1. Stale Obtained #2 cycle MT values for 8 companies (they reflected
+//      the SUBMIT amount instead of the actually-obtained amount, which
+//      should be 0 or a smaller number for in-process cycles).
+//   2. companies.utilization_mt off by small amounts on 8 rows.
+//   3. companies.available_quota off by small amounts on 7 rows.
+//
+// All idempotent — UPDATEs only fire when current value ≠ target.
+const KPI_RECONCILE = [
+  { code:'AADC', util:0,      avail:150 },
+  { code:'BBB',  obt2:0 },
+  { code:'CGK',  util:800,    avail:220,   obt2:220 },
+  { code:'EMS',  obt2:0 },
+  { code:'GAS',  obt2:0 },
+  { code:'GKL',  util:1694.5, avail:705.5, obt2:0 },
+  { code:'GNG',  util:400,    obt2:150 },
+  { code:'HDP',  util:900,    avail:0 },
+  { code:'KARA', util:100,    avail:0 },
+  { code:'KJK',  obt2:0 },
+  { code:'MIN',  util:247,    avail:353 },
+  { code:'SGD',  util:2000,   avail:0 },
+  { code:'SPA',  util:114,    avail:401,   obt2:0 },
+];
+(async () => {
+  for (const fix of KPI_RECONCILE) {
+    try {
+      // Update companies.utilization_mt only when current ≠ target
+      if (fix.util !== undefined) {
+        const r = await pool.query(
+          `UPDATE companies
+             SET utilization_mt = $1, updated_at = NOW()
+           WHERE code = $2 AND COALESCE(utilization_mt,0) != $1`,
+          [fix.util, fix.code]
+        );
+        if (r.rowCount) console.log(`✅ ${fix.code} utilization_mt → ${fix.util} MT`);
+      }
+      // Update companies.available_quota only when current ≠ target
+      if (fix.avail !== undefined) {
+        const r = await pool.query(
+          `UPDATE companies
+             SET available_quota = $1, updated_at = NOW()
+           WHERE code = $2 AND COALESCE(available_quota,-1) != $1`,
+          [fix.avail, fix.code]
+        );
+        if (r.rowCount) console.log(`✅ ${fix.code} available_quota → ${fix.avail} MT`);
+      }
+      // Update Obtained #2 cycle MT only when current ≠ target.
+      // Multiple rows may exist (legacy duplicates) — we update them all
+      // to the same canonical value so dedup-on-read still produces the
+      // right total regardless of which copy wins.
+      if (fix.obt2 !== undefined) {
+        const r = await pool.query(
+          `UPDATE cycles
+             SET mt = $1::text
+           WHERE company_code = $2
+             AND cycle_type = 'Obtained #2'
+             AND COALESCE(mt,'')::text != $1::text`,
+          [String(fix.obt2), fix.code]
+        );
+        if (r.rowCount) console.log(`✅ ${fix.code} Obtained #2 mt → ${fix.obt2} (${r.rowCount} row${r.rowCount!==1?'s':''})`);
+      }
+    } catch (e) {
+      console.log(`KPI reconcile skipped for ${fix.code}:`, e.message);
+    }
+  }
+})();
+
 app.get('/api/data', async (req, res) => {
   try {
+    // Product master metadata (HS codes + colors). Always returned, even
+    // when no companies exist yet, so the frontend can hydrate its
+    // PRODUCT_META cache before rendering empty states.
+    const [{ rows: productMeta }, { rows: aliasRows }, { rows: dirRows }] = await Promise.all([
+      pool.query(
+        `SELECT name, hs_code, color_solid, color_light, color_text, sort_order
+         FROM products ORDER BY sort_order, name`
+      ),
+      pool.query(`SELECT alias, canonical FROM product_aliases`).catch(() => ({ rows: [] })),
+      pool.query(
+        `SELECT full_name, abbreviation, sort_order FROM company_directory ORDER BY sort_order, full_name`
+      ).catch(() => ({ rows: [] })),
+    ]);
+    const productsList = productMeta.map(p => ({
+      name:       p.name,
+      hsCode:     p.hs_code     || '',
+      colorSolid: p.color_solid || '#64748b',
+      colorLight: p.color_light || '#f1f5f9',
+      colorText:  p.color_text  || '#475569',
+      sortOrder:  Number(p.sort_order) || 0,
+    }));
+    const aliasMap = {};
+    aliasRows.forEach(a => { aliasMap[a.alias] = a.canonical; });
+    const companyDirectory = dirRows.map(r => ({
+      fullName:     r.full_name,
+      abbreviation: r.abbreviation,
+      sortOrder:    Number(r.sort_order) || 0,
+    }));
+
     const { rows: companies } = await pool.query(
       `SELECT * FROM companies ORDER BY section, code`
     );
     const codes = companies.map(c => c.code);
-    if (!codes.length) return res.json({ spi: [], pending: [], ra: [] });
+    if (!codes.length) return res.json({ spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory });
 
     const [
       { rows: products },
@@ -304,7 +743,7 @@ app.get('/api/data', async (req, res) => {
       });
     });
 
-    res.json({ spi, pending, ra });
+    res.json({ spi, pending, ra, products: productsList, productAliases: aliasMap, companyDirectory });
   } catch (err) {
     console.error('/api/data error:', err);
     res.status(500).json({ error: err.message });
@@ -549,6 +988,154 @@ app.post('/api/import', async (req, res) => {
     // instead expose the seed function inline — we just call it via shell
     res.json({ message: 'Run `node seed.js` on the server to re-seed data.' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// REALIZATIONS — PIB import customs declarations
+// Two import methods supported:
+//   1. POST /api/realizations              — bulk insert (Excel upload OR manual)
+//   2. POST /api/realizations/single       — one row at a time (manual form)
+// Both routes accept JSON; the frontend parses xlsx in-browser via SheetJS
+// and sends parsed rows as JSON, so server doesn't need an xlsx dependency.
+// ═══════════════════════════════════════════════════════════════════
+
+// Coerce a value-or-empty into a Number, returning null for blanks
+const _num = v => {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+};
+
+// Single insert builder used by both bulk + single routes
+async function insertRealization(client, code, row, defaults) {
+  return client.query(
+    `INSERT INTO realizations
+       (company_code, product, line_no, description, hs_code, volume, unit,
+        value_usd, unit_price, kurs, country_origin, port_destination, port_loading,
+        ls_no, ls_date, pib_no, pib_date, invoice_no, invoice_date,
+        pengajuan_no, pengajuan_date, source, source_file, imported_by, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,NOW())
+     ON CONFLICT (company_code, pib_no, line_no) DO UPDATE SET
+       product=EXCLUDED.product, description=EXCLUDED.description, hs_code=EXCLUDED.hs_code,
+       volume=EXCLUDED.volume, unit=EXCLUDED.unit, value_usd=EXCLUDED.value_usd,
+       unit_price=EXCLUDED.unit_price, kurs=EXCLUDED.kurs,
+       country_origin=EXCLUDED.country_origin, port_destination=EXCLUDED.port_destination,
+       port_loading=EXCLUDED.port_loading, ls_no=EXCLUDED.ls_no, ls_date=EXCLUDED.ls_date,
+       pib_date=EXCLUDED.pib_date, invoice_no=EXCLUDED.invoice_no, invoice_date=EXCLUDED.invoice_date,
+       pengajuan_no=EXCLUDED.pengajuan_no, pengajuan_date=EXCLUDED.pengajuan_date,
+       source=EXCLUDED.source, source_file=EXCLUDED.source_file,
+       imported_by=EXCLUDED.imported_by, updated_at=NOW()
+     RETURNING id`,
+    [
+      code,
+      row.product || null,
+      _num(row.lineNo) ?? 1,
+      row.description || '',
+      row.hsCode || '',
+      _num(row.volume),
+      row.unit || 'TNE',
+      _num(row.valueUSD),
+      _num(row.unitPrice),
+      _num(row.kurs),
+      row.countryOrigin || '',
+      row.portDestination || '',
+      row.portLoading || '',
+      row.lsNo || '',
+      row.lsDate || '',
+      row.pibNo || '',
+      row.pibDate || '',
+      row.invoiceNo || '',
+      row.invoiceDate || '',
+      row.pengajuanNo || '',
+      row.pengajuanDate || '',
+      defaults.source || row.source || 'manual',
+      defaults.sourceFile || row.sourceFile || '',
+      defaults.importedBy || row.importedBy || '',
+    ]
+  );
+}
+
+// GET /api/realizations?company_code=CODE  — list realizations (optionally filtered)
+app.get('/api/realizations', async (req, res) => {
+  const { company_code } = req.query;
+  try {
+    const sql = company_code
+      ? `SELECT * FROM realizations WHERE company_code = $1 ORDER BY pib_date DESC, pib_no, line_no`
+      : `SELECT * FROM realizations ORDER BY pib_date DESC, company_code, pib_no, line_no`;
+    const args = company_code ? [company_code] : [];
+    const { rows } = await pool.query(sql, args);
+    res.json({ realizations: rows });
+  } catch (err) {
+    console.error('GET /api/realizations error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/realizations  — bulk insert (Excel upload result, or any batch)
+// Body: { companyCode, source: 'excel'|'manual', sourceFile, importedBy, rows: [...] }
+app.post('/api/realizations', async (req, res) => {
+  const { companyCode, source, sourceFile, importedBy, rows } = req.body || {};
+  if (!companyCode || !Array.isArray(rows) || !rows.length) {
+    return res.status(400).json({ error: 'companyCode and non-empty rows array are required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    // Confirm company exists — return clean 404 instead of FK violation
+    const { rowCount } = await client.query(`SELECT 1 FROM companies WHERE code = $1`, [companyCode]);
+    if (!rowCount) return res.status(404).json({ error: `Unknown company code: ${companyCode}` });
+
+    await client.query('BEGIN');
+    const ids = [];
+    const defaults = { source: source || 'excel', sourceFile: sourceFile || '', importedBy: importedBy || '' };
+    for (const row of rows) {
+      const r = await insertRealization(client, companyCode, row, defaults);
+      ids.push(r.rows[0].id);
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, inserted: ids.length, ids });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /api/realizations error:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// POST /api/realizations/single  — single manual entry
+app.post('/api/realizations/single', async (req, res) => {
+  const { companyCode, importedBy, ...row } = req.body || {};
+  if (!companyCode) return res.status(400).json({ error: 'companyCode is required' });
+  const client = await pool.connect();
+  try {
+    const { rowCount } = await client.query(`SELECT 1 FROM companies WHERE code = $1`, [companyCode]);
+    if (!rowCount) return res.status(404).json({ error: `Unknown company code: ${companyCode}` });
+
+    const r = await insertRealization(client, companyCode, row, {
+      source: 'manual', sourceFile: '', importedBy: importedBy || '',
+    });
+    res.json({ ok: true, id: r.rows[0].id });
+  } catch (err) {
+    console.error('POST /api/realizations/single error:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// DELETE /api/realizations/:id  — remove a row
+app.delete('/api/realizations/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!id) return res.status(400).json({ error: 'invalid id' });
+  try {
+    const { rowCount } = await pool.query(`DELETE FROM realizations WHERE id = $1`, [id]);
+    if (!rowCount) return res.status(404).json({ error: 'not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('DELETE /api/realizations/:id error:', err);
     res.status(500).json({ error: err.message });
   }
 });

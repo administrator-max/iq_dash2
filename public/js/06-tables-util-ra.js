@@ -545,29 +545,34 @@ function renderRATable() {
 
 /* Comparison list */
 function buildCmpList() {
-  const maxS = Math.max(...SPI.map(d => d.submit1));
+  // Use filteredSPI so the bar scale matches the rendered list when a period is active.
+  // Coerce to Number and guard against null/missing submit1 — Math.max(...[NaN]) → NaN.
+  const filtered = filteredSPI();
+  const maxS = Math.max(1, ...filtered.map(d => Number(d.submit1) || 0));
   const el = document.getElementById('cmpList'); el.innerHTML = '';
-  [...filteredSPI()].sort((a,b) => a.code.localeCompare(b.code)).forEach(co => {
+  [...filtered].sort((a,b) => a.code.localeCompare(b.code)).forEach(co => {
     const ra = getRA(co.code);
     const div = document.createElement('div');
     div.style.cssText = 'padding:6px 2px;border-bottom:1px solid var(--border);cursor:pointer;border-radius:3px;transition:background .1s';
+    const submit1 = Number(co.submit1) || 0;
+    const obtained = Number(co.obtained) || 0;
     div.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
         <span style="font-size:12px;font-weight:700">${co.code} <span style="font-size:9px;color:var(--txt3);font-weight:400">${co.group}</span></span>
         <div style="display:flex;gap:6px;font-size:10.5px;font-family:'DM Mono',monospace">
-          <span style="color:var(--navy2)">S:${co.submit1.toLocaleString()}</span>
-          <span style="color:var(--teal);font-weight:700">O:${co.obtained.toLocaleString()}</span>
+          <span style="color:var(--navy2)">S:${submit1.toLocaleString()}</span>
+          <span style="color:var(--teal);font-weight:700">O:${obtained.toLocaleString()}</span>
           ${ra ? `<span style="color:var(--green);font-weight:700">${(ra.realPct*100).toFixed(0)}%</span>` : ''}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:2px">
         <div style="display:flex;align-items:center;gap:5px">
           <span style="font-size:9px;color:var(--txt3);font-weight:700;width:12px">S</span>
-          <div style="flex:1;height:5px;background:var(--bg);border-radius:2px;overflow:hidden"><div style="height:5px;border-radius:2px;background:rgba(24,38,68,.35);width:${co.submit1/maxS*100}%"></div></div>
+          <div style="flex:1;height:5px;background:var(--bg);border-radius:2px;overflow:hidden"><div style="height:5px;border-radius:2px;background:rgba(24,38,68,.35);width:${submit1/maxS*100}%"></div></div>
         </div>
         <div style="display:flex;align-items:center;gap:5px">
           <span style="font-size:9px;color:var(--txt3);font-weight:700;width:12px">O</span>
-          <div style="flex:1;height:5px;background:var(--bg);border-radius:2px;overflow:hidden"><div style="height:5px;border-radius:2px;background:#0c7c84;width:${co.obtained/maxS*100}%"></div></div>
+          <div style="flex:1;height:5px;background:var(--bg);border-radius:2px;overflow:hidden"><div style="height:5px;border-radius:2px;background:#0c7c84;width:${obtained/maxS*100}%"></div></div>
         </div>
       </div>`;
     div.onmouseover = () => div.style.background = 'var(--blue-bg)';

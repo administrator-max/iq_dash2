@@ -618,12 +618,16 @@ function renderSPI() {
         const ico   = conf===reqE2.length ? '✅' : wait>0 ? '⏳' : '✕';
         return `<div style="margin-top:2px;font-size:9px;font-weight:700;color:${col}">${ico} Rev Req (${reqE2.length})</div>`;
       })() : '';
+    // Coerce nullable numerics — newly-imported companies may have
+    // null submit1/obtained while their cycle data fills in.
+    const _s1  = Number(d.submit1)  || 0;
+    const _obt = Number(d.obtained) || 0;
     tr.innerHTML = `
       <td><div class="t-code" onclick="openDrawer('${d.code}')">${d.code}${salesRevBadge}</div></td>
       <td style="font-size:11.5px;font-weight:600">${d.group}</td>
       <td>${chips(d.products)}</td>
-      <td class="t-r t-mono">${d.submit1.toLocaleString()}</td>
-      <td class="t-r t-mono" style="color:var(--teal)">${d.obtained.toLocaleString()}</td>
+      <td class="t-r t-mono">${_s1.toLocaleString()}</td>
+      <td class="t-r t-mono" style="color:var(--teal)">${_obt.toLocaleString()}</td>
       <td class="t-r t-mono" style="color:${utilColor}">${spiUtil > 0 ? spiUtil.toLocaleString()+' MT' : '<span style="color:var(--txt3);font-size:10px">—</span>'}</td>
       <td>${statusBadge(d)}</td>
       <td style="font-size:11px;color:${rs==='active'?'var(--amber)':rs==='reapply'?'var(--blue)':rs==='revpending'?'var(--orange)':rs==='completed'?'var(--violet)':'var(--txt3)'}">

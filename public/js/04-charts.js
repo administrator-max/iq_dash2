@@ -84,7 +84,13 @@ function statusBadge(d) {
    CHARTS
 ══════════════════════════════════════════════════ */
 const CH = {};
-function mkChart(id, cfg) { if(CH[id]) CH[id].destroy(); CH[id] = new Chart(document.getElementById(id), cfg); return CH[id]; }
+function mkChart(id, cfg) {
+  if (CH[id]) { CH[id].destroy(); CH[id] = null; }
+  const el = document.getElementById(id);
+  if (!el) return null;
+  CH[id] = new Chart(el, cfg);
+  return CH[id];
+}
 
 /* PIPELINE — hover shows company list */
 function buildPipeline() {
@@ -234,6 +240,11 @@ function makeStripePattern(baseColor, stripeColor) {
    All 29 companies with PERTEK Terbit shown, including util=0.
 ═══════════════════════════════════════════════════════ */
 function buildAvailableQuota() {
+  // Local palette — intentionally different from the canonical pc() in
+  // 01-data.js. The AVQ bar chart uses a brighter teal/blue/orange
+  // scheme so adjacent product bars are visually distinct from the
+  // donut/badges elsewhere on the page. Do not "consolidate" with
+  // PRODUCT_META without a UX review.
   const pc = p => {
     const MAP = {
       'GL BORON':'#0c7c84','GI BORON':'#1e56c6','BORDES ALLOY':'#d97706',
@@ -576,6 +587,8 @@ function buildTopCo() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 4, right: 10 } },
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -604,60 +617,58 @@ function buildTopCo() {
       },
       scales: {
         x: { grid:{display:false}, ticks:{font:{size:10.5,family:'DM Sans'},color:'#64748b'} },
-        y: { grid:{color:'#f1f5f9'}, ticks:{font:{size:10},color:'#64748b',callback:v=>v.toLocaleString()} }
+        y: {
+          type: 'logarithmic',
+          min: 100,
+          grid:{color:'#f1f5f9'},
+          ticks:{
+            font:{size:10},color:'#64748b',
+            callback:v => {
+              const n = Number(v);
+              if (![100,1000,10000,100000,1000000].includes(n)) return '';
+              return n.toLocaleString();
+            }
+          }
+        }
       },
       onClick: (e, els) => { if (els.length) openDrawer(dataset[els[0].index].code); }
-    },
-    plugins: [{
-      id: 'groupLegend',
-      afterDraw(chart) {
-        const cx   = chart.ctx;
-        const xR   = chart.chartArea.right - 6;
-        const yTop = chart.chartArea.top + 10;
-
-        // Legend items: AB Solid | CD Striped | Revision | Re-Apply
-        const items = [
-          { label:'Group AB  — Solid',    bg:'#0c7c84',  stripe:null,     border:'#0f766e' },
-          { label:'Group CD  — Striped',  bg:'#0e9c9c',  stripe:'#065b5b',border:'#0d9488' },
-          { label:'Revision Active',       bg:'#d97706',  stripe:null,     border:'#b45309' },
-          { label:'Revision Complete',     bg:'#7c3aed',  stripe:null,     border:'#6d28d9' },
-        ];
-
-        // Only show items that actually appear in dataset
-        const usedGroups  = new Set(dataset.map(co => co.group));
-        const hasRevAct   = dataset.some(co => co.revType === 'active');
-        const hasRevCmp   = dataset.some(co => co.revType === 'complete');
-        const visItems = items.filter(it => {
-          if (it.label.startsWith('Group AB') && !usedGroups.has('AB')) return false;
-          if (it.label.startsWith('Group CD') && !usedGroups.has('CD')) return false;
-          if (it.label === 'Revision Active'   && !hasRevAct) return false;
-          if (it.label === 'Revision Complete' && !hasRevCmp) return false;
-          return true;
-        });
-
-        cx.save();
-        cx.font = '600 9.5px DM Sans, sans-serif';
-        let y = yTop;
-        visItems.forEach(it => {
-          const w = 11, h = 11;
-          const xBox = xR - 100;
-          if (it.stripe) {
-            const pat = makeStripePattern(it.bg, it.stripe);
-            cx.fillStyle = pat;
-          } else {
-            cx.fillStyle = it.bg;
-          }
-          cx.fillRect(xBox, y, w, h);
-          cx.strokeStyle = it.border; cx.lineWidth = 1;
-          cx.strokeRect(xBox, y, w, h);
-          cx.fillStyle = '#334155';
-          cx.fillText(it.label, xBox + w + 5, y + 8.5);
-          y += 16;
-        });
-        cx.restore();
-      }
-    }]
+    }
   });
+
+  // HTML legend below the chart — guaranteed to never overlap bars.
+  const legendEl = document.getElementById('topCoLegend');
+  if (legendEl) {
+    const usedGroups = new Set(dataset.map(co => co.group));
+    const hasRevAct  = dataset.some(co => co.revType === 'active');
+    const hasRevCmp  = dataset.some(co => co.revType === 'complete');
+    const items = [];
+    if (usedGroups.has('AB')) items.push({ text:'Group AB — Solid',   bg:'#0c7c84', stripe:null,      border:'#0f766e' });
+    if (usedGroups.has('CD')) items.push({ text:'Group CD — Striped', bg:'#0e9c9c', stripe:'#065b5b', border:'#0d9488' });
+    if (hasRevAct) items.push({ text:'Revision Active',   bg:'#d97706', stripe:null, border:'#b45309' });
+    if (hasRevCmp) items.push({ text:'Revision Complete', bg:'#7c3aed', stripe:null, border:'#6d28d9' });
+
+    // Render a tiny canvas swatch per item so we can show the stripe pattern.
+    const swatchHTML = it => {
+      const c = document.createElement('canvas');
+      c.width = 12; c.height = 12;
+      const cx = c.getContext('2d');
+      cx.fillStyle = it.stripe ? makeStripePattern(it.bg, it.stripe) : it.bg;
+      cx.fillRect(0, 0, 12, 12);
+      cx.strokeStyle = it.border; cx.lineWidth = 1;
+      cx.strokeRect(0.5, 0.5, 11, 11);
+      return c;
+    };
+    legendEl.innerHTML = '';
+    items.forEach(it => {
+      const row = document.createElement('span');
+      row.style.cssText = 'display:inline-flex;align-items:center;gap:5px;white-space:nowrap';
+      row.appendChild(swatchHTML(it));
+      const lbl = document.createElement('span');
+      lbl.textContent = it.text;
+      row.appendChild(lbl);
+      legendEl.appendChild(row);
+    });
+  }
 }
 
 function buildCmpChart() {

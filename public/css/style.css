@@ -78,7 +78,7 @@ body { font-family:'DM Sans','Calibri','Segoe UI',sans-serif; background:var(--b
 .pf-val  { font-size:11.5px; font-weight:600; color:#fff; white-space:nowrap }
 .pf-ico  { font-size:12px; color:rgba(255,255,255,.5) }
 .pf-active-dot { width:6px; height:6px; border-radius:50%; background:#4ade80; flex-shrink:0; box-shadow:0 0 6px #4ade80 }
-.pf-panel { display:none; position:fixed; top:58px; background:var(--surf); border:1px solid var(--border2); border-radius:var(--r3); box-shadow:0 8px 32px rgba(0,0,0,.16); z-index:400; width:380px; overflow:hidden }
+.pf-panel { display:none; position:fixed; top:58px; background:var(--surf); border:1px solid var(--border2); border-radius:var(--r3); box-shadow:0 8px 32px rgba(0,0,0,.16); z-index:400; width:380px; max-width:calc(100vw - 24px); overflow:hidden }
 .pf-panel.open { display:block; animation:fadeUp .18s ease }
 .pf-ph { background:var(--navy); padding:11px 16px; display:flex; align-items:center; justify-content:space-between }
 .pf-ph-t { font-size:12px; font-weight:700; color:#fff }
@@ -109,7 +109,7 @@ body { font-family:'DM Sans','Calibri','Segoe UI',sans-serif; background:var(--b
 .gs-ico { color:rgba(255,255,255,.5); font-size:13px; line-height:1 }
 
 /* ── SEARCH DROPDOWN ── */
-.s-drop { position:fixed; top:50px; right:28px; width:420px; background:var(--surf); border:1px solid var(--border2); border-radius:var(--r2); box-shadow:var(--sh2); z-index:400; max-height:420px; overflow-y:auto; display:none }
+.s-drop { position:fixed; top:50px; right:28px; width:420px; max-width:calc(100vw - 24px); background:var(--surf); border:1px solid var(--border2); border-radius:var(--r2); box-shadow:var(--sh2); z-index:400; max-height:420px; overflow-y:auto; display:none }
 .s-drop.open { display:block }
 .sd-hd { padding:8px 14px; font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:1.2px; color:var(--txt3); border-bottom:1px solid var(--border); background:#f8fafc }
 .sd-row { padding:9px 14px; border-bottom:1px solid var(--border); cursor:pointer; display:flex; align-items:flex-start; gap:10px; transition:background .1s }
@@ -197,7 +197,7 @@ body { font-family:'DM Sans','Calibri','Segoe UI',sans-serif; background:var(--b
 
 /* ── TOOLTIP ── */
 .has-tip { position:relative; cursor:help }
-.tip { display:none; position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:var(--navy); color:#fff; font-size:11px; padding:6px 10px; border-radius:var(--r); white-space:nowrap; z-index:200; pointer-events:none; line-height:1.5; text-align:left; min-width:160px; max-width:260px; white-space:normal; z-index:1000 }
+.tip { display:none; position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:var(--navy); color:#fff; font-size:11px; padding:6px 10px; border-radius:var(--r); pointer-events:none; line-height:1.5; text-align:left; min-width:160px; max-width:260px; white-space:normal; z-index:1000 }
 .tip::after { content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:var(--navy) }
 .has-tip:hover .tip { display:block }
 
@@ -1084,18 +1084,22 @@ th .tti::before { left: 6px; transform: none; }
 /* ── Role button color variants ─────────────────────────────────── */
 .rb-corpsec { background: linear-gradient(135deg, #eff4ff, #dbeafe); border-color: var(--blue-bd); }
 .rb-corpsec:hover, .rb-corpsec.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.rb-corpsec:hover .rb-name, .rb-corpsec:hover .rb-desc,
 .rb-corpsec.active .rb-name, .rb-corpsec.active .rb-desc { color: #fff; }
 
 .rb-sales { background: linear-gradient(135deg, #edfcf2, #d1fae5); border-color: var(--green-bd); }
 .rb-sales:hover, .rb-sales.active { background: var(--green); color: #fff; border-color: var(--green); }
+.rb-sales:hover .rb-name, .rb-sales:hover .rb-desc,
 .rb-sales.active .rb-name, .rb-sales.active .rb-desc { color: #fff; }
 
 .rb-ops { background: linear-gradient(135deg, #fff7ed, #fed7aa); border-color: var(--orange-bd); }
 .rb-ops:hover, .rb-ops.active { background: var(--orange); color: #fff; border-color: var(--orange); }
+.rb-ops:hover .rb-name, .rb-ops:hover .rb-desc,
 .rb-ops.active .rb-name, .rb-ops.active .rb-desc { color: #fff; }
 
 .rb-super { background: linear-gradient(135deg, #f5f3ff, #ddd6fe); border-color: var(--violet-bd); }
 .rb-super:hover, .rb-super.active { background: var(--violet); color: #fff; border-color: var(--violet); }
+.rb-super:hover .rb-name, .rb-super:hover .rb-desc,
 .rb-super.active .rb-name, .rb-super.active .rb-desc { color: #fff; }
 
 /* ── Product MT table inputs ─────────────────────────────────────── */
@@ -1330,3 +1334,25 @@ th .tti::before { left: 6px; transform: none; }
 }
 .pq-co.open  .drill-co-arrow,
 .pq-sub.open .drill-sub-arrow { transform: rotate(90deg); }
+
+/* ══════════════════════════════════════════════════════════════════
+   RESPONSIVE — collapse multi-column grids on narrow viewports
+   so the dashboard stays usable on tablets / small laptops.
+══════════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  .insights      { grid-template-columns: repeat(3, 1fr); }
+  .g4, .g5, .g6  { grid-template-columns: repeat(3, 1fr); }
+  .g-112         { grid-template-columns: 1fr 1fr; }
+  .role-grid     { grid-template-columns: repeat(2, 1fr); }
+  .wrap          { padding: 16px 18px 40px; }
+}
+@media (max-width: 720px) {
+  .insights, .g2, .g3, .g4, .g5, .g6,
+  .g-1-2, .g-2-1, .g-3-2, .g-112 { grid-template-columns: 1fr; }
+  .nav           { padding: 0 14px; }
+  .topbar        { padding: 0 14px; gap: 8px; }
+  .wrap          { padding: 12px 14px 32px; }
+  .drawer        { width: 100%; }
+  .modal         { width: 94vw; }
+  .pf-presets    { grid-template-columns: repeat(2, 1fr); }
+}

@@ -527,7 +527,7 @@ function csConfirmRev(prod, pid, code) {
   buildRevList && buildRevList();
   updateSPICounts && updateSPICounts();
   saveToStorage();
-  patchToServer(co).catch(err => console.warn('csConfirmRev patch failed:', err));
+  patchToServer(co).catch(err => notifySaveError('csConfirmRev', err));
 }
 
 function csBatalRev(prod, pid, code) {
@@ -544,7 +544,7 @@ function csBatalRev(prod, pid, code) {
   buildRevMgmtSection(co);
   applyRolePermissions();
   saveToStorage();
-  patchToServer(co).catch(err => console.warn('csBatalRev patch failed:', err));
+  patchToServer(co).catch(err => notifySaveError('csBatalRev', err));
 }
 
 /* ── Action handlers ─────────────────────────────────────────────────────── */
@@ -620,7 +620,7 @@ function rrApplyObtained(code) {
 
   // Persist to localStorage + server
   saveToStorage();
-  patchToServer(co).catch(err => console.warn('rrApplyObtained patch failed:', err));
+  patchToServer(co).catch(err => notifySaveError('rrApplyObtained', err));
 
   nsShowToast(`✓ Obtained #2 updated — ${obtTotal.toLocaleString()} MT`);
 }
@@ -682,7 +682,7 @@ function rrSaveStatus(code) {
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
   saveToStorage();
-  patchToServer(co).catch(err => console.warn('rrSaveStatus patch failed:', err));
+  patchToServer(co).catch(err => notifySaveError('rrSaveStatus', err));
   nsShowToast(`✓ ${code} revision status updated`);
 }
 
@@ -737,7 +737,7 @@ function rrMarkApproved(code) {
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
   saveToStorage();
-  patchToServer(co).catch(err => console.warn('rrMarkApproved patch failed:', err));
+  patchToServer(co).catch(err => notifySaveError('rrMarkApproved', err));
   nsShowToast(`✓ ${code} revision marked as approved/complete`);
 }
 
@@ -767,7 +767,7 @@ function rrCancelRevision(code) {
   _refreshAfterRREdit();
   buildRevMgmtSection(co);
   saveToStorage();
-  patchToServer(co).catch(err => console.warn('rrCancelRevision patch failed:', err));
+  patchToServer(co).catch(err => notifySaveError('rrCancelRevision', err));
   nsShowToast(`✓ ${code} revision cancelled — original products restored`);
 }
 
@@ -1144,7 +1144,7 @@ function saveEdit() {
     const pi2 = PENDING.findIndex(p => p.code === c);
     if (pi2 >= 0) {
       patchToServer(PENDING[pi2]).catch(err =>
-        console.error('PENDING PATCH failed:', err)
+        notifySaveError('PENDING update', err)
       );
     }
     showSaveToast(new Date().toISOString());

@@ -516,3 +516,87 @@ function buildPendingSummaryStrip() {
 
 /* Trigger rebuild when navigating to availquota page */
 const _origGoPage = typeof goPage === 'function' ? goPage : null;
+
+/* ══════════════════════════════════════════════════
+   TOAST — non-blocking error / success notifications
+   Used to surface PATCH failures so users know a save
+   didn't persist (instead of silently swallowing in console).
+══════════════════════════════════════════════════ */
+function showToast(msg, kind) {
+  kind = kind || 'error';
+  let host = document.getElementById('_toastHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = '_toastHost';
+    host.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:1100;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:90vw';
+    document.body.appendChild(host);
+  }
+  const colors = {
+    error:   { bg:'#fee2e2', bd:'#fecaca', fg:'#991b1b', ico:'⚠' },
+    success: { bg:'#dcfce7', bd:'#a7f3c4', fg:'#15803d', ico:'✓' },
+    info:    { bg:'#e0f2fe', bd:'#c3d3f9', fg:'#1e3a8a', ico:'ℹ' },
+  };
+  const c = colors[kind] || colors.error;
+  const t = document.createElement('div');
+  t.style.cssText = `pointer-events:auto;background:${c.bg};border:1px solid ${c.bd};color:${c.fg};padding:9px 14px;border-radius:8px;font:600 12px 'DM Sans',sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.12);display:flex;align-items:center;gap:8px;animation:fadeUp .2s ease`;
+  t.innerHTML = `<span style="font-size:14px">${c.ico}</span><span>${msg}</span>`;
+  host.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; }, 4000);
+  setTimeout(() => t.remove(), 4400);
+}
+
+/* notifySaveError — used by patchToServer .catch handlers to surface errors */
+function notifySaveError(context, err) {
+  const msg = err && err.message ? err.message : String(err);
+  console.warn(`[${context}] save failed:`, err);
+  showToast(`Save failed (${context}): ${msg}`, 'error');
+}
+
+/* ══════════════════════════════════════════════════
+   GLOBAL ESC KEY — close topmost visible overlay
+   Order matters: close highest z-index first.
+══════════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+
+  // 1. Inline tooltip popups (z-index 800)
+  const popup = document.getElementById('prodCoPopup');
+  if (popup && popup.style.display !== 'none') { closeProdCoPopup(); return; }
+
+  // 2. Drill-down modals (z-index 700) — close whichever is visible
+  const drillIds = [
+    'obtainedDrillModal','submitDrillModal','realizedDrillModal','avqDrillModal',
+    'utilDrillModal','reapplyDrillModal','pendingDrillModal','leadTimeDrillModal','salesPriorityModal',
+  ];
+  const drillCloseFns = {
+    obtainedDrillModal:'closeObtainedDrill', submitDrillModal:'closeSubmitDrill',
+    realizedDrillModal:'closeRealizedDrill', avqDrillModal:'closeAvqDrill',
+    utilDrillModal:'closeUtilDrill', reapplyDrillModal:'closeReapplyDrill',
+    pendingDrillModal:'closePendingDrill', leadTimeDrillModal:'closeLeadTimeDrill',
+    salesPriorityModal:'closeSalesPriority',
+  };
+  for (const id of drillIds) {
+    const m = document.getElementById(id);
+    if (m && m.style.display !== 'none' && m.style.display !== '') {
+      const fn = window[drillCloseFns[id]];
+      if (typeof fn === 'function') { fn(); return; }
+      m.style.display = 'none'; return;
+    }
+  }
+
+  // 3. Import modal (z-index 600)
+  const im = document.getElementById('importModal');
+  if (im && im.classList.contains('open') && typeof closeImport === 'function') { closeImport(); return; }
+
+  // 4. Drawer overlay (z-index 500)
+  const ov = document.getElementById('overlay');
+  if (ov && ov.classList.contains('open') && typeof closeDrawer === 'function') { closeDrawer(); return; }
+
+  // 5. Period filter panel (z-index 400)
+  const pf = document.getElementById('pfPanel');
+  if (pf && pf.classList.contains('open') && typeof closePeriod === 'function') { closePeriod(); return; }
+
+  // 6. Search dropdown (z-index 400)
+  const sd = document.querySelector('.s-drop.open');
+  if (sd) { sd.classList.remove('open'); return; }
+});

@@ -36,7 +36,10 @@ const PROD_DOT_COLORS = {
 };
 const prodDot = p => PROD_DOT_COLORS[p] || '#94a3b8';
 
-/* HS Codes per product — Indonesian Customs Tariff (BTKI 2022) */
+/* HS Codes per product — Indonesian Customs Tariff (BTKI 2022).
+   Kept here as a fallback for prodHS() in 01-data.js; the canonical
+   source is the `products` table in PostgreSQL (returned by /api/data
+   into PRODUCT_META). */
 const PROD_HS_CODES = {
   'GL BORON':          '7225.99.90',
   'GI BORON':          '7225.92.90',
@@ -50,7 +53,8 @@ const PROD_HS_CODES = {
   'ERW PIPE OD>140mm': '7306.30.90',
   'HRC/HRPO ALLOY':    '7225.30.00',
 };
-const prodHS = p => PROD_HS_CODES[p] || '—';
+// prodHS() is now defined globally in 01-data.js — it reads PRODUCT_META
+// first and falls back to PROD_HS_CODES above.
 
 function buildProductMTTables(co) {
   const products = co.products || [];

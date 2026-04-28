@@ -119,6 +119,7 @@ function buildSalesOpsForm(co) {
         <thead>
           <tr>
             <th style="width:32px" class="t-c">Lot</th>
+            <th style="min-width:130px">Shipment Name</th>
             <th style="width:100px" class="t-r">Util MT</th>
             <th style="width:100px" class="t-r">Real MT</th>
             <th style="width:105px">PIB Date</th>
@@ -255,9 +256,22 @@ function buildOpsRow(prod, idx, lot) {
     ? `<span class="pib-pill pib-done">✓ ${pib}</span>`
     : `<span class="pib-pill pib-none">—</span>`;
 
+  // Shipment name shares the `note` field with Sales' "Vessel / note"
+  // input. Both roles can edit it — Ops can fill it in if Sales hasn't,
+  // or override if needed. Saved via the same shipments PATCH path.
+  const shipName = lot.note ? String(lot.note).replace(/"/g,'&quot;') : '';
+
   return `
   <tr id="ops-row-${pid}-${idx}" data-prod="${prod}" data-idx="${idx}">
     <td class="t-c"><span class="lot-badge">${lotNo}</span></td>
+    <td>
+      <input type="text"
+        class="ship-txt-inp ops-shipname-inp"
+        data-prod="${prod}" data-idx="${idx}"
+        value="${shipName}"
+        placeholder="Vessel / shipment name…"
+        oninput="onOpsShipNameChange(this)">
+    </td>
     <td class="t-r" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--txt2)">
       ${util != null ? Number(util).toLocaleString() + ' MT' : '<span style="color:var(--txt3)">—</span>'}
     </td>
@@ -601,6 +615,20 @@ function onOpsPibChange(inp) {
   livePreview();
 }
 
+/* Ops shipment name — writes to the same `note` field that Sales uses,
+   so both roles share the value. Persisted via shipments PATCH. */
+function onOpsShipNameChange(inp) {
+  const prod = inp.dataset.prod;
+  const idx  = parseInt(inp.dataset.idx);
+  const co   = getCurrentEditCo();
+  if (!co) return;
+  ensureShipments(co);
+  if (co.shipments[prod] && co.shipments[prod][idx] !== undefined) {
+    co.shipments[prod][idx].note = inp.value;
+  }
+  livePreview();
+}
+
 /* ── Apply role lock to new shipment inputs ── */
 function applyShipmentRoleLock() {
   if (!currentRole) return;
@@ -617,7 +645,7 @@ function applyShipmentRoleLock() {
     const idx = parseInt(btn.closest('tr')?.dataset?.idx ?? '0');
     btn.disabled = !canSales || idx === 0;
   });
-  document.querySelectorAll('.ops-real-inp,.ops-pib-inp').forEach(el => {
+  document.querySelectorAll('.ops-real-inp,.ops-pib-inp,.ops-shipname-inp').forEach(el => {
     el.disabled = !canOps;
   });
   // Re-apply table inputs follow Sales permissions
