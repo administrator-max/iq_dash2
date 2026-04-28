@@ -382,8 +382,15 @@ function buildOUChart() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 8, right: 14, bottom: 4, left: 4 } },
       plugins: {
-        legend: { labels: { font: { size: 10.5, family: 'DM Sans' }, color: '#64748b', boxWidth: 10, padding: 10 } },
+        legend: {
+          display: true,
+          position: 'bottom',
+          align: 'start',
+          labels: { font: { size: 10, family: 'DM Sans' }, color: '#64748b', boxWidth: 10, padding: 12, usePointStyle: true }
+        },
         tooltip: {
           mode: 'index', intersect: false,
           callbacks: {
@@ -406,8 +413,8 @@ function buildOUChart() {
         }
       },
       scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 9, family: 'DM Sans' }, color: '#64748b', maxRotation: 45 } },
-        y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#64748b', callback: v => v.toLocaleString() + ' MT' } }
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 8.5, family: 'DM Sans' }, color: '#64748b', maxRotation: 40 } },
+        y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9.5 }, color: '#64748b', callback: v => v.toLocaleString() + ' MT' } }
       }
     }
   });
@@ -622,8 +629,10 @@ function buildOUChartOverview() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 6, right: 12, bottom: 4, left: 4 } },
       plugins: {
-        legend: { labels: { font: { size: 10, family: 'DM Sans' }, color: '#64748b', boxWidth: 9, padding: 9 } },
+        legend: { display: false },
         tooltip: {
           mode: 'index', intersect: false,
           callbacks: {
@@ -650,8 +659,8 @@ function buildOUChartOverview() {
         }
       },
       scales: {
-        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 8.5, family: 'DM Sans' }, color: '#64748b', maxRotation: 40 } },
-        y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9.5 }, color: '#64748b', callback: v => v.toLocaleString() } }
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 8, family: 'DM Sans' }, color: '#64748b', maxRotation: 40 } },
+        y: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 9 }, color: '#64748b', callback: v => v.toLocaleString() } }
       },
       onClick: (e, els) => {
         if (!els.length) return;

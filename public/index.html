@@ -674,7 +674,7 @@
       </div>
     </div>
     <div id="ouOverviewLegend"></div>
-    <div class="cb"><canvas id="obtainUtilChartOverview" height="110"></canvas></div>
+    <div class="cb" style="padding:10px 16px;position:relative;height:210px"><canvas id="obtainUtilChartOverview"></canvas></div>
   </div>
 
   <!-- 🔄 ACTIVE REVISIONS & 📬 NEW SUBMISSIONS — below Obtained vs Utilization -->
@@ -851,8 +851,8 @@
     </div>
     <div id="ouKpiStrip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--border)"></div>
     <div id="ouLegend"></div>
-    <div class="cb" style="position:relative">
-      <canvas id="obtainUtilChart" height="130"></canvas>
+    <div class="cb" style="padding:12px 16px;position:relative;height:280px">
+      <canvas id="obtainUtilChart"></canvas>
     </div>
   </div>
 
@@ -891,11 +891,10 @@
     </div>
 
     <!-- Realization % bar chart -->
-    <div style="padding:0 16px 2px;border-bottom:1px solid var(--border)">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--txt3);padding-top:10px;margin-bottom:4px">
-        Realization Rate by Company &nbsp;·&nbsp; 🟢 ≥60% Arrived &nbsp;·&nbsp; 🟠 In Shipment &nbsp;·&nbsp; 🔴 &lt;60% Arrived &nbsp;·&nbsp; — — 60% threshold
+      <div style="padding:0 16px 12px;border-bottom:1px solid var(--border)">
+      <div style="position:relative;height:160px">
+        <canvas id="utilChart"></canvas>
       </div>
-      <canvas id="utilChart" height="72"></canvas>
     </div>
 
     <!-- Tab bar -->
@@ -989,7 +988,7 @@
   <div class="g-3-2 mb14">
     <div class="card">
       <div class="ch"><div><div class="ct">Submit vs. Obtained — Chart</div><div class="cs">Top 15 by submit · click bar for details</div></div></div>
-      <div class="cb"><canvas id="cmpChart" height="220"></canvas></div>
+      <div class="cb" style="position:relative;height:300px"><canvas id="cmpChart"></canvas></div>
     </div>
     <div class="card">
       <div class="ch"><div><div class="ct">Per-Company View</div><div class="cs">S = Submit · O = Obtained · click row</div></div></div>

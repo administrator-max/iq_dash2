@@ -684,12 +684,18 @@ function buildCmpChart() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 8, right: 12, bottom: 4, left: 4 } },
       plugins: {
-        legend: { labels:{font:{size:11,family:'DM Sans'},color:'#4a5568',boxWidth:10,padding:10} },
+        legend: {
+          position: 'bottom',
+          align: 'start',
+          labels: { font: { size: 10.5, family: 'DM Sans' }, color: '#4a5568', boxWidth: 10, padding: 16, usePointStyle: true }
+        },
         tooltip: { mode:'index', intersect:false }
       },
       scales: {
-        x: { grid:{display:false}, ticks:{font:{size:10.5,family:'DM Sans'},color:'#1a1f2e'} },
+        x: { grid:{display:false}, ticks:{font:{size:10,family:'DM Sans'},color:'#1a1f2e'} },
         y: { grid:{color:'#f1f5f9'}, ticks:{font:{size:10},color:'#64748b',callback:v=>v.toLocaleString()+' MT'} }
       },
       onClick: (e, els) => { if (els.length) openDrawer(data[els[0].index].code); }
@@ -904,8 +910,14 @@ function buildUtilChart() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { top: 6, right: 12, bottom: 4, left: 4 } },
       plugins: {
-        legend: { labels:{font:{size:11,family:'DM Sans'},color:'#4a5568',boxWidth:10} },
+        legend: {
+          position: 'bottom',
+          align: 'start',
+          labels: { font: { size: 10.5, family: 'DM Sans' }, color: '#4a5568', boxWidth: 10, padding: 14, usePointStyle: true }
+        },
         tooltip: {
           callbacks:{
             title: ctx => {
