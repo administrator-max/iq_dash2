@@ -156,12 +156,15 @@ function buildAvqProdGrid() {
   filteredSPI().forEach(co => {
     const ap = co.availableByProd || {};
     const up = co.utilizationByProd || {};
+    // Deduped per-product obtained map (legacy DB has duplicate Obtained
+    // cycle rows; without dedup totals multiply by the duplicate factor).
+    const cycleProds = (typeof getObtainedByProdAgg === 'function')
+      ? getObtainedByProdAgg(co) : {};
     // Collect per-product data
     (co.products || []).forEach(p => {
       if (!prodMap[p]) prodMap[p] = { obtained:0, util:0, avail:0, cos:[] };
-      const cycleObt = (co.cycles||[]).filter(c=>/^obtained/i.test(c.type))
-        .reduce((s,c) => s + (c.products&&c.products[p]||0), 0);
-      const obtForProd = Number(cycleObt) > 0 ? Number(cycleObt) : (Number(co.obtained) / Math.max((co.products||[]).length, 1));
+      const cycleObt = Number(cycleProds[p]) || 0;
+      const obtForProd = cycleObt > 0 ? cycleObt : (Number(co.obtained) / Math.max((co.products||[]).length, 1));
       const utilForProd = up[p] || 0;
       const avqForProd  = ap[p] != null ? ap[p] : (obtForProd - utilForProd);
       prodMap[p].obtained += Number(obtForProd) || 0;
@@ -258,9 +261,12 @@ function openProdCoPopup(event, prodName, anchorEl) {
     if (!(co.products || []).includes(prodName)) return;
     const ap  = co.availableByProd   || {};
     const up  = co.utilizationByProd || {};
-    const cycleObt = (co.cycles || []).filter(c => /^obtained/i.test(c.type))
-      .reduce((s, c) => s + (c.products && c.products[prodName] || 0), 0);
-    const obtForProd  = Number(cycleObt) > 0 ? Number(cycleObt)
+    // Deduped per-product obtained — legacy DB has duplicate Obtained
+    // cycle rows that would otherwise inflate this number.
+    const cycleProds = (typeof getObtainedByProdAgg === 'function')
+      ? getObtainedByProdAgg(co) : {};
+    const cycleObt = Number(cycleProds[prodName]) || 0;
+    const obtForProd  = cycleObt > 0 ? cycleObt
       : (Number(co.obtained) / Math.max((co.products || []).length, 1));
     const utilForProd = up[prodName] || 0;
     const avqForProd  = ap[prodName] != null ? ap[prodName] : (obtForProd - utilForProd);
@@ -368,9 +374,12 @@ function buildAvqTable() {
     const grp = spi ? spi.group : '';
     const getHS = p => (typeof PROD_HS_CODES !== 'undefined' ? (PROD_HS_CODES[p] || '—') : '—');
     if (Object.keys(ap).length > 0) {
+      // Deduped per-product obtained — avoids multiplying when DB has
+      // duplicate Obtained cycle rows for the same cycle_type.
+      const cycleProds = (typeof getObtainedByProdAgg === 'function')
+        ? getObtainedByProdAgg(co) : {};
       (co.products || []).forEach(p => {
-        const cycleObt = (co.cycles||[]).filter(c=>/^obtained/i.test(c.type))
-          .reduce((s,c) => s + (c.products&&c.products[p]||0), 0);
+        const cycleObt = Number(cycleProds[p]) || 0;
         const obt  = cycleObt || (obtained / (co.products||[]).length);
         const util = up[p] || 0;
         const avq  = ap[p] != null ? ap[p] : (obt - util);
@@ -450,11 +459,15 @@ function buildAvqProdChart() {
   filteredSPI().forEach(co => {
     const ap = co.availableByProd || {};
     const up = co.utilizationByProd || {};
+    // Use deduped helper so legacy duplicate Obtained #N rows don't
+    // multiply the per-product obtained MT (was producing huge values
+    // like GL BORON ~600,000 MT vs real total of 22,870 MT).
+    const cycleProds = (typeof getObtainedByProdAgg === 'function')
+      ? getObtainedByProdAgg(co) : {};
     (co.products || []).forEach(p => {
       if (!prodMap[p]) prodMap[p] = { obtained:0, util:0, avail:0 };
-      const cycleObt = (co.cycles||[]).filter(c=>/^obtained/i.test(c.type))
-        .reduce((s,c) => s + (Number(c.products&&c.products[p])||0), 0);
-      const obt = Number(cycleObt) > 0 ? Number(cycleObt) : (Number(co.obtained) / Math.max((co.products||[]).length,1));
+      const cycleObt = Number(cycleProds[p]) || 0;
+      const obt = cycleObt > 0 ? cycleObt : (Number(co.obtained) / Math.max((co.products||[]).length,1));
       prodMap[p].obtained += Number(obt) || 0;
       prodMap[p].util     += Number(up[p]) || 0;
       prodMap[p].avail    += ap[p] != null ? (Number(ap[p]) || 0) : Math.max((Number(obt)||0) - (Number(up[p])||0), 0);

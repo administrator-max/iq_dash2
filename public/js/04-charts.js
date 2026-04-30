@@ -273,14 +273,27 @@ function buildAvailableQuota() {
     const aProd = co.availableByProd   || {};
     const uProd = co.utilizationByProd || {};
 
-    // Build cycle-level obtained-per-product map (used for display only)
-    const cycleProds = {};
-    (co.cycles || []).forEach(c => {
-      if (!/^obtained/i.test(c.type) || (typeof c.mt === 'number' && c.mt < 0)) return;
-      Object.entries(c.products || {}).forEach(([p, v]) => {
-        if (typeof v === 'number' && v > 0) cycleProds[p] = (cycleProds[p] || 0) + v;
-      });
-    });
+    // Build cycle-level obtained-per-product map (used for display only).
+    // Use the deduped helper — legacy DB has duplicate Obtained #N rows
+    // (one per product) which would otherwise multiply per-product MT and
+    // blow up the chart total (was producing 787,538 vs real 22,870 MT).
+    const cycleProds = (typeof getObtainedByProdAgg === 'function')
+      ? getObtainedByProdAgg(co)
+      : (() => {
+          const seen = new Set();
+          const out  = {};
+          (co.cycles || []).forEach(c => {
+            if (!/^obtained\s*#\d/i.test(c.type)) return;
+            if (c._fromRevReq) return;
+            const k = (c.type || '').toLowerCase().trim();
+            if (seen.has(k)) return;
+            seen.add(k);
+            Object.entries(c.products || {}).forEach(([p, v]) => {
+              if (typeof v === 'number' && v > 0) out[p] = (out[p] || 0) + v;
+            });
+          });
+          return out;
+        })();
 
     if (Object.keys(aProd).length > 0) {
       // Per-product breakdown available — use for display.
