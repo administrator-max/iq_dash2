@@ -319,27 +319,26 @@ function applyRolePermissions() {
    - Total utilMT per product ≤ obtainedMT per product (from Obtained #1 cycle)
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Get obtained MT per product for a company ── */
+/* ── Get obtained MT per product for a company ──────────────────────────
+   Aggregates across ALL Obtained #N cycles (Obtained #1 + Obtained #2 +
+   re-apply cycles), deduped by cycleType so legacy duplicate rows don't
+   double-count. Skips _fromRevReq cycles (revision artifacts).
+   Delegates to getObtainedByProdAgg() in 01-data.js when available.       */
 function getObtainedByProd(co) {
+  if (!co) return {};
+  if (typeof getObtainedByProdAgg === 'function') {
+    const agg = getObtainedByProdAgg(co);
+    if (Object.keys(agg).length) return agg;
+  }
+  // Fallback: use co products list with canonicalObtained split evenly.
+  // (kept for safety against malformed cycle data)
   const result = {};
-  if (!co) return result;
-  // First: use availableByProd if set (respects manual overrides)
-  if (co.availableByProd && Object.keys(co.availableByProd).length) {
-    // availableByProd is what's left; we need total obtained per prod
-  }
-  // Primary: Obtained #1 cycle products
-  const cycles = co.cycles || [];
-  const obtCy = cycles.find(cy => /^obtained\s*#?1/i.test(cy.type))
-             || cycles.find(cy => /^obtained/i.test(cy.type));
-  if (obtCy && obtCy.products) {
-    Object.entries(obtCy.products).forEach(([p, v]) => {
-      if (typeof v === 'number' && v > 0) result[p] = v;
-    });
-  }
-  // Fallback: use co products list with co.obtained total split evenly
-  if (!Object.keys(result).length && co.products && co.obtained) {
+  const totalObt = (typeof canonicalObtained === 'function')
+    ? canonicalObtained(co)
+    : (co.obtained || 0);
+  if (co.products && totalObt) {
     const n = co.products.length;
-    co.products.forEach(p => { result[p] = Math.round(co.obtained / n); });
+    co.products.forEach(p => { result[p] = Math.round(totalObt / n); });
   }
   return result;
 }

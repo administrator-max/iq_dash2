@@ -87,12 +87,12 @@
 
 <!-- ═══ SPI OBTAINED DRILL-DOWN MODAL ═══ -->
 <div id="obtainedDrillModal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(15,23,42,.55);backdrop-filter:blur(3px)" onclick="if(event.target===this)closeObtainedDrill()">
-  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(92vw,820px);max-height:88vh;background:var(--bg);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(96vw,1180px);max-height:88vh;background:var(--bg);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden">
     <!-- Header -->
     <div style="padding:16px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg);flex-shrink:0">
       <div>
         <div style="font-size:15px;font-weight:700;color:var(--txt)">SPI / PERTEK Obtained — Detail Breakdown</div>
-        <div id="drillSubtitle" style="font-size:11px;color:var(--txt3);margin-top:2px">Per-cycle obtained data</div>
+        <div id="drillSubtitle" style="font-size:11px;color:var(--txt3);margin-top:2px">Per-product utilization & availability · hover Submit/Obtained MT for cycle breakdown</div>
       </div>
       <button onclick="closeObtainedDrill()" style="background:var(--border);border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;color:var(--txt3);display:flex;align-items:center;justify-content:center">✕</button>
     </div>
@@ -103,13 +103,15 @@
       <table style="width:100%;border-collapse:collapse;font-size:12px" id="drillTable">
         <thead>
           <tr style="position:sticky;top:0;background:var(--bg2);z-index:20">
-            <th style="padding:9px 14px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Company</th>
-            <th style="padding:9px 10px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Submission Cycle</th>
-            <th style="padding:9px 10px;text-align:center;font-weight:700;color:var(--teal);font-size:10.5px;border-bottom:2px solid var(--teal)">PERTEK Terbit ★</th>
-            <th style="padding:9px 10px;text-align:center;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Submit MOT</th>
-            <th style="padding:9px 10px;text-align:center;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">SPI Terbit</th>
-            <th style="padding:9px 10px;text-align:right;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Obtained (MT)</th>
-            <th style="padding:9px 14px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Status</th>
+            <th style="padding:9px 8px;text-align:center;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border);width:36px">No</th>
+            <th style="padding:9px 12px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Company</th>
+            <th style="padding:9px 10px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">HS Code</th>
+            <th style="padding:9px 10px;text-align:left;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Product</th>
+            <th style="padding:9px 10px;text-align:right;font-weight:700;color:var(--navy);font-size:10.5px;border-bottom:2px solid var(--border)">Qty Submit (MT)</th>
+            <th style="padding:9px 10px;text-align:right;font-weight:700;color:var(--teal);font-size:10.5px;border-bottom:2px solid var(--teal)">Qty Obtained (MT)</th>
+            <th style="padding:9px 10px;text-align:right;font-weight:700;color:var(--blue);font-size:10.5px;border-bottom:2px solid var(--border)">Qty Utilized (MT)</th>
+            <th style="padding:9px 10px;text-align:right;font-weight:700;color:#0891b2;font-size:10.5px;border-bottom:2px solid var(--border)">Qty Available (MT)</th>
+            <th style="padding:9px 12px;text-align:center;font-weight:700;color:var(--txt3);font-size:10.5px;border-bottom:2px solid var(--border)">Last Util Date</th>
           </tr>
         </thead>
         <tbody id="drillBody"></tbody>
@@ -117,7 +119,7 @@
     </div>
     <!-- Footer -->
     <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--bg)">
-      <div id="drillFooterNote" style="font-size:10px;color:var(--txt3)">Filtered by Submit MOT date within selected period</div>
+      <div id="drillFooterNote" style="font-size:10px;color:var(--txt3)">Hover Qty Submit / Qty Obtained for cycle breakdown · Click row to open company drawer</div>
       <button onclick="closeObtainedDrill()" style="background:var(--navy);color:#fff;border:none;border-radius:6px;padding:6px 16px;font-size:11.5px;font-weight:600;cursor:pointer">Close</button>
     </div>
   </div>
@@ -469,11 +471,11 @@
 <!-- ═══ NAV ═══ -->
 <nav class="nav">
   <div class="nav-tab active" onclick="goPage('overview',this)">Overview</div>
-  <div class="nav-tab" onclick="goPage('spi',this)">PERTEK &amp; SPI <span class="n-count">28</span></div>
+  <div class="nav-tab" onclick="goPage('spi',this)">PERTEK &amp; SPI <span class="n-count" id="navCountSPI">—</span></div>
   <div class="nav-tab" onclick="goPage('utilization',this)">Utilization &amp; Realization</div>
   <div class="nav-tab" onclick="goPage('comparison',this)">Quota Comparison</div>
   <div class="nav-tab" onclick="goPage('availquota',this)">📊 Available Quota</div>
-  <div class="nav-tab" onclick="goPage('all',this)">All Companies <span class="n-count">33</span></div>
+  <div class="nav-tab" onclick="goPage('all',this)">All Companies <span class="n-count" id="navCountAll">—</span></div>
 </nav>
 
 <!-- ══════════════════════════════════════════
@@ -487,9 +489,9 @@
     <div class="kpi" onclick="openSubmitDrill()" style="cursor:pointer" title="Click to see submission breakdown">
       <div class="kpi-accent" style="background:var(--navy)"></div>
       <div class="kpi-lbl">Total Submitted</div>
-      <div class="kpi-val">198,150</div>
-      <div class="kpi-unit">MT · 32 companies</div>
-      <div class="kpi-bar"><div class="kpi-fill" style="width:100%;background:var(--navy)"></div></div>
+      <div class="kpi-val">—</div>
+      <div class="kpi-unit">MT</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiSubmitFill" style="width:0%;background:var(--navy)"></div></div>
       <div class="kpi-tag" style="background:#eef2ff;color:var(--navy);display:flex;align-items:center;justify-content:space-between">
         <span id="kpiSubmitNote">All Submissions</span>
         <span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
@@ -498,10 +500,10 @@
     <div class="kpi" onclick="openObtainedDrill()" style="cursor:pointer" title="Click to see detailed breakdown">
       <div class="kpi-accent" style="background:var(--teal)"></div>
       <div class="kpi-lbl">SPI / Pertek Obtained</div>
-      <div class="kpi-val">21,970</div>
-      <div class="kpi-unit">MT · 28 companies</div>
-      <div class="kpi-bar"><div class="kpi-fill" style="width:9.9%;background:var(--teal)"></div></div>
-      <div class="kpi-tag" style="background:var(--teal-bg);color:var(--teal)">9.9% Approval Rate</div>
+      <div class="kpi-val">—</div>
+      <div class="kpi-unit">MT</div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiObtFill" style="width:0%;background:var(--teal)"></div></div>
+      <div class="kpi-tag" style="background:var(--teal-bg);color:var(--teal)">— Approval Rate</div>
     </div>
     <div class="kpi" onclick="openUtilDrill()" style="cursor:pointer" title="Click to see utilization breakdown">
       <div class="kpi-accent" style="background:var(--blue)"></div>
@@ -515,12 +517,12 @@
     <div class="kpi" onclick="openRealizedDrill()" style="cursor:pointer" title="Click to see realization breakdown">
       <div class="kpi-accent" style="background:var(--green-lt)"></div>
       <div class="kpi-lbl">Total Realized</div>
-      <div class="kpi-val" id="kpiRealCoCount">4</div>
+      <div class="kpi-val" id="kpiRealCoCount">—</div>
       <div class="kpi-unit">Companies with utilization</div>
       <div id="kpiRealMT" style="font-size:13px;font-weight:700;color:var(--green);margin-top:2px;font-family:'DM Mono',monospace">— MT</div>
-      <div class="kpi-bar"><div class="kpi-fill" style="width:14.3%;background:var(--green-lt)"></div></div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiRealFill" style="width:0%;background:var(--green-lt)"></div></div>
       <div class="kpi-tag" style="background:var(--green-bg);color:var(--green);display:flex;align-items:center;justify-content:space-between">
-        <span>CGK, GNG, HDP, MIN</span><span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
+        <span>—</span><span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
       </div>
     </div>
     <div class="kpi" onclick="openAvqDrill()" style="cursor:pointer" title="Click to see Available Quota breakdown">
@@ -536,11 +538,11 @@
     <div class="kpi" onclick="openReapplyDrill()" style="cursor:pointer" title="Click to see re-apply breakdown">
       <div class="kpi-accent" style="background:var(--amber-lt)"></div>
       <div class="kpi-lbl">Target Re-Apply</div>
-      <div class="kpi-val" id="kpiReapplyVal">3</div>
+      <div class="kpi-val" id="kpiReapplyVal">—</div>
       <div class="kpi-unit">Companies — Re-Apply On Process</div>
-      <div class="kpi-bar"><div class="kpi-fill" style="width:36.7%;background:var(--amber-lt)"></div></div>
+      <div class="kpi-bar"><div class="kpi-fill" id="kpiReapplyFill" style="width:0%;background:var(--amber-lt)"></div></div>
       <div class="kpi-tag" style="background:#f5f3ff;color:#5b21b6;border:1px solid #c4b5fd;display:flex;align-items:center;justify-content:space-between">
-        <span>🔵 3 Submitted · 0 Eligible</span><span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
+        <span>—</span><span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
       </div>
     </div>
 
@@ -549,13 +551,13 @@
   <!-- KEY INSIGHTS STRIP -->
   <div class="insights mb14" style="grid-template-columns:repeat(4,1fr)">
 
-    <!-- 1: Top Quota -->
-    <div class="insight insight-click" onclick="openDrawer('BTS')">
+    <!-- 1: Top Quota — populated dynamically by updateTopQuotaInsight() -->
+    <div class="insight insight-click" id="topQuotaInsight" onclick="if(window._topQuotaCode)openDrawer(window._topQuotaCode)">
       <div class="ins-ico">🏆</div>
       <div class="ins-body">
         <div class="ins-lbl">Top Obtained Quota</div>
-        <div class="ins-val">BTS — 6,000 MT</div>
-        <div class="ins-sub">4 products · PERTEK 25/02/26</div>
+        <div class="ins-val" id="topQuotaVal">—</div>
+        <div class="ins-sub" id="topQuotaSub">—</div>
       </div>
       <div class="ins-arrow">↗</div>
     </div>
@@ -597,37 +599,8 @@
 
   </div>
 
-    <!-- PIPELINE + PRODUCT MIX + TOP COMPANIES -->
-  <div class="g-112 mb14">
-
-    <!-- PIPELINE (compact, hover shows company list) -->
-    <div class="card" style="display:flex;flex-direction:column">
-      <div class="ch"><div><div class="ct">Approval Pipeline</div><div class="cs">MT by status · click section to filter</div></div></div>
-      <div class="cb" style="padding:10px 14px;flex:1;display:flex;flex-direction:column;gap:8px">
-
-        <!-- Donut + status pills -->
-        <div class="pipeline-wrap" id="pipelineWrap">
-          <canvas id="pipelineChart" height="130"></canvas>
-          <div class="pipeline-hover" id="pipelineHover"></div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-radius:var(--r);background:var(--green-bg);cursor:pointer;border:1px solid var(--green-bd)" onclick="navFilter('SPI')">
-            <span style="font-size:10.5px;font-weight:600;color:var(--green)">✅ SPI / PERTEK Obtained</span>
-            <span style="font-size:11px;font-weight:700;color:var(--green);font-family:'DM Mono',monospace" id="pipelineSpiStat">22,370 MT · 29 co.</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-radius:var(--r);background:#f5f3ff;cursor:pointer;border:1px solid #c4b5fd" onclick="goPage('utilization',document.querySelectorAll('.nav-tab')[2])">
-            <span style="font-size:10.5px;font-weight:600;color:#5b21b6">🔵 Re-Apply Eligible</span>
-            <span style="font-size:11px;font-weight:700;color:#5b21b6;font-family:'DM Mono',monospace" id="pipelineReapplyStat">3 co.</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-radius:var(--r);background:var(--red-bg);cursor:pointer;border:1px solid var(--red-bd)" onclick="navFilter('PENDING')">
-            <span style="font-size:10.5px;font-weight:600;color:var(--red)">📬 New Submission</span>
-            <span style="font-size:11px;font-weight:700;color:var(--red);font-family:'DM Mono',monospace" id="pipelinePendStat">15,000 MT · 4 co.</span>
-          </div>
-        </div>
-
-
-      </div>
-    </div>
+    <!-- PRODUCT MIX + TOP COMPANIES (Approval Pipeline removed per request) -->
+  <div class="g-1-2 mb14">
 
     <!-- PRODUCT MIX — solid colors, visible legend -->
     <div class="card">
@@ -745,9 +718,9 @@
 <div id="page-spi" class="page">
 <div class="wrap">
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-    <div class="notice n-green" style="flex:1;min-width:155px"><strong id="ntcClean">✅ 17 Completed</strong> — SPI active, no revision.</div>
-    <div class="notice n-amber" style="flex:1;min-width:155px"><strong id="ntcActive">🔄 8 Under Revision</strong> — Awaiting ministry approval.</div>
-    <div class="notice" style="flex:1;min-width:155px;background:var(--orange-bg);border-color:var(--orange-bd);color:var(--orange)"><strong id="ntcPending">⏳ 4 PENDING</strong> — PERTEK Terbit, SPI belum terbit (BTS · DIOR · GIS · SMS).</div>
+    <div class="notice n-green" style="flex:1;min-width:155px"><strong id="ntcClean">✅ — Completed</strong> — SPI active, no revision.</div>
+    <div class="notice n-amber" style="flex:1;min-width:155px"><strong id="ntcActive">🔄 — Under Revision</strong> — Awaiting ministry approval.</div>
+    <div class="notice" style="flex:1;min-width:155px;background:var(--orange-bg);border-color:var(--orange-bd);color:var(--orange)"><strong id="ntcPending">⏳ — PENDING</strong> — PERTEK Terbit, SPI belum terbit <span id="ntcPendingCodes" style="font-weight:600">(—)</span>.</div>
     
   </div>
 
@@ -762,7 +735,7 @@
           <th class="no-sort" style="width:24px"></th>
           <th onclick="sortS('code')">Company</th>
           <th class="no-sort">Type</th>
-          <th onclick="sortS('obtained')" class="t-r">Obtained #1 (MT)</th>
+          <th onclick="sortS('obtained')" class="t-r">Total Obtained (MT)</th>
           <th class="no-sort">Product Change (From → To)</th>
           <th onclick="sortS('revMT')" class="t-r">Change MT</th>
           <th class="no-sort">Current Approval Stage</th>
@@ -795,8 +768,8 @@
           <th onclick="sortS('code')">Company</th>
           <th onclick="sortS('group')">Group</th>
           <th class="no-sort">Products</th>
-          <th onclick="sortS('submit1')" class="t-r">Submit #1 (MT)</th>
-          <th onclick="sortS('obtained')" class="t-r">Obtained (MT)</th>
+          <th onclick="sortS('submit1')" class="t-r">Total Submit (MT)</th>
+          <th onclick="sortS('obtained')" class="t-r">Total Obtained (MT)</th>
           <th class="no-sort t-r" style="color:#3b82f6">Util (MT)</th>
           <th class="no-sort">Status</th>
           <th class="no-sort">Current Status Only</th>
@@ -1017,11 +990,11 @@
 <div class="wrap">
   <div class="card">
     <div class="f-bar">
-      <div class="fpill on" onclick="setMF('ALL',this)">All <span class="fn" id="pillMAll">33</span></div>
-      <div class="fpill" onclick="setMF('SPI',this)">✅ PERTEK &amp; SPI Issued <span class="fn" id="pillMSPI">29</span></div>
-      <div class="fpill" onclick="setMF('PENDING',this)">⏳ Pending <span class="fn" id="pillMPending">4</span></div>
-      <div class="fpill" onclick="setMF('REV',this)">🔄 Revision <span class="fn">10</span></div>
-      <div class="fpill" onclick="setMF('ELIGIBLE',this)">✓ Re-Apply Eligible <span class="fn">3</span></div>
+      <div class="fpill on" onclick="setMF('ALL',this)">All <span class="fn" id="pillMAll">—</span></div>
+      <div class="fpill" onclick="setMF('SPI',this)">✅ PERTEK &amp; SPI Issued <span class="fn" id="pillMSPI">—</span></div>
+      <div class="fpill" onclick="setMF('PENDING',this)">⏳ Pending <span class="fn" id="pillMPending">—</span></div>
+      <div class="fpill" onclick="setMF('REV',this)">🔄 Revision <span class="fn" id="pillMRev">—</span></div>
+      <div class="fpill" onclick="setMF('ELIGIBLE',this)">✓ Re-Apply Eligible <span class="fn" id="pillMEligible">—</span></div>
       <div class="f-sep"></div>
       <div class="f-r">
         <div class="f-inp"><span style="color:var(--txt3)">⌕</span><input type="text" placeholder="Company, product, status…" id="mainQ" oninput="renderMain()"></div>

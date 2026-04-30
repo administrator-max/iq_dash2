@@ -7,10 +7,36 @@
 
 window.onload = async () => {
   // ── Load data from PostgreSQL API ──────────────────────────
+  // The server is the single source of truth for display. We never
+  // merge localStorage into SPI/PENDING/RA anymore — that used to mask
+  // newer DB changes from other users with stale local copies.
   await loadData();
 
-  // Merge any locally-saved overrides (belt-and-suspenders if server PATCH was missed)
-  loadFromStorage();
+  // ── Migrate any pending local edits from a previous session ────────
+  // If the user had a save fail (e.g. server was down), buffered edits
+  // are pushed to DB now — but only if the user's snapshot is strictly
+  // newer than the DB row (server-side concurrency check). Stale local
+  // entries are discarded so they can't overwrite newer DB data.
+  if (typeof migrateLocalToServer === 'function') {
+    try {
+      const summary = await migrateLocalToServer();
+      const total = (summary.pushed||0) + (summary.discardedStale||0) + (summary.conflicts||0) + (summary.failed||0);
+      if (total > 0) {
+        console.log('[migrateLocalToServer]', summary);
+        if (typeof showToast === 'function') {
+          if (summary.pushed)         showToast(`Synced ${summary.pushed} pending edit(s) from your last session`, 'success');
+          if (summary.discardedStale) showToast(`${summary.discardedStale} pending edit(s) discarded — DB had newer data`, 'warn');
+          if (summary.conflicts)      showToast(`${summary.conflicts} pending edit(s) skipped — modified by another user`, 'warn');
+          if (summary.failed)         showToast(`${summary.failed} edit(s) couldn't sync; will retry next time`, 'error');
+        }
+        // After migration, refresh data so display reflects what's actually
+        // in the DB (including anything we just pushed).
+        await loadData();
+      }
+    } catch (e) {
+      console.error('migrateLocalToServer failed:', e);
+    }
+  }
 
   updateStorageStatus();
 

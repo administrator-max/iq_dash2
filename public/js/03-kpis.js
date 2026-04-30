@@ -6,11 +6,11 @@ function updateOverviewKPIs() {
   const kpis = document.querySelectorAll('#page-overview .kpi');
 
   /* ── KPI 1: Total Submitted ──────────────────────────────────────────────
-     Match the Excel "Total Submit (MT)" footer (222,150 MT in 240426 sheet).
-     Formula: Σ across all 33 companies of every Submit #N + Revision #N
-     cycle MT, deduped per (company, cycle_type) so legacy duplicate rows
-     in the DB don't inflate the number. Period filter (when active) keeps
-     only cycles whose submitDate falls in the window.
+     Per user spec 30-Apr-2026: Total Submitted = Σ Submit #N cycles only.
+     Revision cycles are excluded — a revision is a CHANGE to an existing
+     submission, not a new submission, so counting it would double-count.
+     Deduped per (company, cycle_type). Period filter keeps cycles whose
+     submitDate falls in window.
   ────────────────────────────────────────────────────────────────────────── */
   let totalSubmitMT = 0, submitCoSet = new Set();
   const allCompanies = [...SPI, ...PENDING];
@@ -18,12 +18,11 @@ function updateOverviewKPIs() {
     const seen = new Set();
     let coTotal = 0, anyInPeriod = false;
     (co.cycles || []).forEach(c => {
-      // Match Excel rows: "Submit #N" or "Revision #N" (must have the # number;
-      // skip "Revision Request — XYZ" entries which aren't part of this footer).
-      if (!/^(submit|revision)\s*#\d/i.test(c.type)) return;
+      if (!/^submit\s*#\d/i.test(c.type)) return;   // Submit #N only — NOT Revision
       const key = c.type.toLowerCase().trim();
-      if (seen.has(key)) return; // dedup duplicates per (co, cycle_type)
+      if (seen.has(key)) return;
       seen.add(key);
+      if (c._fromRevReq) return;
       const mt = typeof c.mt === 'number' ? c.mt : Number(c.mt) || 0;
       if (mt <= 0) return;
       if (PERIOD.active && !inPd(pDate(c.submitDate))) return;
@@ -118,16 +117,24 @@ function updateOverviewKPIs() {
 
   /* ── Update DOM ───────────────────────────────────────────────────── */
   if (kpis[0]) {
-    kpis[0].querySelector('.kpi-val').textContent  = totalSubmitMT.toLocaleString();
-    kpis[0].querySelector('.kpi-unit').textContent = `MT · ${submitCoSet.size} companies`;
+    kpis[0].querySelector('.kpi-val').textContent  = totalSubmitMT > 0 ? totalSubmitMT.toLocaleString() : '—';
+    kpis[0].querySelector('.kpi-unit').textContent = submitCoSet.size > 0 ? `MT · ${submitCoSet.size} companies` : 'MT';
     const t = kpis[0].querySelector('.kpi-tag');
     if (t) { const n=t.querySelector('#kpiSubmitNote')||t; n.textContent = PERIOD.active ? `Filtered: ${submitCoSet.size} co.` : 'All Submissions'; }
+    // Submit fill: 100% reference (always full bar — Submit is the baseline)
+    const sFill = document.getElementById('kpiSubmitFill');
+    if (sFill) sFill.style.width = totalSubmitMT > 0 ? '100%' : '0%';
   }
   if (kpis[1]) {
-    kpis[1].querySelector('.kpi-val').textContent  = totalObtainedMT.toLocaleString();
-    kpis[1].querySelector('.kpi-unit').textContent = `MT · ${obtCoSet.size} companies`;
+    kpis[1].querySelector('.kpi-val').textContent  = totalObtainedMT > 0 ? totalObtainedMT.toLocaleString() : '—';
+    kpis[1].querySelector('.kpi-unit').textContent = obtCoSet.size > 0 ? `MT · ${obtCoSet.size} companies` : 'MT';
     const t = kpis[1].querySelector('.kpi-tag');
     if (t) { const rate = totalSubmitMT>0?(totalObtainedMT/totalSubmitMT*100).toFixed(1):'—'; t.textContent=`${rate}% Approval Rate`; }
+    // Obtained fill: ratio against Submit (approval rate)
+    const oFill = document.getElementById('kpiObtFill');
+    if (oFill) oFill.style.width = totalSubmitMT > 0
+      ? Math.min(100, totalObtainedMT/totalSubmitMT*100).toFixed(1) + '%'
+      : '0%';
   }
   // Total Utilized KPI (addressed by ID — index-independent)
   const kpiUtilCoEl   = document.getElementById('kpiUtilCoCount');
@@ -141,22 +148,35 @@ function updateOverviewKPIs() {
   if (kpiUtilFillEl && totalObtainedMT > 0) kpiUtilFillEl.style.width = Math.min(100, totalUtilizedMT / totalObtainedMT * 100).toFixed(1) + '%';
   if (kpiUtilTagEl)  kpiUtilTagEl.textContent  = totalObtainedMT > 0 ? `${(totalUtilizedMT/totalObtainedMT*100).toFixed(1)}% of obtained allocated` : 'Of obtained quota allocated';
   if (kpis[2]) {
-    kpis[2].querySelector('.kpi-val').textContent  = realizedCount;
+    kpis[2].querySelector('.kpi-val').textContent  = realizedCount > 0 ? realizedCount : '—';
     kpis[2].querySelector('.kpi-unit').textContent = `Companies with utilization${PERIOD.active?' in period':''}`;
     const kpiRealMTEl = document.getElementById('kpiRealMT');
-    if (kpiRealMTEl) kpiRealMTEl.textContent = totalRealizedMT.toLocaleString() + ' MT total realized';
-    const t = kpis[2].querySelector('.kpi-tag'); if (t) t.textContent = arrivedCodes;
-    const fill = kpis[2].querySelector('.kpi-fill');
-    if (fill && totalObtainedMT>0) fill.style.width = Math.min(100,totalRealizedMT/totalObtainedMT*100).toFixed(1)+'%';
+    if (kpiRealMTEl) kpiRealMTEl.textContent = totalRealizedMT > 0 ? totalRealizedMT.toLocaleString() + ' MT total realized' : '— MT';
+    const t = kpis[2].querySelector('.kpi-tag span'); if (t) t.textContent = arrivedCodes;
+    const fill = document.getElementById('kpiRealFill') || kpis[2].querySelector('.kpi-fill');
+    if (fill) fill.style.width = totalObtainedMT > 0
+      ? Math.min(100, totalRealizedMT/totalObtainedMT*100).toFixed(1) + '%'
+      : '0%';
   }
   // Re-Apply KPI (by ID — index-independent after reorder)
   const kpiReapplyValEl = document.getElementById('kpiReapplyVal');
-  if (kpiReapplyValEl) kpiReapplyValEl.textContent = reapplyTotal;
+  if (kpiReapplyValEl) kpiReapplyValEl.textContent = reapplyTotal > 0 ? reapplyTotal : '—';
   // Also update Re-Apply tag (find by traversing from kpiReapplyVal's parent .kpi)
   const reapplyKpiEl = kpiReapplyValEl ? kpiReapplyValEl.closest('.kpi') : null;
   if (reapplyKpiEl) {
     const ru = reapplyKpiEl.querySelector('.kpi-unit'); if (ru) ru.textContent = 'Companies — Re-Apply On Process';
-    const rt = reapplyKpiEl.querySelector('.kpi-tag');  if (rt) rt.textContent = `🔵 ${submittedCount} Submitted · ✅ ${eligCount} Eligible`;
+    const rt = reapplyKpiEl.querySelector('.kpi-tag span');
+    if (rt) rt.textContent = (reapplyTotal > 0)
+      ? `🔵 ${submittedCount} Submitted · ✅ ${eligCount} Eligible`
+      : '—';
+    // Re-Apply fill: ratio of submitted+eligible RA against total RA pool
+    const raFill = document.getElementById('kpiReapplyFill');
+    if (raFill) {
+      const denom = (typeof RA !== 'undefined' && RA.length) ? RA.length : 1;
+      raFill.style.width = reapplyTotal > 0
+        ? Math.min(100, reapplyTotal / denom * 100).toFixed(1) + '%'
+        : '0%';
+    }
   }
   // Pending KPI (index 6 after reorder: Submit[0] Obtained[1] Utilized[via ID] Realized[2] AvailQuota[3] ReApply[4] Pending[5])
   // Use ID-based approach for safety
@@ -204,7 +224,7 @@ function updateOverviewKPIs() {
   // ── Active Revisions insight (dynamic from live data) ──────────────────
   const revRevision = SPI.filter(d => revisionStatus(d) === 'active');
   const revReapply  = SPI.filter(d => revisionStatus(d) === 'reapply');
-  const revComplete = SPI.filter(d => d.revType === 'complete');
+  const revPending  = SPI.filter(d => revisionStatus(d) === 'revpending');
   const revActive   = [...revRevision, ...revReapply];
   const insValEl = document.getElementById('insRevVal');
   const insSubEl = document.getElementById('insRevSub');
@@ -217,6 +237,58 @@ function updateOverviewKPIs() {
   }
   const revBadge = document.getElementById('revCardBadge');
   if (revBadge) revBadge.textContent = `${revActive.length} Active`;
+
+  // ── All Companies page: Revision + Eligible pill counts ────────────────
+  // Revision = active + reapply + revpending (matches setMF('REV') filter)
+  s('pillMRev', revActive.length + revPending.length);
+  // Eligible: RA records with realPct >= 0.6 AND cargoArrived
+  const eligCountAll = (typeof RA !== 'undefined')
+    ? RA.filter(r => r.cargoArrived === true && r.realPct >= 0.6).length
+    : 0;
+  s('pillMEligible', eligCountAll);
+
+  // ── Nav tab counts (PERTEK & SPI / All Companies) ─────────────────────
+  s('navCountSPI', SPI.length);
+  s('navCountAll', SPI.length + PENDING.length);
+
+  // ── Top Obtained Quota insight (dynamic — replaces hardcoded BTS) ─────
+  // Pick the company with the highest canonicalObtained value across SPI.
+  // Stores the picked code on window so the insight click handler routes
+  // to the correct drawer. Updates every time KPIs refresh so it stays
+  // accurate when data changes (multi-user safety).
+  (function updateTopQuotaInsight() {
+    const valEl = document.getElementById('topQuotaVal');
+    const subEl = document.getElementById('topQuotaSub');
+    if (!valEl || !subEl) return;
+    const _co = (typeof canonicalObtained === 'function') ? canonicalObtained : (c => c.obtained || 0);
+    const sorted = [...SPI].filter(c => _co(c) > 0).sort((a,b) => _co(b) - _co(a));
+    if (!sorted.length) {
+      valEl.textContent = '—';
+      subEl.textContent = 'No obtained data';
+      window._topQuotaCode = null;
+      return;
+    }
+    const top = sorted[0];
+    const topMT = _co(top);
+    window._topQuotaCode = top.code;
+    valEl.textContent = `${top.code} — ${topMT.toLocaleString()} MT`;
+    // Pull PERTEK Terbit date from the first Submit cycle for context
+    const subCy = (top.cycles || []).find(c => /^submit\s*#?1/i.test(c.type));
+    const pertekTxt = subCy && subCy.releaseDate && subCy.releaseDate !== 'TBA'
+      ? ` · PERTEK ${subCy.releaseDate}`
+      : '';
+    const nProd = (top.products || []).length;
+    subEl.textContent = `${nProd} product${nProd!==1?'s':''}${pertekTxt}`;
+  })();
+
+  // ── ntcPendingCodes: list of company codes that have PERTEK Terbit
+  //    but SPI not yet issued (matches the revpending state). ────────────
+  (function updatePendingCodes() {
+    const el = document.getElementById('ntcPendingCodes');
+    if (!el) return;
+    const codes = revPending.map(d => d.code);
+    el.textContent = codes.length ? '(' + codes.join(' · ') + ')' : '(none)';
+  })();
 }
 
 
@@ -1190,148 +1262,144 @@ function closeObtainedDrill() {
 }
 
 function refreshObtainedDrill() {
-  /* ── Collect all Obtained cycles, filtering by PERTEK Terbit date ──────
-     For each Obtained cycle, we look up the PERTEK Terbit date from its
-     paired Submit cycle (same company, matching cycle number).
-     PERTEK Terbit = releaseDate of the Submit #N / Revision #N cycle.
-  ─────────────────────────────────────────────────────────────────────── */
+  /* ── New columns (per request 30-Apr-2026) ──────────────────────────
+     NO | COMPANY | HS CODE | PRODUCT | QTY SUBMIT | QTY OBTAINED |
+     QTY UTILIZED | QTY AVAILABLE | LAST UTIL DATE
+     One row per (company, product). Submit & Obtained MT are aggregates
+     across all cycles (Submit #1 + Submit #2 + …, Obtained #1 + Obtained #2 + …)
+     with hover tooltip showing the cycle breakdown.
+  ──────────────────────────────────────────────────────────────────── */
+
+  // Period filter: keep companies whose ANY cycle date falls in period
+  const pool = (PERIOD.active && typeof companyInPeriod === 'function')
+    ? SPI.filter(co => companyInPeriod(co.cycles || []))
+    : SPI;
+
+  // ── Build per-(company, product) rows ───────────────────────────────
   const rows = [];
-  SPI.forEach(co => {
-    const allCycles = co.cycles || [];
-    allCycles.forEach(c => {
-      // Only show Obtained #N cycles — exclude revision-request-generated Obtained #2 cycles
-      // (those created by csConfirmRev with _isRevReq flag, or auto-created Obtained #2
-      //  from rrApplyObtained — these are tracked via the Revision table, not obtained drill)
-      if (!/^obtained #/i.test(c.type)) return;
-      // Skip Obtained #2 cycles created from CorpSec revision confirmation (not real re-apply)
-      // These have _isRevReq on their source cycle or lack a proper PERTEK date
-      if (/^obtained #[2-9]/i.test(c.type) && c._fromRevReq) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
+  pool.forEach(co => {
+    const subByProd = (typeof getSubmittedByProd === 'function') ? getSubmittedByProd(co) : {};
+    const obtByProd = (typeof getObtainedByProdAgg === 'function') ? getObtainedByProdAgg(co) : {};
+    const utilBy    = co.utilizationByProd || {};
+    const availBy   = co.availableByProd   || {};
 
-      // Get PERTEK Terbit from paired Submit cycle (this is the filter date)
-      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
-      const submitMOT    = pDate(c.submitDate);
-      const spiTerbit    = pDate(c.releaseDate);
+    // Union of products across submit + obtained (some products only in re-apply cycle)
+    const allProds = [...new Set([...Object.keys(subByProd), ...Object.keys(obtByProd)])];
+    if (!allProds.length) return;
 
-      // Filter by PERTEK Terbit date when period is active
-      if (PERIOD.active && !inPd(pertekTerbit)) return;
-
-      // Derive status
-      const ra = getRA(co.code);
-      let status = '—', statusColor = 'var(--txt3)';
-
-      if (/obtained.*revision/i.test(c.type)) {
-        if (spiTerbit)    { status = '✅ Revision — SPI Issued';        statusColor = 'var(--green)'; }
-        else if (pertekTerbit) { status = '⏳ Revision — PERTEK Issued'; statusColor = 'var(--amber)'; }
-        else                   { status = '🔄 Revision — Pending';       statusColor = 'var(--amber)'; }
-      } else if (/obtained #[2-9]/i.test(c.type)) {
-        if (ra && isReapplySubmitted(ra)) {
-          status = '🔵 Re-Apply Submitted'; statusColor = '#7c3aed';
-        } else {
-          status = spiTerbit ? '✅ SPI Issued (Re-apply)' : '⏳ PERTEK Issued (Re-apply)';
-          statusColor = spiTerbit ? 'var(--green)' : 'var(--amber)';
-        }
-      } else {
-        // Obtained #1 (first/main cycle)
-        if (spiTerbit)    { status = '✅ SPI Issued';              statusColor = 'var(--green)'; }
-        else               { status = '⏳ PERTEK Issued — SPI TBA'; statusColor = 'var(--amber)'; }
-      }
+    allProds.forEach(prod => {
+      const subMT = subByProd[prod] || 0;
+      const obtMT = obtByProd[prod] || 0;
+      const utilMT = utilBy[prod] || 0;
+      const avqMT = availBy[prod] != null ? availBy[prod] : Math.max(0, obtMT - utilMT);
+      // Last util date: latest pibDate or etaJKT among lots with util > 0
+      const lots = (co.shipments && co.shipments[prod]) || [];
+      let lastUtil = null;
+      lots.forEach(l => {
+        if (!(l.utilMT > 0)) return;
+        const d = pDate(l.pibDate) || (l.etaJKT ? (typeof parseETA === 'function' ? parseETA(l.etaJKT) : pDate(l.etaJKT)) : null);
+        if (d && (!lastUtil || d > lastUtil)) lastUtil = d;
+      });
 
       rows.push({
         code: co.code, group: co.group,
-        cycle: c.type, pertekTerbit, submitMOT, spiTerbit, mt,
-        status, statusColor
+        product: prod, hs: (typeof prodHS === 'function' ? prodHS(prod) : '—'),
+        subMT, obtMT, utilMT, avqMT,
+        lastUtil,
+        subBreakdown: (typeof getCycleBreakdown === 'function') ? getCycleBreakdown(co, 'submit', prod) : [],
+        obtBreakdown: (typeof getCycleBreakdown === 'function') ? getCycleBreakdown(co, 'obtained', prod) : [],
       });
     });
   });
 
-  // Dedup: keep only first occurrence per company+cycleType
-  // (prevents duplicate rows when DB has multiple per-product cycle entries)
-  const _obtSeen = new Set();
-  const _obtUniq = [];
-  rows.forEach(r => {
-    const key = `${r.code}|${r.cycle}`;
-    if (!_obtSeen.has(key)) { _obtSeen.add(key); _obtUniq.push(r); }
-  });
-  rows.length = 0; _obtUniq.forEach(r => rows.push(r));
-
-  // Sort: by PERTEK Terbit date asc, then company code
+  // Sort: company code asc, then product
   rows.sort((a, b) => {
-    if (a.pertekTerbit && b.pertekTerbit) return a.pertekTerbit - b.pertekTerbit;
-    if (a.pertekTerbit) return -1;
-    if (b.pertekTerbit) return 1;
-    return a.code.localeCompare(b.code);
+    const c = a.code.localeCompare(b.code);
+    return c !== 0 ? c : a.product.localeCompare(b.product);
   });
 
-  const totalMT    = rows.filter(r => r.mt > 0).reduce((s, r) => s + r.mt, 0);
-  const coCount    = new Set(rows.map(r => r.code)).size;
-  const cycleCount = rows.length;
+  // ── Summary totals ──────────────────────────────────────────────────
+  const totalSub  = rows.reduce((s, r) => s + r.subMT,  0);
+  const totalObt  = rows.reduce((s, r) => s + r.obtMT,  0);
+  const totalUtil = rows.reduce((s, r) => s + r.utilMT, 0);
+  const totalAvq  = rows.reduce((s, r) => s + r.avqMT,  0);
+  const coCount   = new Set(rows.map(r => r.code)).size;
   const periodLabel = PERIOD.active ? PERIOD.label : 'All Time';
 
-  // Modal header
   document.getElementById('drillSubtitle').textContent =
-    `Period: ${periodLabel} · ${cycleCount} cycle${cycleCount!==1?'s':''} · ${coCount} compan${coCount!==1?'ies':'y'} · Filtered by PERTEK Terbit date`;
+    `Period: ${periodLabel} · ${rows.length} product row${rows.length!==1?'s':''} · ${coCount} compan${coCount!==1?'ies':'y'} · hover Submit/Obtained for cycle breakdown`;
 
-  // Summary strip
   document.getElementById('drillSummary').innerHTML = `
+    <div style="text-align:center;padding:6px 14px;background:#eef2ff;border-radius:6px;border:1px solid #c3d3f9">
+      <div style="font-size:10px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.8px">Total Submit</div>
+      <div style="font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${totalSub.toLocaleString()} <span style="font-size:12px">MT</span></div>
+    </div>
     <div style="text-align:center;padding:6px 14px;background:var(--teal-bg);border-radius:6px;border:1px solid var(--teal-bd)">
       <div style="font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.8px">Total Obtained</div>
-      <div style="font-size:20px;font-weight:700;color:var(--teal);line-height:1.2">${totalMT.toLocaleString()} <span style="font-size:12px">MT</span></div>
+      <div style="font-size:20px;font-weight:700;color:var(--teal);line-height:1.2">${totalObt.toLocaleString()} <span style="font-size:12px">MT</span></div>
     </div>
     <div style="text-align:center;padding:6px 14px;background:var(--blue-bg);border-radius:6px;border:1px solid var(--blue-bd)">
-      <div style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.8px">Companies</div>
-      <div style="font-size:20px;font-weight:700;color:var(--blue);line-height:1.2">${coCount}</div>
+      <div style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.8px">Total Utilized</div>
+      <div style="font-size:20px;font-weight:700;color:var(--blue);line-height:1.2">${totalUtil.toLocaleString()} <span style="font-size:12px">MT</span></div>
+    </div>
+    <div style="text-align:center;padding:6px 14px;background:#ecfeff;border-radius:6px;border:1px solid #a5f3fc">
+      <div style="font-size:10px;font-weight:700;color:#0891b2;text-transform:uppercase;letter-spacing:.8px">Total Available</div>
+      <div style="font-size:20px;font-weight:700;color:#0891b2;line-height:1.2">${totalAvq.toLocaleString()} <span style="font-size:12px">MT</span></div>
     </div>
     <div style="text-align:center;padding:6px 14px;background:var(--green-bg);border-radius:6px;border:1px solid var(--green-bd)">
-      <div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.8px">Cycles</div>
-      <div style="font-size:20px;font-weight:700;color:var(--green);line-height:1.2">${cycleCount}</div>
-    </div>
-    ${PERIOD.active ? `<div style="text-align:center;padding:6px 14px;background:var(--amber-bg);border-radius:6px;border:1px solid var(--amber-bd)">
-      <div style="font-size:10px;font-weight:700;color:var(--amber);text-transform:uppercase;letter-spacing:.8px">Filter: PERTEK Terbit</div>
-      <div style="font-size:13px;font-weight:700;color:var(--amber);line-height:1.4">📅 ${periodLabel}</div>
-    </div>` : ''}`;
-
-  // Update modal header column (Submit MOT col header) to reflect correct fields
-  const thead = document.querySelector('#drillTable thead tr');
-  if (thead) {
-    const ths = thead.querySelectorAll('th');
-    if (ths[2]) ths[2].textContent = 'PERTEK Terbit';
-    if (ths[3]) ths[3].textContent = 'Submit MOT';
-    if (ths[4]) { ths[4].textContent = 'SPI Terbit'; }
-  }
+      <div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.8px">Companies</div>
+      <div style="font-size:20px;font-weight:700;color:var(--green);line-height:1.2">${coCount}</div>
+    </div>`;
 
   const fmtDate = d => d ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
   const body = document.getElementById('drillBody');
 
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--txt3)">No obtained cycles found with PERTEK Terbit in ${periodLabel}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--txt3)">No obtained data in ${periodLabel}</td></tr>`;
     return;
   }
 
+  // Build a hover tooltip span: shows total MT, on hover reveals breakdown
+  const _esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const buildMtCell = (mt, breakdown, color) => {
+    if (!mt) return `<span style="color:var(--txt3)">—</span>`;
+    if (!breakdown || breakdown.length <= 1) {
+      return `<span style="color:${color};font-weight:700;font-family:'DM Mono',monospace">${mt.toLocaleString()}</span>`;
+    }
+    const lines = breakdown
+      .map(b => {
+        const dateStr = b.date ? ` — ${b.date}` : '';
+        return `• ${b.label}: ${b.mt.toLocaleString()} MT${dateStr}`;
+      })
+      .join('\n');
+    const tip = `Total: ${mt.toLocaleString()} MT\nBreakdown:\n${lines}`;
+    return `<span class="cyc-bd" data-bd="${_esc(tip)}" style="color:${color};font-weight:700;font-family:'DM Mono',monospace;cursor:help;border-bottom:1px dashed ${color}">${mt.toLocaleString()} <span style="font-size:9px;opacity:.7">▾</span></span>`;
+  };
+
   let lastCode = '';
-  body.innerHTML = rows.map(r => {
+  body.innerHTML = rows.map((r, idx) => {
     const stripe = r.code !== lastCode && lastCode !== '' ? ';background:var(--bg2)' : '';
+    const isFirst = r.code !== lastCode;
     lastCode = r.code;
-    const cycleLabel = r.cycle
-      .replace(/^Obtained #1$/i, 'Submit #1 → Obtained')
-      .replace(/^Obtained #(\d+)$/i, 'Submit #$1 → Obtained')
-      .replace(/^Obtained \(Revision #(\d+)\)$/i, 'Revision #$1 → Obtained');
     const groupBadge = `<span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${r.group==='CD'?'#e0f2fe':'#f0fdf4'};color:${r.group==='CD'?'#0369a1':'#166534'};margin-left:4px">Grp ${r.group}</span>`;
+    const dot = (typeof pc === 'function') ? pc(r.product).solid : '#94a3b8';
     return `<tr style="border-bottom:1px solid var(--border);cursor:pointer${stripe}" onclick="closeObtainedDrill();setTimeout(()=>openDrawer('${r.code}'),100)">
-      <td style="padding:8px 14px;font-weight:700;color:var(--navy)">${r.code}${groupBadge}</td>
-      <td style="padding:8px 10px;color:var(--txt);font-size:11px">${cycleLabel}</td>
-      <td style="padding:8px 10px;text-align:center;font-weight:600;color:var(--teal);font-family:'DM Mono',monospace;font-size:11px">${fmtDate(r.pertekTerbit)}</td>
-      <td style="padding:8px 10px;text-align:center;color:var(--txt3);font-family:'DM Mono',monospace;font-size:11px">${fmtDate(r.submitMOT)}</td>
-      <td style="padding:8px 10px;text-align:center;color:var(--txt3);font-family:'DM Mono',monospace;font-size:11px">${fmtDate(r.spiTerbit)}</td>
-      <td style="padding:8px 10px;text-align:right;font-weight:700;color:var(--teal);font-family:'DM Mono',monospace">${r.mt > 0 ? r.mt.toLocaleString() : '—'}</td>
-      <td style="padding:8px 14px;font-size:11px;color:${r.statusColor}">${r.status}</td>
+      <td style="padding:8px 8px;text-align:center;color:var(--txt3);font-family:'DM Mono',monospace;font-size:10.5px">${idx + 1}</td>
+      <td style="padding:8px 12px;font-weight:700;color:var(--navy);white-space:nowrap">${isFirst ? r.code + groupBadge : '<span style=\"color:var(--txt3)\">' + r.code + '</span>'}</td>
+      <td style="padding:8px 10px;font-family:'DM Mono',monospace;font-size:10.5px;color:var(--txt2)">${r.hs}</td>
+      <td style="padding:8px 10px;font-size:11px"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:${dot};display:inline-block"></span>${r.product}</span></td>
+      <td style="padding:8px 10px;text-align:right">${buildMtCell(r.subMT, r.subBreakdown, 'var(--navy)')}</td>
+      <td style="padding:8px 10px;text-align:right">${buildMtCell(r.obtMT, r.obtBreakdown, 'var(--teal)')}</td>
+      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.utilMT > 0 ? 'var(--blue)' : 'var(--txt3)'};font-weight:${r.utilMT > 0 ? '700' : '400'}">${r.utilMT > 0 ? r.utilMT.toLocaleString() : '—'}</td>
+      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.avqMT > 0 ? '#0891b2' : 'var(--txt3)'};font-weight:${r.avqMT > 0 ? '700' : '400'}">${r.avqMT > 0 ? r.avqMT.toLocaleString() : '—'}</td>
+      <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;font-size:10.5px;color:${r.lastUtil ? 'var(--green)' : 'var(--txt3)'}">${fmtDate(r.lastUtil)}</td>
     </tr>`;
   }).join('');
 
   document.getElementById('drillFooterNote').textContent =
     PERIOD.active
-      ? `Filter reference: PERTEK Terbit date within ${periodLabel} · Click row to open company drawer`
-      : `Showing all obtained cycles (all time) · Click row to open company drawer`;
+      ? `Period: ${periodLabel} · Hover Submit/Obtained for cycle breakdown · Click row to open company drawer`
+      : `Showing all products with submit/obtained · Hover Submit/Obtained for cycle breakdown · Click row to open company drawer`;
 }
 
 

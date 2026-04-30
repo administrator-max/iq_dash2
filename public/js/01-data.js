@@ -61,6 +61,12 @@ async function loadData() {
     SPI     = _dedup(data.spi     || []);
     PENDING = _dedup(data.pending || []);
     RA      = data.ra      || [];
+    // Capture concurrency token (server's updated_at). Used by patchToServer
+    // as `_ifUpdatedAt` so server can reject stale writes (HTTP 409) when
+    // another user has modified the row since this fetch.
+    [SPI, PENDING].forEach(arr => arr.forEach(co => {
+      if (co && co.updatedAt) co._updatedAt = co.updatedAt;
+    }));
     // Product master metadata — index by name for O(1) lookup
     PRODUCT_META = {};
     (data.products || []).forEach(p => { if (p && p.name) PRODUCT_META[p.name] = p; });
@@ -95,15 +101,22 @@ async function loadData() {
       const coObtCanon = canonicalObtained(co);
       co.availableQuota = Math.max(0, (coObtCanon || co.obtained || 0) - totalUtil);
     });
-    // Also set canonical obtained on each SPI company so other modules can use it
-    SPI.forEach(co => {
-      const canon = canonicalObtained(co);
-      if (canon > 0) co._canonicalObtained = canon;
-    });
-    PENDING.forEach(co => {
-      const canon = canonicalObtained(co);
-      if (canon > 0) co._canonicalObtained = canon;
-    });
+    // Also override raw co.obtained / co.submit1 with the aggregated canonical
+    // totals (Obtained #1 + Obtained #2 + …, Submit #1 + Submit #2 + Revision #N).
+    // Per request 30-Apr-2026: every dashboard section should reflect the
+    // aggregate, not just the legacy single-cycle DB column.
+    [SPI, PENDING].forEach(arr => arr.forEach(co => {
+      const canonObt = canonicalObtained(co);
+      if (canonObt > 0) {
+        co._canonicalObtained = canonObt;
+        co.obtained = canonObt;
+      }
+      const canonSub = canonicalSubmitted(co);
+      if (canonSub > 0) {
+        co._canonicalSubmitted = canonSub;
+        co.submit1 = canonSub;
+      }
+    }));
     _dataLoaded = true;
   } catch(err) {
     console.error('Failed to load data from API:', err);
@@ -207,13 +220,16 @@ const isEligible = r => r && r.realPct >= 0.6 && r.cargoArrived === true && !isR
 
 /* ════════════════════════════════════════════════════════════════════
    CANONICAL OBTAINED — Single source of truth for company total obtained.
-   Rules (consistent with Overview KPI2 and all drill-downs):
-     1. Only count Obtained #N cycles (not Revision/Obtained-Revision cycles)
-     2. MUST have valid PERTEK Terbit date (paired Submit cycle has releaseDate)
-     3. Dedup by cycleType — first occurrence per company wins
-     4. Skip _fromRevReq cycles (revision re-allocation ≠ new MT)
-   This function is used by ALL KPIs, charts, and export to prevent
-   any source from using stale co.obtained from the DB.
+   Rules (per user request 30-Apr-2026: aggregate ALL obtained cycles):
+     Total Obtained = Obtained #1 + Obtained #2 + (next cycles if any)
+     1. Sum every Obtained #N cycle MT
+     2. Dedup by cycleType — first occurrence per company wins
+        (legacy DB sometimes has duplicate rows for same cycle_type)
+     3. Skip _fromRevReq cycles (revision re-allocation ≠ new MT)
+     4. Skip mt ≤ 0
+   Note: previously required PERTEK Terbit date from paired Submit cycle —
+   that filter dropped HDP's Obtained #2 (100 MT) when the revision PERTEK
+   wasn't paired through a "Submit #2" naming. Now trusts the cycle data.
    ═══════════════════════════════════════════════════════════════════ */
 function canonicalObtained(co) {
   if (!co) return 0;
@@ -228,12 +244,6 @@ function canonicalObtained(co) {
     if (seen.has(key)) return;                         // dedup cycleType
     seen.add(key);
     if (c._fromRevReq) return;                        // skip revision re-allocation
-    // Require valid PERTEK Terbit — cycles still in-process are NOT obtained yet
-    // (getPertekTerbitForObtained is defined in 02-period-filter.js, loaded first)
-    if (typeof getPertekTerbitForObtained === 'function') {
-      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
-      if (!pertekTerbit) return;
-    }
     total += mt;
   });
   return total;
@@ -253,12 +263,132 @@ function canonicalObtainedFiltered(co) {
     if (seen.has(key)) return;
     seen.add(key);
     if (c._fromRevReq) return;
-    if (typeof getPertekTerbitForObtained === 'function') {
-      const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
-      if (!pertekTerbit) return;
-      if (PERIOD.active && !inPd(pertekTerbit)) return;
+    // Period filter: use PERTEK Terbit from paired Submit cycle when present;
+    // when absent, fall back to the cycle's own pertekDate field. If neither
+    // exists we still count it (matches the "trust cycle data" rule above)
+    // but it won't pass an active period filter.
+    if (PERIOD.active) {
+      let pertekDate = null;
+      if (typeof getPertekTerbitForObtained === 'function') {
+        pertekDate = getPertekTerbitForObtained(c, allCycles);
+      }
+      if (!pertekDate && c.pertekDate) pertekDate = pDate(c.pertekDate);
+      if (!inPd(pertekDate)) return;
     }
     total += mt;
   });
   return total;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   CANONICAL SUBMITTED — Single source of truth for total submitted.
+   Per user spec 30-Apr-2026: Total Submitted = Submit #1 + Submit #2 + …
+   ─────────────────────────────────────────────────────
+   Revision cycles are EXCLUDED — a Revision is a CHANGE to an existing
+   submission, not a new one. Including it would double-count quota.
+   Only Submit #N cycles count. Same dedup + _fromRevReq skip as canonicalObtained.
+   ═══════════════════════════════════════════════════════════════════ */
+function canonicalSubmitted(co) {
+  if (!co) return 0;
+  const allCycles = co.cycles || [];
+  const seen      = new Set();
+  let   total     = 0;
+  allCycles.forEach(c => {
+    if (!/^submit\s*#\d/i.test(c.type)) return;     // Submit #N only — NOT Revision
+    const mt = typeof c.mt === 'number' ? c.mt : 0;
+    if (mt <= 0) return;
+    const key = c.type.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (c._fromRevReq) return;
+    total += mt;
+  });
+  return total;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   getSubmittedByProd / getObtainedByProdAgg — per-product aggregation.
+   Sums each product's MT across all Submit / Obtained cycles (deduped
+   by cycleType so legacy duplicate rows don't double-count). Revision
+   cycles are EXCLUDED (a revision changes an existing submission, not
+   a new one). Used by the obtained drill-down and any view that wants
+   per-product totals reflecting Submit #1 + Submit #2, Obtained #1 +
+   Obtained #2, etc.
+   ═══════════════════════════════════════════════════════════════════ */
+function getSubmittedByProd(co) {
+  const result = {};
+  if (!co) return result;
+  const seen = new Set();
+  (co.cycles || []).forEach(c => {
+    if (!/^submit\s*#\d/i.test(c.type)) return;     // Submit #N only — NOT Revision
+    const key = c.type.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (c._fromRevReq) return;
+    Object.entries(c.products || {}).forEach(([p, v]) => {
+      if (typeof v === 'number' && v > 0) result[p] = (result[p] || 0) + v;
+    });
+  });
+  return result;
+}
+
+function getObtainedByProdAgg(co) {
+  const result = {};
+  if (!co) return result;
+  const seen = new Set();
+  (co.cycles || []).forEach(c => {
+    if (!/^obtained\s*#\d/i.test(c.type)) return;
+    const key = c.type.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (c._fromRevReq) return;
+    Object.entries(c.products || {}).forEach(([p, v]) => {
+      if (typeof v === 'number' && v > 0) result[p] = (result[p] || 0) + v;
+    });
+  });
+  return result;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   getCycleBreakdown — returns per-cycle breakdown for hover tooltip.
+   mode: 'submit' | 'obtained'
+   prod (optional): if provided, only returns cycles touching that product
+   Returns: [{ type, label, mt, date, products }]
+   ═══════════════════════════════════════════════════════════════════ */
+function getCycleBreakdown(co, mode, prod) {
+  if (!co) return [];
+  // Submit-mode breakdown excludes Revision cycles (revisions change an
+  // existing submission, not add new ones — including them would double-count).
+  const re = mode === 'submit'
+    ? /^submit\s*#\d/i
+    : /^obtained\s*#\d/i;
+  const seen = new Set();
+  const out  = [];
+  (co.cycles || []).forEach(c => {
+    if (!re.test(c.type)) return;
+    const key = c.type.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (c._fromRevReq) return;
+    let mt;
+    if (prod) {
+      const v = (c.products || {})[prod];
+      if (typeof v !== 'number' || v <= 0) return;
+      mt = v;
+    } else {
+      mt = typeof c.mt === 'number' && c.mt > 0
+        ? c.mt
+        : Object.values(c.products || {}).reduce((s,v) => s + (typeof v === 'number' ? v : 0), 0);
+      if (!mt) return;
+    }
+    // Friendly label: "Submit #1" | "Submit #2 (Re-Apply)" | "Obtained #2 (Re-Apply)" | "Revision #1"
+    let label = c.type;
+    if (/^submit\s*#[2-9]/i.test(c.type))   label = c.type + ' (Re-Apply)';
+    if (/^obtained\s*#[2-9]/i.test(c.type)) label = c.type + ' (Re-Apply)';
+    const date = mode === 'submit'
+      ? (c.submitDate || c.pertekDate || '')
+      : (c.releaseDate || c.spiDate || c.pertekDate || c.submitDate || '');
+    out.push({ type: c.type, label, mt, date, products: c.products || {} });
+  });
+  return out;
 }
