@@ -28,10 +28,10 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ── DB Pool ──────────────────────────────────────────────────────
-// Respect the standard PGSSLMODE env var so the same code works
-// against managed Postgres (Neon → require SSL) and local instances
-// (no SSL). Set PGSSLMODE=disable in .env to opt out.
-const useSSL = process.env.PGSSLMODE && process.env.PGSSLMODE !== 'disable';
+// SSL is ON by default — managed Postgres (Heroku, Neon, etc.) requires
+// it and that's the production path. To opt out for a local Postgres
+// instance that doesn't support SSL, set PGSSLMODE=disable in .env.
+const useSSL = process.env.PGSSLMODE !== 'disable';
 const pool = new Pool({
   host:     process.env.PGHOST,
   database: process.env.PGDATABASE,
