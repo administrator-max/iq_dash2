@@ -147,15 +147,32 @@ function updateOverviewKPIs() {
   if (kpiUtilUnitEl) kpiUtilUnitEl.textContent = `compan${utilCoCount!==1?'ies':'y'} with shipment`;
   if (kpiUtilFillEl && totalObtainedMT > 0) kpiUtilFillEl.style.width = Math.min(100, totalUtilizedMT / totalObtainedMT * 100).toFixed(1) + '%';
   if (kpiUtilTagEl)  kpiUtilTagEl.textContent  = totalObtainedMT > 0 ? `${(totalUtilizedMT/totalObtainedMT*100).toFixed(1)}% of obtained allocated` : 'Of obtained quota allocated';
-  if (kpis[2]) {
-    kpis[2].querySelector('.kpi-val').textContent  = realizedCount > 0 ? realizedCount : '—';
-    kpis[2].querySelector('.kpi-unit').textContent = `Companies with utilization${PERIOD.active?' in period':''}`;
-    const kpiRealMTEl = document.getElementById('kpiRealMT');
-    if (kpiRealMTEl) kpiRealMTEl.textContent = totalRealizedMT > 0 ? totalRealizedMT.toLocaleString() + ' MT total realized' : '— MT';
-    const t = kpis[2].querySelector('.kpi-tag span'); if (t) t.textContent = arrivedCodes;
-    const fill = document.getElementById('kpiRealFill') || kpis[2].querySelector('.kpi-fill');
-    if (fill) fill.style.width = totalObtainedMT > 0
-      ? Math.min(100, totalRealizedMT/totalObtainedMT*100).toFixed(1) + '%'
+  // Total Realized KPI (addressed by ID — index-independent).
+  // NOTE: previous code used kpis[2] which is actually the Utilized
+  // card in DOM order (Submit[0], Obtained[1], Utilized[2], Realized[3],
+  // AvqQuota[4], ReApply[5]). The bug was hidden by the hardcoded "4"
+  // in the Realized card; once that became "—" the empty state surfaced.
+  const kpiRealCoEl = document.getElementById('kpiRealCoCount');
+  if (kpiRealCoEl) {
+    kpiRealCoEl.textContent = realizedCount > 0 ? realizedCount : '—';
+    const realCard = kpiRealCoEl.closest('.kpi');
+    if (realCard) {
+      const u = realCard.querySelector('.kpi-unit');
+      if (u) u.textContent = `Companies with utilization${PERIOD.active ? ' in period' : ''}`;
+      const tspan = realCard.querySelector('.kpi-tag span');
+      if (tspan) tspan.textContent = arrivedCodes;
+    }
+  }
+  const kpiRealMTEl = document.getElementById('kpiRealMT');
+  if (kpiRealMTEl) {
+    kpiRealMTEl.textContent = totalRealizedMT > 0
+      ? totalRealizedMT.toLocaleString() + ' MT total realized'
+      : '— MT';
+  }
+  const kpiRealFillEl = document.getElementById('kpiRealFill');
+  if (kpiRealFillEl) {
+    kpiRealFillEl.style.width = totalObtainedMT > 0
+      ? Math.min(100, totalRealizedMT / totalObtainedMT * 100).toFixed(1) + '%'
       : '0%';
   }
   // Re-Apply KPI (by ID — index-independent after reorder)
