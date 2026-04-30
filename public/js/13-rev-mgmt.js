@@ -1128,15 +1128,29 @@ function saveEdit() {
   saveToStorage(); // localStorage backup
   updateStorageStatus();
 
-  // PATCH to server so data survives page refresh
+  // PATCH to server so data survives page refresh.
+  // - Data is buffered in localStorage first so transient errors don't lose input.
+  // - fetchWithRetry retries 5× (~18s) on 5xx/network errors.
+  // - On HTTP 409 (concurrency conflict): another user changed this row
+  //   since we fetched. Prompt user to refresh — DO NOT auto-overwrite.
   if (co) {
     patchToServer(co).then(() => {
       showSaveToast(new Date().toISOString());
     }).catch(err => {
-      console.error('Server PATCH failed:', err);
-      // Show visible error to user — not just silent console warning
-      const errMsg = `⚠️ Data tersimpan di browser, tapi gagal sync ke server: ${err.message}. Coba refresh dan input ulang.`;
-      setTimeout(() => alert(errMsg), 300);
+      if (err && err.status === 409) {
+        console.warn('[saveEdit] 409 conflict — DB modified by another user', err);
+        if (typeof showToast === 'function') {
+          showToast('⚠ Data sudah diubah pengguna lain. Refresh halaman dan input ulang agar tidak menimpa data terbaru.', 'error');
+        }
+        // Do not auto-clear localStorage — user can choose to refresh & re-edit
+        return;
+      }
+      console.error('Server PATCH failed (data is safe in localStorage):', err);
+      if (typeof notifySaveError === 'function') {
+        notifySaveError('save', err);
+      } else if (typeof showToast === 'function') {
+        showToast(`Data tersimpan di browser. Sync server gagal (${err.message}) — akan dicoba ulang.`, 'warn');
+      }
       showSaveToast(new Date().toISOString());
     });
   } else {

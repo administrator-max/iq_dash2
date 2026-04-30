@@ -533,6 +533,39 @@ tr:hover td { background:#f9fafb }
 .tti:hover::after,.tti:hover::before { opacity:1 }
 .tti.tip-left::after { left:auto;right:0;transform:none }
 .tti.tip-right::after { left:0;transform:none }
+
+/* ── Cycle-breakdown hover (Submit/Obtained MT in obtained drill-down) ── */
+.cyc-bd { position:relative; display:inline-block }
+.cyc-bd::after {
+  content: attr(data-bd);
+  position:absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: var(--navy);
+  color: #fff;
+  font: 500 10.5px/1.55 'DM Sans', sans-serif;
+  padding: 7px 11px;
+  border-radius: 6px;
+  white-space: pre;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s;
+  box-shadow: 0 6px 20px rgba(0,0,0,.25);
+  text-align: left;
+  letter-spacing: .15px;
+}
+.cyc-bd::before {
+  content: '';
+  position: absolute;
+  bottom: calc(100% + 2px);
+  right: 8px;
+  border: 4px solid transparent;
+  border-top-color: var(--navy);
+  opacity: 0;
+  transition: opacity .15s;
+}
+.cyc-bd:hover::after, .cyc-bd:hover::before { opacity: 1 }
 .ef-sec-hd { display:flex; align-items:center; justify-content:space-between; padding:8px 13px; background:var(--bg); border-bottom:1px solid var(--border) }
 .ef-sec-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:var(--txt3) }
 .ef-sec-role  { font-size:9px; font-weight:700; padding:1px 6px; border-radius:3px }

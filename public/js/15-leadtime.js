@@ -44,7 +44,17 @@ function computeLeadTimes() {
   const result = [];
 
   const processCompany = co => {
-    const cycles = co.cycles || [];
+    // Dedup cycles by cycleType — DB legacy data sometimes has multiple
+    // identical "Submit #1" rows (one per product). Without dedup the
+    // table shows the same row 5–10× per company.
+    const rawCycles = co.cycles || [];
+    const _seenTypes = new Set();
+    const cycles = rawCycles.filter(c => {
+      const k = (c.type || '').toLowerCase().trim();
+      if (_seenTypes.has(k)) return false;
+      _seenTypes.add(k);
+      return true;
+    });
     let i = 0;
     while (i < cycles.length) {
       const c = cycles[i];

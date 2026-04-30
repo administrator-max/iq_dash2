@@ -399,7 +399,7 @@ function buildRevDetailTable() {
     { key: 'pending',  label: '⏳ Pending — PERTEK Terbit, Awaiting SPI',
       bg: 'var(--orange-bg)',bd: 'var(--orange-bd)',tc: 'var(--orange)',
       cos: allNonClean.filter(co => revisionStatus(co) === 'revpending') },
-    { key: 'done',     label: '✅ Completed — SPI / PERTEK Terbit',
+    { key: 'done',     label: '✅ Revision Completed — SPI Issued',
       bg: 'var(--violet-bg)',bd: 'var(--violet-bd)',tc: 'var(--violet)',
       cos: allNonClean.filter(co => revisionStatus(co) === 'completed') },
   ];

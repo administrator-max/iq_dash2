@@ -182,6 +182,13 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
     spiNo:          co.spi_no       || '',
     updatedBy:      co.updated_by   || '',
     updatedDate:    co.updated_date || '',
+    // ── Concurrency token ─────────────────────────────────────────────
+    // ISO timestamp of the last server-side write (companies.updated_at).
+    // Client echoes this back as `_ifUpdatedAt` on PATCH; server rejects
+    // (409) if the row was modified by someone else in the meantime.
+    // This protects against stale browser data overwriting newer changes
+    // when the dashboard is open in multiple tabs / by multiple users.
+    updatedAt:      co.updated_at ? new Date(co.updated_at).toISOString() : null,
     utilizationByProd,
     availableByProd,
     cycles:         cycles || [],
@@ -760,6 +767,31 @@ app.patch('/api/company/:code', async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // ── Optimistic concurrency check ──────────────────────────────────
+    // Client sends `_ifUpdatedAt` (ISO timestamp from when they fetched).
+    // If the row was modified server-side after that, reject with 409 so
+    // the user can refresh and re-apply their edit, instead of silently
+    // overwriting newer data from another user.
+    if (body._ifUpdatedAt) {
+      const { rows: curRows } = await client.query(
+        `SELECT updated_at FROM companies WHERE code = $1`, [code]
+      );
+      if (curRows.length) {
+        const dbTs    = curRows[0].updated_at ? new Date(curRows[0].updated_at).getTime() : 0;
+        const clientTs = new Date(body._ifUpdatedAt).getTime();
+        // 1-second tolerance for clock drift / sub-second rounding
+        if (dbTs - clientTs > 1000) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: 'Data telah diubah pengguna lain sejak Anda fetch — refresh untuk dapat data terbaru.',
+            currentUpdatedAt: new Date(curRows[0].updated_at).toISOString(),
+            yourUpdatedAt: body._ifUpdatedAt,
+            code,
+          });
+        }
+      }
+    }
+
     // Build dynamic SET clause — only update fields present in body
     const allowed = [
       'submit1','obtained',
@@ -780,12 +812,19 @@ app.patch('/api/company/:code', async (req, res) => {
       }
     }
     sets.push(`updated_at = NOW()`);
+    // Always bump updated_at — even if only child tables (shipments,
+    // cycles, ra) were touched. This keeps the concurrency token fresh
+    // so subsequent saves see the latest version.
     if (sets.length > 1) {
       vals.push(code);
       await client.query(
         `UPDATE companies SET ${sets.join(', ')} WHERE code = $${idx}`,
         vals
       );
+    } else {
+      // No allowed-field changes, but body may carry shipments/ra/etc.
+      // Still bump updated_at so token advances.
+      await client.query(`UPDATE companies SET updated_at = NOW() WHERE code = $1`, [code]);
     }
 
     // Handle shipments upsert
@@ -854,7 +893,15 @@ app.patch('/api/company/:code', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    res.json({ ok: true, code });
+    // Return the new updated_at so client can refresh its concurrency token
+    // without needing a full re-fetch.
+    const { rows: tsRow } = await pool.query(
+      `SELECT updated_at FROM companies WHERE code = $1`, [code]
+    );
+    const newTs = tsRow[0] && tsRow[0].updated_at
+      ? new Date(tsRow[0].updated_at).toISOString()
+      : null;
+    res.json({ ok: true, code, updatedAt: newTs });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('PATCH /api/company/:code error:', err);
