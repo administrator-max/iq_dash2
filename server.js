@@ -20,9 +20,10 @@ const path    = require('path');
   }
   require('dotenv').config(); // fallback: cwd
 })();
-const express = require('express');
-const cors    = require('cors');
-const { Pool } = require('pg');
+const express     = require('express');
+const cors        = require('cors');
+const compression = require('compression');
+const { Pool }    = require('pg');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -43,9 +44,18 @@ const pool = new Pool({
 });
 
 // ── Middleware ───────────────────────────────────────────────────
+// gzip compression — JSON responses (notably /api/data, ~100KB+) drop
+// to ~15-25% of original size. Big win on slow connections / Heroku.
+app.use(compression());
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Cache static assets for 1 hour. Script tags use ?v=N for cache busting,
+// so bumping that param forces re-fetch when code changes.
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '1h',
+  etag:   true,
+  lastModified: true,
+}));
 
 // ═══════════════════════════════════════════════════════════════════
 // SCHEMA INIT  (PgBouncer-safe: one statement at a time)
@@ -615,6 +625,12 @@ const KPI_RECONCILE = [
 })();
 
 app.get('/api/data', async (req, res) => {
+  // Short browser cache (5s) so rapid refreshes / multi-page-navigations
+  // don't re-hit the DB. must-revalidate ensures stale data isn't served
+  // after the TTL — concurrency token (updatedAt) on each company still
+  // protects writes regardless. Set explicitly here (not via middleware)
+  // so other endpoints aren't affected.
+  res.set('Cache-Control', 'private, max-age=5, must-revalidate');
   try {
     // Product master metadata (HS codes + colors). Always returned, even
     // when no companies exist yet, so the frontend can hydrate its
@@ -651,6 +667,10 @@ app.get('/api/data', async (req, res) => {
     const codes = companies.map(c => c.code);
     if (!codes.length) return res.json({ spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory });
 
+    // Run all child-table queries in parallel — including getCyclesFor()
+    // (which itself does 2 sequential queries internally). Previously
+    // cyclesMap was awaited AFTER the batch, costing one extra round-trip
+    // per request. With Neon's per-query latency this saves ~100-200ms.
     const [
       { rows: products },
       { rows: stats },
@@ -659,6 +679,7 @@ app.get('/api/data', async (req, res) => {
       { rows: raRows },
       { rows: shipRows },
       { rows: reapplyRows },
+      cyclesMap,
     ] = await Promise.all([
       pool.query(`SELECT * FROM company_products WHERE company_code = ANY($1) ORDER BY company_code, sort_order`, [codes]),
       pool.query(`SELECT * FROM company_product_stats WHERE company_code = ANY($1)`, [codes]),
@@ -667,9 +688,8 @@ app.get('/api/data', async (req, res) => {
       pool.query(`SELECT * FROM ra_records WHERE company_code = ANY($1) ORDER BY company_code`, [codes]),
       pool.query(`SELECT * FROM company_shipments WHERE company_code = ANY($1) ORDER BY company_code, product, lot_no`, [codes]),
       pool.query(`SELECT * FROM company_reapply_targets WHERE company_code = ANY($1)`, [codes]),
+      getCyclesFor(codes),
     ]);
-
-    const cyclesMap = await getCyclesFor(codes);
 
     // Group by code for fast lookup
     const byCode = (arr, key='company_code') => {
