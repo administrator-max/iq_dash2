@@ -542,7 +542,6 @@ function renderSPI() {
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td><span class="badge b-pending">📬 New Submission</span></td>
         <td style="font-size:11px;color:var(--red2);line-height:1.4">${latestStatus||'—'}</td>
-        <td style="font-size:10.5px;color:var(--txt3)">${d.remarks||'—'}</td>
         <td style="color:var(--txt3);font-size:11px">—</td>
         <td style="color:var(--txt3);font-size:11px">—</td>`;
       tbody.appendChild(tr);
@@ -589,7 +588,6 @@ function renderSPI() {
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td><span class="badge b-revpending">⏳ PERTEK Terbit — Menunggu SPI</span></td>
         <td style="font-size:11px;color:var(--orange);line-height:1.4">${latestStatus}</td>
-        <td style="font-size:10.5px;color:var(--txt3)">${d.remarks||'—'}</td>
         <td style="font-size:10.5px;color:var(--orange)">${pertekDateTxt}</td>
         <td style="color:var(--txt3);font-size:11px">—</td>`;
       tbody.insertBefore(tr, tbody.firstChild); // prepend — show at top
@@ -631,6 +629,21 @@ function renderSPI() {
     const _s1  = Number(d.submit1)  || 0;
     const _cycObt = canonicalObtained(d);
     const _obt = _cycObt > 0 ? _cycObt : (Number(d.obtained) || 0);
+    // Detect Perubahan state via Obtained #2 / from-rev-req cycle status:
+    //   PERTEK Perubahan Terbit + SPI Perubahan Terbit  → show Perubahan SPI No.
+    //   PERTEK Perubahan Terbit + SPI Perubahan belum   → show "waiting SPI Perubahan Terbit"
+    //   neither                                          → show original co.spiNo
+    // co.pertekNo is already overwritten by rrMarkApproved when PERTEK
+    // Perubahan terbit, so the PERTEK No. column needs no extra logic.
+    const obt2Cy = (d.cycles||[]).find(c =>
+      c._fromRevReq || /^obtained\s*#[2-9]/i.test(c.type||'')
+    );
+    const obt2St = obt2Cy ? (obt2Cy.status||'') : '';
+    const spiPerubahanTerbit    = /SPI\s*Perubahan\s*TERBIT/i.test(obt2St);
+    const pertekPerubahanTerbit = /PERTEK\s*Perubahan\s*TERBIT/i.test(obt2St);
+    const spiCellHtml = (pertekPerubahanTerbit && !spiPerubahanTerbit)
+      ? '<span style="color:var(--orange);font-style:italic;font-size:10px;line-height:1.3">⏳ waiting SPI Perubahan Terbit</span>'
+      : (d.spiNo || '<span style="color:var(--txt3)">—</span>');
     tr.innerHTML = `
       <td><div class="t-code" onclick="openDrawer('${d.code}')">${d.code}${salesRevBadge}</div></td>
       <td style="font-size:11.5px;font-weight:600">${d.group}</td>
@@ -641,9 +654,8 @@ function renderSPI() {
       <td>${statusBadge(d)}</td>
       <td style="font-size:11px;color:${rs==='active'?'var(--amber)':rs==='reapply'?'var(--blue)':rs==='revpending'?'var(--orange)':rs==='completed'?'var(--violet)':'var(--txt3)'}">
         ${d.revType!=='none' ? buildRevNoteHtml(d) : '—'}\n      </td>
-      <td style="font-size:10.5px;color:var(--txt3);max-width:180px;line-height:1.4">${statusNote}</td>
       <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--blue)">${d.pertekNo||'<span style="color:var(--txt3)">—</span>'}</td>
-      <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--teal)">${d.spiNo||'<span style="color:var(--txt3)">—</span>'}</td>`;
+      <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--teal)">${spiCellHtml}</td>`;
     tbody.appendChild(tr);
   });
   document.getElementById('spiCount').textContent = `${rows.length} companies`;
