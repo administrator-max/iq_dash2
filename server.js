@@ -48,7 +48,11 @@ const pool = new Pool({
 // to ~15-25% of original size. Big win on slow connections / Heroku.
 app.use(compression());
 app.use(cors());
-app.use(express.json());
+// Bumped from the 100KB Express default — PATCH /api/company/:code can carry
+// a full cycles + shipments + reapplyTargets payload that exceeds 100KB on
+// companies with many lots/products. 5MB is well above any realistic single
+// company payload and below memory-pressure thresholds.
+app.use(express.json({ limit: '5mb' }));
 // Cache static assets for 1 hour. Script tags use ?v=N for cache busting,
 // so bumping that param forces re-fetch when code changes.
 app.use(express.static(path.join(__dirname, 'public'), {

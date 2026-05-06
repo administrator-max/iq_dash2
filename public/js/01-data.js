@@ -239,11 +239,14 @@ function canonicalObtained(co) {
   allCycles.forEach(c => {
     if (!/^obtained #/i.test(c.type)) return;          // only "Obtained #N" cycles
     const mt = typeof c.mt === 'number' ? c.mt : 0;
-    if (mt <= 0) return;
+    if (mt <= 0) return;                              // skip empty/zero cycles
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;                         // dedup cycleType
     seen.add(key);
-    if (c._fromRevReq) return;                        // skip revision re-allocation
+    // _fromRevReq cycles ARE counted when they carry confirmed MT > 0:
+    // a PERTEK Perubahan Terbit fills the Obtained #N MT, which represents
+    // genuine additional quota that adds to the running total. Empty
+    // _fromRevReq stubs (mt = 0) were already excluded by the mt > 0 check.
     total += mt;
   });
   return total;
@@ -262,7 +265,8 @@ function canonicalObtainedFiltered(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;
     seen.add(key);
-    if (c._fromRevReq) return;
+    // _fromRevReq cycles with mt > 0 represent issued PERTEK Perubahan and
+    // are counted (mirrors canonicalObtained). Period filter still applies.
     // Period filter: use PERTEK Terbit from paired Submit cycle when present;
     // when absent, fall back to the cycle's own pertekDate field. If neither
     // exists we still count it (matches the "trust cycle data" rule above)
@@ -341,7 +345,9 @@ function getObtainedByProdAgg(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;
     seen.add(key);
-    if (c._fromRevReq) return;
+    // _fromRevReq Obtained cycles (PERTEK Perubahan terbit) contribute their
+    // confirmed per-product MT to the running total — same accumulation rule
+    // as canonicalObtained. Empty product entries naturally skip via v > 0.
     Object.entries(c.products || {}).forEach(([p, v]) => {
       if (typeof v === 'number' && v > 0) result[p] = (result[p] || 0) + v;
     });

@@ -338,11 +338,11 @@ function buildRevNoteHtml(d) {
 /* SPI: revision detail table */
 function getObtainedProdBreakdown(co) {
   // Returns HTML showing per-product obtained MT for multi-product companies.
-  // Source: Obtained #1 cycle's products object.
-  const obt1 = (co.cycles||[]).find(c => /^obtained\s*#1$/i.test(c.type));
-  const prodMap = obt1 && obt1.products ? obt1.products : null;
-  if (!prodMap || co.products.length <= 1) return null; // single product — no breakdown needed
-  const entries = Object.entries(prodMap).filter(([,mt]) => (mt||0) > 0);
+  // Source: aggregated across Obtained #1 + Obtained #2 (incl. PERTEK
+  // Perubahan), so per-product rows sum to the displayed grand total.
+  if (!co || (co.products || []).length <= 1) return null;
+  const prodMap = getObtainedByProdAgg(co);
+  const entries = Object.entries(prodMap || {}).filter(([,mt]) => (mt||0) > 0);
   if (!entries.length) return null;
   return entries.map(([prod, mt]) =>
     `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0;border-bottom:1px dashed var(--border)">
@@ -455,20 +455,25 @@ function buildRevDetailTable() {
         <td style="padding:6px 10px"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:${typeBg};color:${typeColor};border:1px solid ${typeBd};white-space:nowrap">${typeLbl}</span></td>
         <td class="t-r" style="vertical-align:top">
           ${(() => {
+            // Sum Obtained #1 + Obtained #2 (incl. PERTEK Perubahan terbit)
+            // via canonicalObtained; fall back to legacy co.obtained if no
+            // cycle data is available.
+            const _co = canonicalObtained(co);
+            const obtTot = _co > 0 ? _co : (Number(co.obtained) || 0);
             const breakdown = getObtainedProdBreakdown(co);
             if (!breakdown) {
-              return `<span class="t-mono" style="font-weight:700">${co.obtained.toLocaleString()} MT</span>`;
+              return `<span class="t-mono" style="font-weight:700">${obtTot.toLocaleString()} MT</span>`;
             }
             return `<div style="min-width:160px">
-              <div style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;text-align:right;margin-bottom:4px;padding-bottom:4px;border-bottom:2px solid var(--border)">${co.obtained.toLocaleString()} MT <span style="font-size:9px;color:var(--txt3);font-weight:400">${co.products.length} products</span></div>
+              <div style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;text-align:right;margin-bottom:4px;padding-bottom:4px;border-bottom:2px solid var(--border)">${obtTot.toLocaleString()} MT <span style="font-size:9px;color:var(--txt3);font-weight:400">${co.products.length} products</span></div>
               ${breakdown}
             </div>`;
           })()}
         </td>
         <td>${buildRevChgHtml(co)}</td>
-        <td class="t-r t-mono">${co.revMT ? co.revMT.toLocaleString() : '—'}</td>
-        <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${co.revStatus}</span></td>
         <td style="font-size:11px;color:var(--txt3)">${co.revSubmitDate}</td>
+        <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${co.revStatus}</span></td>
+        <td class="t-r t-mono">${co.revMT ? co.revMT.toLocaleString() : '—'}</td>
         <td style="vertical-align:top">${salesReqCell}</td>`;
       tbody.appendChild(tr);
     });
@@ -620,8 +625,12 @@ function renderSPI() {
       })() : '';
     // Coerce nullable numerics — newly-imported companies may have
     // null submit1/obtained while their cycle data fills in.
+    // Total Obtained sums Obtained #1 + Obtained #2 (incl. PERTEK Perubahan)
+    // via canonicalObtained, falling back to the legacy company.obtained
+    // field only when no cycle data exists.
     const _s1  = Number(d.submit1)  || 0;
-    const _obt = Number(d.obtained) || 0;
+    const _cycObt = canonicalObtained(d);
+    const _obt = _cycObt > 0 ? _cycObt : (Number(d.obtained) || 0);
     tr.innerHTML = `
       <td><div class="t-code" onclick="openDrawer('${d.code}')">${d.code}${salesRevBadge}</div></td>
       <td style="font-size:11.5px;font-weight:600">${d.group}</td>
