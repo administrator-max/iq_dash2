@@ -92,19 +92,34 @@ async function initDB() {
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
-/** Fetch all cycles (with products) for an array of company codes */
+/** Fetch all cycles (with products) for an array of company codes.
+    Uses DISTINCT ON (company_code, cycle_type) to deduplicate at the DB
+    level — the legacy DB has accumulated 16k+ duplicate cycle rows for a
+    handful of companies (e.g. CGK alone has ~11k rows). Without this,
+    the cycles query takes ~1.7s and the cycle_products lookup another
+    ~0.9s. With dedup, both drop to <50ms each. The frontend already
+    dedups by cycle_type (`canonicalObtained` etc.), so we just push that
+    same logic down to SQL — keeping the row with the smallest sort_order
+    matches the frontend's "first occurrence wins" rule. */
 async function getCyclesFor(codes) {
   if (!codes.length) return {};
   const { rows: cRows } = await pool.query(
-    `SELECT c.id, c.company_code, c.cycle_type, c.mt,
-            c.submit_type, c.submit_date, c.release_type, c.release_date,
-            c.status, c.sort_order,
-            COALESCE(c.pertek_date,'') AS pertek_date,
-            COALESCE(c.spi_date,'')    AS spi_date,
-            COALESCE(c.from_rev_req,false) AS from_rev_req
-     FROM cycles c
-     WHERE c.company_code = ANY($1)
-     ORDER BY c.company_code, c.sort_order`, [codes]
+    `SELECT id, company_code, cycle_type, mt, submit_type, submit_date,
+            release_type, release_date, status, sort_order,
+            pertek_date, spi_date, from_rev_req
+     FROM (
+       SELECT DISTINCT ON (c.company_code, c.cycle_type)
+              c.id, c.company_code, c.cycle_type, c.mt,
+              c.submit_type, c.submit_date, c.release_type, c.release_date,
+              c.status, c.sort_order,
+              COALESCE(c.pertek_date,'')      AS pertek_date,
+              COALESCE(c.spi_date,'')         AS spi_date,
+              COALESCE(c.from_rev_req,false)  AS from_rev_req
+       FROM cycles c
+       WHERE c.company_code = ANY($1)
+       ORDER BY c.company_code, c.cycle_type, c.sort_order ASC
+     ) deduped
+     ORDER BY company_code, sort_order`, [codes]
   );
   const cycleIds = cRows.map(r => r.id);
   let cpMap = {};
@@ -379,6 +394,14 @@ const PRODUCT_ALIAS_SEED = [
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_companies_section ON companies(section)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_companies_revtype ON companies(rev_type)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_ra_reapply_stage  ON ra_records(reapply_stage)`);
+    // Composite index that backs the DISTINCT ON dedup in getCyclesFor.
+    // Without this, the dedup query has to sort 16k+ rows in memory; with
+    // it, Postgres can do an index-only scan and pick the first row per
+    // (company_code, cycle_type) directly.
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cycles_dedup ON cycles(company_code, cycle_type, sort_order)`);
+    // Lookups in getCyclesFor's cycle_products step go via cycle_id =
+    // ANY(...) — speed it with a btree on cycle_id.
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_cycle_products_cid ON cycle_products(cycle_id)`);
   } catch (e) { /* ignore */ }
 })();
 
@@ -629,12 +652,16 @@ const KPI_RECONCILE = [
 })();
 
 app.get('/api/data', async (req, res) => {
-  // Short browser cache (5s) so rapid refreshes / multi-page-navigations
-  // don't re-hit the DB. must-revalidate ensures stale data isn't served
-  // after the TTL — concurrency token (updatedAt) on each company still
-  // protects writes regardless. Set explicitly here (not via middleware)
-  // so other endpoints aren't affected.
-  res.set('Cache-Control', 'private, max-age=5, must-revalidate');
+  // Browser cache: 30s fresh + 60s stale-while-revalidate.
+  //   - max-age=30   → no network for the first 30s after a fetch
+  //   - swr=60       → next request after that returns the cached copy
+  //                    immediately AND triggers a background refresh, so
+  //                    rapid tab-switching never blocks on a 1-2s round trip
+  //   - private       → only the user's browser caches (no shared CDN)
+  // Writes are still protected against staleness by the per-company
+  // updatedAt concurrency token (HTTP 409 on conflict), so a slightly
+  // older read can't cause a clobber.
+  res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
   try {
     // Product master metadata (HS codes + colors). Always returned, even
     // when no companies exist yet, so the frontend can hydrate its

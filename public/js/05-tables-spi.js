@@ -409,7 +409,7 @@ function buildRevDetailTable() {
 
     // Section header row
     const hdr = document.createElement('tr');
-    hdr.innerHTML = `<td colspan="9" style="padding:6px 14px;background:${grp.bg};border-top:2px solid ${grp.bd};border-bottom:1px solid ${grp.bd}">
+    hdr.innerHTML = `<td colspan="11" style="padding:6px 14px;background:${grp.bg};border-top:2px solid ${grp.bd};border-bottom:1px solid ${grp.bd}">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:11px;font-weight:700;color:${grp.tc}">${grp.label}</span>
         <span style="font-size:10.5px;font-family:'DM Mono',monospace;color:${grp.tc}">${grp.cos.length} co.</span>
@@ -448,6 +448,22 @@ function buildRevDetailTable() {
         salesReqCell = `<div style="min-width:150px">${lines}</div>`;
       }
 
+      // Detect Perubahan state via Obtained #2 / from-rev-req cycle status:
+      //   PERTEK Perubahan TERBIT + SPI Perubahan belum → SPI cell shows
+      //   "⏳ waiting SPI Perubahan Terbit" instead of the (stale) original SPI.
+      // co.pertekNo / co.spiNo themselves are already overwritten by
+      // rrMarkApproved when the Perubahan number is entered, so the PERTEK
+      // No. cell shows the latest (Perubahan) number automatically.
+      const _obt2Cy = (co.cycles || []).find(c =>
+        c._fromRevReq || /^obtained\s*#[2-9]/i.test(c.type || '')
+      );
+      const _obt2St = _obt2Cy ? (_obt2Cy.status || '') : '';
+      const _spiPerubahanTerbit    = /SPI\s*Perubahan\s*TERBIT/i.test(_obt2St);
+      const _pertekPerubahanTerbit = /PERTEK\s*Perubahan\s*TERBIT/i.test(_obt2St);
+      const _spiCellHtml = (_pertekPerubahanTerbit && !_spiPerubahanTerbit)
+        ? '<span style="color:var(--orange);font-style:italic;font-size:10px;line-height:1.3">⏳ waiting SPI Perubahan Terbit</span>'
+        : (co.spiNo || '<span style="color:var(--txt3)">—</span>');
+
       const tr = document.createElement('tr'); tr.className = rowClass;
       tr.innerHTML = `
         <td style="color:var(--txt3);font-size:13px;cursor:pointer;padding:8px 10px" onclick="openDrawer('${co.code}')">↗</td>
@@ -474,6 +490,8 @@ function buildRevDetailTable() {
         <td style="font-size:11px;color:var(--txt3)">${co.revSubmitDate}</td>
         <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${co.revStatus}</span></td>
         <td class="t-r t-mono">${co.revMT ? co.revMT.toLocaleString() : '—'}</td>
+        <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--blue)">${co.pertekNo || '<span style="color:var(--txt3)">—</span>'}</td>
+        <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--teal)">${_spiCellHtml}</td>
         <td style="vertical-align:top">${salesReqCell}</td>`;
       tbody.appendChild(tr);
     });
