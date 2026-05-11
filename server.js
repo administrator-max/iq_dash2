@@ -878,6 +878,28 @@ app.patch('/api/company/:code', async (req, res) => {
       await client.query(`UPDATE companies SET updated_at = NOW() WHERE code = $1`, [code]);
     }
 
+    // Keep pending_meta in sync for PENDING companies. The frontend stores
+    // user edits in co.statusUpdate / co.status / co.date / co.mt; without
+    // this upsert the NewSubmission cells re-load with stale data because
+    // /api/data reads mt/status/date from pending_meta.
+    if (body.pendingMt !== undefined || body.pendingStatus !== undefined ||
+        body.pendingDate !== undefined) {
+      const { rows: secRows } = await client.query(
+        `SELECT section FROM companies WHERE code = $1`, [code]
+      );
+      if (secRows.length && secRows[0].section === 'PENDING') {
+        await client.query(
+          `INSERT INTO pending_meta (company_code, mt, status, date)
+           VALUES ($1, COALESCE($2,0), COALESCE($3,''), COALESCE($4,''))
+           ON CONFLICT (company_code) DO UPDATE SET
+             mt     = COALESCE(EXCLUDED.mt,     pending_meta.mt),
+             status = COALESCE(EXCLUDED.status, pending_meta.status),
+             date   = COALESCE(EXCLUDED.date,   pending_meta.date)`,
+          [code, body.pendingMt ?? null, body.pendingStatus ?? null, body.pendingDate ?? null]
+        );
+      }
+    }
+
     // Handle shipments upsert
     if (body.shipments) {
       // body.shipments = { product: [{ lotNo, utilMT, etaJKT, note, realMT, pibDate, cargoArrived }] }
@@ -956,6 +978,94 @@ app.patch('/api/company/:code', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('PATCH /api/company/:code error:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// POST /api/company  — create a new PENDING company (New Submission)
+// Used when CorpSec adds a company that exists in company_directory but
+// hasn't been entered as PENDING/SPI yet (e.g. PT IKM submitting its
+// first MOI). Idempotent: returns 409 if the code is already taken.
+// ═══════════════════════════════════════════════════════════════════
+app.post('/api/company', async (req, res) => {
+  const { code, grp, products, mt, status, date, remarks, statusUpdate,
+          submitDate, updatedBy } = req.body || {};
+  if (!code) return res.status(400).json({ error: 'code is required' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Reject duplicates so we don't silently clobber existing data.
+    const { rows: existing } = await client.query(
+      `SELECT code FROM companies WHERE code = $1`, [code]
+    );
+    if (existing.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `Company ${code} already exists` });
+    }
+
+    // Resolve full_name from directory if the client didn't supply one.
+    const { rows: dirRows } = await client.query(
+      `SELECT full_name FROM company_directory WHERE abbreviation = $1 LIMIT 1`, [code]
+    );
+    const fullName = (req.body.fullName) || (dirRows[0] && dirRows[0].full_name) || '';
+
+    await client.query(
+      `INSERT INTO companies
+         (code, full_name, grp, section, submit1, obtained, utilization_mt,
+          rev_type, remarks, status_update, updated_by, updated_date,
+          created_at, updated_at)
+       VALUES ($1,$2,$3,'PENDING',$4,0,0,'none',$5,$6,$7,$8,NOW(),NOW())`,
+      [code, fullName, grp || 'CD', mt || 0,
+       remarks || '', statusUpdate || '', updatedBy || '',
+       new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'})]
+    );
+
+    // Products: one row per product (sort_order = position)
+    const prodList = Array.isArray(products) ? products.filter(Boolean) : [];
+    for (let i = 0; i < prodList.length; i++) {
+      await client.query(
+        `INSERT INTO company_products (company_code, product, sort_order)
+         VALUES ($1,$2,$3)`,
+        [code, prodList[i], i]
+      );
+    }
+
+    // Pending meta row holds mt/status/date for the New Submission table.
+    await client.query(
+      `INSERT INTO pending_meta (company_code, mt, status, date)
+       VALUES ($1,$2,$3,$4)`,
+      [code, mt || 0, status || '', date || '']
+    );
+
+    // Seed a Submit #1 cycle so the company shows up on the lead-time /
+    // pipeline analytics with the correct MOI date.
+    const cycleProducts = {};
+    prodList.forEach(p => { cycleProducts[p] = mt || 0; });
+    const { rows: cyRows } = await client.query(
+      `INSERT INTO cycles
+         (company_code, cycle_type, mt, submit_type, submit_date,
+          release_type, release_date, status, sort_order)
+       VALUES ($1,'Submit #1',$2,'Submit MOI',$3,'PERTEK','TBA',$4,0)
+       RETURNING id`,
+      [code, String(mt || 0), submitDate || '', statusUpdate || '']
+    );
+    for (const [prod, pmt] of Object.entries(cycleProducts)) {
+      await client.query(
+        `INSERT INTO cycle_products (cycle_id, product, mt) VALUES ($1,$2,$3)`,
+        [cyRows[0].id, prod, String(pmt)]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ ok: true, code, fullName });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('POST /api/company error:', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();

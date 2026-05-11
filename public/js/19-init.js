@@ -40,10 +40,51 @@ window.onload = async () => {
 
   updateStorageStatus();
 
-  // Populate edit dropdown — sorted alphabetically A→Z
+  // Populate edit dropdown — single flat list, sorted alphabetically A→Z.
+  // Label format: "CODE — Full Company Name" (resolved from
+  // company_directory). Listing products instead of names was confusing
+  // because multiple companies share the same product list.
+  // Includes:
+  //   1. All existing SPI/PENDING companies (for editing)
+  //   2. Companies from company_directory that don't yet have any
+  //      submission row — so CorpSec can add a brand-new New Submission
+  //      (e.g. PT IKM filing its first MOI). dataset.isNew flags these
+  //      so saveEdit POSTs /api/company instead of PATCHing.
   const sel = document.getElementById('editCo');
-  const allCos = [...SPI,...PENDING].sort((a,b) => a.code.localeCompare(b.code));
-  allCos.forEach(d => { const o=document.createElement('option'); o.value=d.code; o.textContent=`${d.code} — ${(d.products||[]).join(', ')}`; sel.appendChild(o); });
+  const existingCodes = new Set([...SPI, ...PENDING].map(d => d.code));
+  const resolveName = code => {
+    if (typeof lookupCompanyNameByCode === 'function') {
+      const n = lookupCompanyNameByCode(code);
+      if (n) return n;
+    }
+    return '';
+  };
+
+  // Build a unified list of {code, name, isNew} entries
+  const dropdownEntries = [];
+  [...SPI, ...PENDING].forEach(d => {
+    dropdownEntries.push({
+      code: d.code,
+      name: d.fullName || resolveName(d.code) || (d.products || []).join(', '),
+      isNew: false,
+    });
+  });
+  (COMPANY_DIRECTORY || []).forEach(d => {
+    if (!d.abbreviation || existingCodes.has(d.abbreviation)) return;
+    dropdownEntries.push({
+      code: d.abbreviation,
+      name: d.fullName || '',
+      isNew: true,
+    });
+  });
+  dropdownEntries.sort((a, b) => a.code.localeCompare(b.code));
+  dropdownEntries.forEach(e => {
+    const o = document.createElement('option');
+    o.value = e.code;
+    o.textContent = `${e.code} — ${e.name}`;
+    if (e.isNew) o.dataset.isNew = '1';
+    sel.appendChild(o);
+  });
 
   // Charts
   buildPipeline(); buildProductDonut(); buildTopCo(); buildCmpChart(); buildGauge(); buildUtilChart(); buildFlowKPIStrip(); buildAvailableQuota(); buildOUChart(); buildOUChartOverview();

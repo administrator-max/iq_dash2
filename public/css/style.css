@@ -490,16 +490,14 @@ tr:hover td { background:#f9fafb }
 .role-banner { padding:12px 14px 10px; background:linear-gradient(135deg,#f8fafc,#eef2ff); border:1px solid var(--blue-bd); border-radius:var(--r2); margin-bottom:14px }
 .role-banner-lbl { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1.2px; color:var(--blue); margin-bottom:8px; display:flex; align-items:center; gap:5px }
 .role-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px }
-.role-btn { border:1.5px solid var(--border2); border-radius:var(--r); background:var(--surf); padding:8px 6px; cursor:pointer; text-align:center; transition:all .14s; display:flex; flex-direction:column; align-items:center; gap:3px }
-.role-btn:hover { border-color:var(--blue); background:var(--blue-bg); transform:translateY(-1px) }
-.role-btn.active { border-color:currentColor; transform:translateY(-1px); box-shadow:0 2px 8px rgba(0,0,0,.1) }
+.role-btn { border:1.5px solid var(--border2); border-radius:var(--r); background:var(--surf); padding:8px 6px; cursor:pointer; text-align:center; transition:all .14s; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--txt) }
+.role-btn:hover { transform:translateY(-1px) }
+.role-btn.active { transform:translateY(-1px); box-shadow:0 2px 8px rgba(0,0,0,.18) }
 .role-btn .rb-ico  { font-size:18px; line-height:1 }
-.role-btn .rb-name { font-size:10.5px; font-weight:700; line-height:1.2 }
+.role-btn .rb-name { font-size:10.5px; font-weight:700; line-height:1.2; color:var(--txt) }
 .role-btn .rb-desc { font-size:8.5px; color:var(--txt3); line-height:1.3; font-weight:400 }
-.role-btn.rb-corpsec.active  { background:#f0fdf4; border-color:#15803d; color:#15803d }
-.role-btn.rb-sales.active    { background:#eff4ff; border-color:#1e56c6; color:#1e56c6 }
-.role-btn.rb-ops.active      { background:#fff7ed; border-color:#c2410c; color:#c2410c }
-.role-btn.rb-super.active    { background:#f5f3ff; border-color:#5b21b6; color:#5b21b6 }
+/* Per-role active states live in lines ~1117–1140 — keep both blocks
+   in sync to avoid the white-on-pastel illegibility regression. */
 
 /* ── ROLE LOCK ── */
 .role-lock-msg { display:flex; align-items:center; gap:8px; padding:10px 13px; background:#fffbeb; border:1px solid var(--amber-bd); border-radius:var(--r); margin-bottom:12px; font-size:11.5px; color:var(--amber) }
@@ -1114,26 +1112,44 @@ th .tti::before { left: 6px; transform: none; }
    Added: April 2026
 ══════════════════════════════════════════════════════════════════ */
 
-/* ── Role button color variants ─────────────────────────────────── */
-.rb-corpsec { background: linear-gradient(135deg, #eff4ff, #dbeafe); border-color: var(--blue-bd); }
-.rb-corpsec:hover, .rb-corpsec.active { background: var(--blue); color: #fff; border-color: var(--blue); }
-.rb-corpsec:hover .rb-name, .rb-corpsec:hover .rb-desc,
-.rb-corpsec.active .rb-name, .rb-corpsec.active .rb-desc { color: #fff; }
+/* ── Role button color variants ───────────────────────────────────
+   Default  : pastel gradient bg + dark theme-colored text  (legible)
+   Hover    : same pastel + slight lift                     (preview)
+   Active   : saturated bg + white text                     (selected)
+   Important: text colors on .rb-name / .rb-desc are set EXPLICITLY at
+   every state so they can't be wiped by an inherited rule.
+─────────────────────────────────────────────────────────────────── */
+.rb-corpsec                                { background:linear-gradient(135deg,#eff4ff,#dbeafe); border-color:var(--blue-bd); color:#1e3a8a; }
+.rb-corpsec .rb-name                       { color:#1e3a8a; }
+.rb-corpsec .rb-desc                       { color:#3b5bb5; }
+.rb-corpsec:hover                          { border-color:var(--blue); }
+.rb-corpsec.active                         { background:var(--blue); border-color:var(--blue); color:#fff; }
+.rb-corpsec.active .rb-name,
+.rb-corpsec.active .rb-desc                { color:#fff; }
 
-.rb-sales { background: linear-gradient(135deg, #edfcf2, #d1fae5); border-color: var(--green-bd); }
-.rb-sales:hover, .rb-sales.active { background: var(--green); color: #fff; border-color: var(--green); }
-.rb-sales:hover .rb-name, .rb-sales:hover .rb-desc,
-.rb-sales.active .rb-name, .rb-sales.active .rb-desc { color: #fff; }
+.rb-sales                                  { background:linear-gradient(135deg,#edfcf2,#d1fae5); border-color:var(--green-bd); color:#14532d; }
+.rb-sales .rb-name                         { color:#14532d; }
+.rb-sales .rb-desc                         { color:#15803d; }
+.rb-sales:hover                            { border-color:var(--green); }
+.rb-sales.active                           { background:var(--green); border-color:var(--green); color:#fff; }
+.rb-sales.active .rb-name,
+.rb-sales.active .rb-desc                  { color:#fff; }
 
-.rb-ops { background: linear-gradient(135deg, #fff7ed, #fed7aa); border-color: var(--orange-bd); }
-.rb-ops:hover, .rb-ops.active { background: var(--orange); color: #fff; border-color: var(--orange); }
-.rb-ops:hover .rb-name, .rb-ops:hover .rb-desc,
-.rb-ops.active .rb-name, .rb-ops.active .rb-desc { color: #fff; }
+.rb-ops                                    { background:linear-gradient(135deg,#fff7ed,#fed7aa); border-color:var(--orange-bd); color:#7c2d12; }
+.rb-ops .rb-name                           { color:#7c2d12; }
+.rb-ops .rb-desc                           { color:#9a3412; }
+.rb-ops:hover                              { border-color:var(--orange); }
+.rb-ops.active                             { background:var(--orange); border-color:var(--orange); color:#fff; }
+.rb-ops.active .rb-name,
+.rb-ops.active .rb-desc                    { color:#fff; }
 
-.rb-super { background: linear-gradient(135deg, #f5f3ff, #ddd6fe); border-color: var(--violet-bd); }
-.rb-super:hover, .rb-super.active { background: var(--violet); color: #fff; border-color: var(--violet); }
-.rb-super:hover .rb-name, .rb-super:hover .rb-desc,
-.rb-super.active .rb-name, .rb-super.active .rb-desc { color: #fff; }
+.rb-super                                  { background:linear-gradient(135deg,#f5f3ff,#ddd6fe); border-color:var(--violet-bd); color:#4c1d95; }
+.rb-super .rb-name                         { color:#4c1d95; }
+.rb-super .rb-desc                         { color:#6d28d9; }
+.rb-super:hover                            { border-color:var(--violet); }
+.rb-super.active                           { background:var(--violet); border-color:var(--violet); color:#fff; }
+.rb-super.active .rb-name,
+.rb-super.active .rb-desc                  { color:#fff; }
 
 /* ── Product MT table inputs ─────────────────────────────────────── */
 .pmt-submit-inp,

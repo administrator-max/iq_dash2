@@ -277,6 +277,27 @@ async function fetchWithRetry(url, opts, attempts) {
   throw lastErr || new Error('fetchWithRetry: exhausted retries');
 }
 
+/* ── Create a new PENDING company on the server ──────────────────────
+   Used by saveEdit when CorpSec adds a brand-new company (one that
+   exists in company_directory but hasn't been entered into PENDING/SPI
+   yet — e.g. PT IKM submitting its first MOI). Server creates the
+   companies/company_products/pending_meta/cycles rows in one txn. */
+async function createPendingOnServer(payload) {
+  if (!payload || !payload.code) throw new Error('createPendingOnServer: code required');
+  const res = await fetchWithRetry('/api/company', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const e = new Error(err.error || `HTTP ${res.status}`);
+    e.status = res.status;
+    throw e;
+  }
+  return res.json();
+}
+
 async function patchToServer(co) {
   if (!co || !co.code) return;
 
@@ -331,6 +352,12 @@ async function patchToServer(co) {
     updatedDate:   co.updatedDate   || '',
     shipments:     shipPayload,
     reapplyTargets,
+    // PENDING-specific fields land in the pending_meta table on the server.
+    // Without these the NewSubmission row reverts to stale mt/status/date
+    // after a refresh even though the user edited them.
+    pendingMt:     co.mt != null ? co.mt : null,
+    pendingStatus: co.status != null ? co.status : null,
+    pendingDate:   co.date != null ? co.date : null,
     // Optimistic concurrency token — server rejects 409 if the row was
     // modified server-side after this timestamp (multi-user safety).
     _ifUpdatedAt:  co._updatedAt    || null,

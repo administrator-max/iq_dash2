@@ -549,7 +549,10 @@ function renderSPI() {
     });
     pRows.forEach(d => {
       const cy = (d.cycles||[]).find(c => /submit/i.test(c.type) && !/obtained/i.test(c.type));
-      const latestStatus = cy ? (cy.status || d.status) : d.status;
+      // Prefer the user's most recent input (statusUpdate) so manual updates
+      // immediately reflect; fall back to cycle status, then plain company status.
+      const latestStatus = d.statusUpdate || (cy && cy.status) || d.status || '';
+      const statusUpdateCell = d.statusUpdate || d.remarks || '';
       const tr = document.createElement('tr'); tr.className = 'tr-pending';
       tr.innerHTML = `
         <td><div class="t-code" onclick="openDrawerPending('${d.code}')">${d.code}</div></td>
@@ -560,7 +563,7 @@ function renderSPI() {
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td><span class="badge b-pending">📬 New Submission</span></td>
         <td style="font-size:11px;color:var(--red2);line-height:1.4">${latestStatus||'—'}</td>
-        <td style="font-size:10.5px;color:var(--txt3)">${d.remarks||'—'}</td>
+        <td style="font-size:10.5px;color:var(--txt3)">${statusUpdateCell||'—'}</td>
         <td style="color:var(--txt3);font-size:11px">—</td>
         <td style="color:var(--txt3);font-size:11px">—</td>`;
       tbody.appendChild(tr);

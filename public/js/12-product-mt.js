@@ -404,7 +404,32 @@ function loadEdit() {
   if (!c) { ef.style.display = 'none'; return; }
 
   // Find record — could be in SPI or PENDING
-  const co  = getSPI(c) || PENDING.find(p => p.code === c);
+  let co  = getSPI(c) || PENDING.find(p => p.code === c);
+  // If the code came from the "(New)" optgroup (company exists only in
+  // company_directory but has no submission yet), create an in-memory
+  // PENDING stub so the form renders normally. On save, saveEdit detects
+  // the _isNew flag and POSTs /api/company instead of PATCHing.
+  if (!co) {
+    const opt = g('editCo') && g('editCo').selectedOptions && g('editCo').selectedOptions[0];
+    const isNew = opt && opt.dataset && opt.dataset.isNew === '1';
+    if (isNew) {
+      const fullName = (typeof lookupCompanyNameByCode === 'function')
+        ? lookupCompanyNameByCode(c) : '';
+      co = {
+        code: c, fullName, group: 'CD', section: 'PENDING',
+        products: ['GL BORON'], mt: 0,
+        submit1: 0, obtained: 0,
+        remarks: '', status: '', date: '', statusUpdate: '',
+        revType: 'none', cycles: [
+          { type: 'Submit #1', mt: 0, products: { 'GL BORON': 0 },
+            submitType: 'Submit MOI', submitDate: '',
+            releaseType: 'PERTEK', releaseDate: 'TBA', status: '' }
+        ],
+        _isNew: true,
+      };
+      PENDING.push(co);
+    }
+  }
   const ra  = getRA(c);
   const ac  = co ? (co.cycles || []) : [];
 

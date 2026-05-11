@@ -955,6 +955,10 @@ function saveEdit() {
         if (subCy && canSubmit && Object.keys(newSubmitProds).length > 0) {
           subCy.products = { ...subCy.products, ...newSubmitProds };
         }
+        // Sync cycle status with submission-level statusUpdate so the
+        // "Current Status Only" cell on the New Submission table reflects
+        // the user's latest manual update (the cell prefers cy.status).
+        if (subCy && newStatusUpdate) subCy.status = newStatusUpdate;
       }
     }
   }
@@ -1157,9 +1161,40 @@ function saveEdit() {
     // Also save PENDING company changes to server
     const pi2 = PENDING.findIndex(p => p.code === c);
     if (pi2 >= 0) {
-      patchToServer(PENDING[pi2]).catch(err =>
-        notifySaveError('PENDING update', err)
-      );
+      const pRec = PENDING[pi2];
+      if (pRec._isNew) {
+        // Brand-new company (from "(New)" optgroup) — POST to /api/company
+        // so the companies/company_products/pending_meta rows get created
+        // before any PATCH (which would 404 on a missing row).
+        createPendingOnServer({
+          code:         pRec.code,
+          fullName:     pRec.fullName || '',
+          grp:          pRec.group || 'CD',
+          products:     pRec.products || [],
+          mt:           pRec.mt || 0,
+          status:       pRec.status || '',
+          date:         pRec.date || '',
+          remarks:      pRec.remarks || '',
+          statusUpdate: pRec.statusUpdate || '',
+          submitDate:   (pRec.cycles && pRec.cycles[0] && pRec.cycles[0].submitDate) || '',
+          updatedBy:    pRec.updatedBy || currentRole || '',
+        }).then(() => {
+          delete pRec._isNew; // first save complete — subsequent edits use PATCH
+          return patchToServer(pRec); // sync cycles + remaining fields
+        }).catch(err => {
+          if (err && err.status === 409) {
+            if (typeof showToast === 'function') {
+              showToast(`⚠ Company ${pRec.code} sudah ada di database — refresh halaman.`, 'error');
+            }
+            return;
+          }
+          notifySaveError('PENDING create', err);
+        });
+      } else {
+        patchToServer(pRec).catch(err =>
+          notifySaveError('PENDING update', err)
+        );
+      }
     }
     showSaveToast(new Date().toISOString());
   }
