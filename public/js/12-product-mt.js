@@ -128,7 +128,7 @@ function buildProductMTTables(co) {
       }, 0);
 
       subWrap.innerHTML = `
-        <table class="pmt-table">
+        <table class="pmt-table" id="submitProdTable">
           <thead>
             <tr>
               <th>Product &amp; HS Code <span class="tti" data-tip="Gunakan dropdown untuk memilih atau mengganti produk. Kode HS update otomatis saat produk diganti. Mengganti nama produk akan membuat record SPI Issued → Revision saat Save, dan akan merambat ke semua chart, tabel, dan data master.">i</span></th>
@@ -142,7 +142,8 @@ function buildProductMTTables(co) {
               <td class="pmt-total-val" id="submitMTTotal">${totalSubmit.toLocaleString()} MT</td>
             </tr>
           </tfoot>
-        </table>`;
+        </table>
+        <button type="button" class="pmt-add-btn" onclick="addProductRow('submit')">+ Add Product</button>`;
     }
   }
 
@@ -182,7 +183,7 @@ function buildProductMTTables(co) {
       }, 0);
 
       obtWrap.innerHTML = `
-        <table class="pmt-table">
+        <table class="pmt-table" id="obtainedProdTable">
           <thead>
             <tr>
               <th>Product &amp; HS Code <span class="tti" data-tip="Satu nomor PERTEK mencakup semua produk. Isi Obtained MT per produk secara individual — meski dokumen PERTEK hanya satu. Total akan masuk ke KPI 2 (SPI/PERTEK Obtained).">i</span></th>
@@ -197,7 +198,8 @@ function buildProductMTTables(co) {
               <td class="pmt-total-val" id="obtainedMTTotal">${totalObtained.toLocaleString()} MT</td>
             </tr>
           </tfoot>
-        </table>`;
+        </table>
+        <button type="button" class="pmt-add-btn" onclick="addProductRow('obtained')">+ Add Product</button>`;
     }
   }
 
@@ -215,6 +217,141 @@ function buildProductMTTables(co) {
       inp.disabled = !allowed.includes('obtainedProdTable');
     });
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   addProductRow — append a new row to the Submit or Obtained MT table.
+   mode: 'submit' | 'obtained'
+   The new row gets a product <select> (master list from PROD_DOT_COLORS
+   + PRODUCT_META), an MT input, and the same dataset.prod wiring so
+   collectProductMTs() picks it up at save time without other changes.
+   Default product = first one not yet present in the current table.
+   ══════════════════════════════════════════════════════════════════════ */
+function addProductRow(mode) {
+  const tableId = mode === 'submit' ? 'submitProdTable' : 'obtainedProdTable';
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  const inpClass = mode === 'submit' ? 'pmt-submit-inp' : 'pmt-obtained-inp';
+  // All products available — union of in-memory PROD_DOT_COLORS + DB PRODUCT_META
+  const allKeys = Array.from(new Set([
+    ...Object.keys(PROD_DOT_COLORS),
+    ...Object.keys((typeof PRODUCT_META === 'object' && PRODUCT_META) || {}),
+  ])).sort();
+  // Pick a product not yet shown in this table
+  const used = new Set();
+  tbody.querySelectorAll('.' + inpClass).forEach(inp => {
+    if (inp.dataset.prod) used.add(inp.dataset.prod);
+  });
+  const defaultProd = allKeys.find(p => !used.has(p)) || allKeys[0] || 'GL BORON';
+
+  const ri = tbody.querySelectorAll('tr').length;
+  const opts = allKeys.map(op =>
+    `<option value="${op}"${op === defaultProd ? ' selected' : ''}>${op} · HS ${prodHS(op)}</option>`
+  ).join('');
+
+  const tr = document.createElement('tr');
+  tr.dataset.origProd = defaultProd;
+  tr.dataset.added = '1'; // mark as user-added (for save path)
+
+  if (mode === 'submit') {
+    tr.innerHTML = `
+      <td style="padding:5px 8px">
+        <div class="pmt-sel-wrap">
+          <select
+            class="pmt-prod-select pmt-prod-rename"
+            data-row="${ri}"
+            data-orig="${defaultProd}"
+            onchange="onAddedProdSelectChange(this)">
+            ${opts}
+          </select>
+          <div class="pmt-hs-row">
+            <div class="pmt-prod-dot pmt-added-dot" style="background:${prodDot(defaultProd)}"></div>
+            <span class="pmt-hs-chip pmt-added-hs">HS ${prodHS(defaultProd)}</span>
+            <span class="pmt-new-pill" style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);margin-left:4px">+ New</span>
+          </div>
+        </div>
+      </td>
+      <td style="width:145px;padding:5px 8px;display:flex;gap:4px;align-items:center">
+        <input type="text" inputmode="numeric"
+          class="pmt-mt-inp ${inpClass}"
+          data-prod="${defaultProd}"
+          value=""
+          placeholder="0"
+          oninput="fmtThousandInline(this);livePreview()">
+        <button type="button" class="pmt-remove-btn" title="Remove this row" onclick="removeProductRow(this)">✕</button>
+      </td>`;
+  } else {
+    // obtained mode — also include a "Submitted" reference cell (empty for new rows)
+    tr.innerHTML = `
+      <td style="padding:5px 8px">
+        <div class="pmt-sel-wrap">
+          <select
+            class="pmt-prod-select"
+            onchange="onAddedProdSelectChange(this)">
+            ${opts}
+          </select>
+          <div class="pmt-hs-row">
+            <div class="pmt-prod-dot pmt-added-dot" style="background:${prodDot(defaultProd)}"></div>
+            <span class="pmt-hs-chip pmt-added-hs">HS ${prodHS(defaultProd)}</span>
+            <span class="pmt-new-pill" style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);margin-left:4px">+ New</span>
+          </div>
+        </div>
+      </td>
+      <td class="pmt-ref-mt">—</td>
+      <td style="width:140px;padding:5px 8px;display:flex;gap:4px;align-items:center">
+        <input type="text" inputmode="numeric"
+          class="pmt-mt-inp ${inpClass}"
+          data-prod="${defaultProd}"
+          value=""
+          placeholder="0"
+          oninput="fmtThousandInline(this);updateObtainedTotal();livePreview()">
+        <button type="button" class="pmt-remove-btn" title="Remove this row" onclick="removeProductRow(this)">✕</button>
+      </td>`;
+  }
+
+  tbody.appendChild(tr);
+  // Apply role lock to the freshly-added input
+  if (currentRole) {
+    const allowed = ROLE_PERMISSIONS[currentRole] || [];
+    const key = mode === 'submit' ? 'submitProdTable' : 'obtainedProdTable';
+    const canEdit = allowed.includes(key);
+    tr.querySelectorAll('input, select').forEach(el => { el.disabled = !canEdit; });
+  }
+  livePreview();
+}
+
+/* Re-wire the MT input's data-prod when the user picks a different
+   product in an ADDED row (existing rows use onProdSelectChange which
+   tracks renames; added rows just switch the dataset). */
+function onAddedProdSelectChange(sel) {
+  const newProd = sel.value;
+  const tr = sel.closest('tr');
+  if (!tr) return;
+  const inp = tr.querySelector('.pmt-mt-inp');
+  if (inp) inp.dataset.prod = newProd;
+  const dot = tr.querySelector('.pmt-added-dot');
+  if (dot) dot.style.background = prodDot(newProd);
+  const hs = tr.querySelector('.pmt-added-hs');
+  if (hs) hs.textContent = 'HS ' + prodHS(newProd);
+  livePreview();
+}
+
+function removeProductRow(btn) {
+  const tr = btn.closest('tr');
+  if (tr) tr.remove();
+  // Recompute totals after row removal
+  let st = 0;
+  document.querySelectorAll('.pmt-submit-inp').forEach(i => {
+    const n = parseFloat((i.value || '').replace(/,/g,''));
+    if (!isNaN(n)) st += n;
+  });
+  const subTotEl = g('submitMTTotal');
+  if (subTotEl) subTotEl.textContent = st.toLocaleString() + ' MT';
+  updateObtainedTotal();
+  livePreview();
 }
 
 /* ══════════════════════════════════════════════════════════════════════

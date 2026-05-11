@@ -954,6 +954,11 @@ function saveEdit() {
         // Write per-product submit MT into pending cycle.products
         if (subCy && canSubmit && Object.keys(newSubmitProds).length > 0) {
           subCy.products = { ...subCy.products, ...newSubmitProds };
+          // Keep p.products list in sync for newly-added products
+          if (!Array.isArray(p.products)) p.products = [];
+          Object.keys(newSubmitProds).forEach(prod => {
+            if (!p.products.includes(prod)) p.products.push(prod);
+          });
         }
         // Sync cycle status with submission-level statusUpdate so the
         // "Current Status Only" cell on the New Submission table reflects
@@ -978,6 +983,12 @@ function saveEdit() {
         // Write per-product breakdown into cycle.products
         subCy.products = { ...subCy.products, ...newSubmitProds };
       }
+      // Keep co.products list in sync (add any products user just added
+      // via the "+ Add Product" button on the Submit MT table).
+      if (!Array.isArray(co.products)) co.products = [];
+      Object.keys(newSubmitProds).forEach(p => {
+        if (!co.products.includes(p)) co.products.push(p);
+      });
     }
     if (newSubmitDate && subCy) subCy.submitDate = newSubmitDate;
 

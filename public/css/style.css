@@ -593,6 +593,10 @@ tr:hover td { background:#f9fafb }
 .pmt-table thead th.t-r { text-align:right }
 .pmt-table tbody td { padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:middle }
 .pmt-table tbody tr:last-child td { border-bottom:none }
+.pmt-add-btn   { margin-top:6px; padding:5px 11px; border:1.5px dashed var(--blue-bd); background:var(--blue-bg); color:var(--blue); border-radius:var(--r); font-size:10.5px; font-weight:700; cursor:pointer; transition:background .14s, border-color .14s }
+.pmt-add-btn:hover { background:#dbeafe; border-color:var(--blue); border-style:solid }
+.pmt-remove-btn { padding:0 6px; min-width:22px; height:22px; border:1px solid var(--red-bd); background:var(--red-bg); color:var(--red2); border-radius:3px; font-size:11px; font-weight:700; cursor:pointer; flex-shrink:0; line-height:1 }
+.pmt-remove-btn:hover { background:#fecaca; }
 .pmt-prod-chip { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600 }
 .pmt-hs-badge  { display:inline-block; font-family:'DM Mono',monospace; font-size:10px; font-weight:600;
                  color:#0369a1; background:#eff6ff; border:1px solid #bfdbfe; border-radius:3px;
