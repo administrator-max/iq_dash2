@@ -1210,6 +1210,15 @@ function saveEdit() {
     showSaveToast(new Date().toISOString());
   }
 
+  // Save succeeded (optimistically) — discard the form draft so it
+  // doesn't reappear next time. If the server PATCH later fails, the
+  // saveToStorage() snapshot above plus the migrateLocalToServer()
+  // retry on next boot still protect against data loss.
+  if (c && currentRole && typeof clearFormDraft === 'function') {
+    clearFormDraft(c, currentRole);
+    if (typeof refreshDropdownDraftBadges === 'function') refreshDropdownDraftBadges();
+  }
+
   cancelEdit();
   closeImport();
   buildRoleHistory && buildRoleHistory();

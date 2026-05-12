@@ -623,6 +623,27 @@ function loadEdit() {
   // Apply role-based field permissions (also locks/unlocks product table inputs)
   applyRolePermissions();
   applyShipmentRoleLock();
+
+  // ── Restore unsaved draft (if any) for this (role, company) ──
+  // Runs AFTER the form is populated from DB so the draft *overrides*
+  // stale DB values for fields the user was actively editing. Cleared
+  // when saveEdit succeeds or when the user explicitly discards.
+  if (typeof loadFormDraft === 'function' && currentRole) {
+    const draft = loadFormDraft(c, currentRole);
+    if (draft && typeof applyFormDraft === 'function') {
+      const restored = applyFormDraft(draft);
+      if (restored > 0 && typeof showToast === 'function') {
+        const ageMs  = Date.now() - new Date(draft.ts).getTime();
+        const ageTxt = ageMs < 60000
+          ? `${Math.round(ageMs/1000)}s lalu`
+          : ageMs < 3600000
+            ? `${Math.round(ageMs/60000)}m lalu`
+            : `${Math.round(ageMs/3600000)}j lalu`;
+        showToast(`📝 Draft ${c} dipulihkan (${ageTxt}) — klik Save untuk commit, atau lanjut edit`, 'info');
+      }
+    }
+  }
+
   livePreview();
   buildRoleHistory();
 }

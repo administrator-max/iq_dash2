@@ -98,7 +98,126 @@ function navFilter(f) {
 function openImport()  {
   document.getElementById('importModal').classList.add('open');
   setMTab('manual', document.querySelector('.mtab.active') || document.querySelector('.mtab'));
+  // Mark companies with saved drafts in the dropdown so user knows
+  // there's unfinished work to resume.
+  if (typeof refreshDropdownDraftBadges === 'function') refreshDropdownDraftBadges();
 }
 
-function closeImport() { document.getElementById('importModal').classList.remove('open'); }
+function closeImport() {
+  // ── Snapshot current form state so accidental close (✕ / backdrop /
+  //    Esc) doesn't lose user input. Save is keyed by (role, company).
+  //    Survives until next save-success or 7d TTL.
+  try {
+    if (typeof captureModalState === 'function' && typeof saveFormDraft === 'function') {
+      const s = captureModalState();
+      if (s && s.code && s.role) {
+        saveFormDraft(s.code, s.role, s.data);
+        if (typeof refreshDropdownDraftBadges === 'function') refreshDropdownDraftBadges();
+        // Brief, low-key toast — only when there's actually a draft to save
+        if (typeof showToast === 'function' &&
+            typeof _isDraftNonEmpty === 'function' && _isDraftNonEmpty(s.data)) {
+          showToast(`📝 Draft ${s.code} disimpan — buka kembali untuk lanjut`, 'info');
+        }
+      }
+    }
+  } catch(e) { console.warn('closeImport draft save failed:', e); }
+  document.getElementById('importModal').classList.remove('open');
+}
 function setMTab(id,el){ document.querySelectorAll('.mtab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); document.querySelectorAll('.m-sec').forEach(s=>s.classList.remove('active')); document.getElementById('mt-'+id).classList.add('active'); }
+
+/* ══════════════════════════════════════════════════
+   FORM DRAFT — capture / restore / debounced auto-save
+   Persists modal field values across accidental closes.
+══════════════════════════════════════════════════ */
+function captureModalState() {
+  const codeEl = document.getElementById('editCo');
+  if (!codeEl || !codeEl.value) return null;
+  const role = typeof currentRole !== 'undefined' ? currentRole : null;
+  if (!role) return null;
+  const data = { fields: {}, submitMT: {}, obtainedMT: {}, reapplyMT: {} };
+  // Simple top-level inputs that hold submission/PERTEK/SPI/status info.
+  ['eSubmitDate','ePertekNo','ePertekDate','eSpiNo','eSpiDate',
+   'eStatus','eStatusUpdate','eRem','eTarget','eBerat','eETA',
+   'ePIBRelease','eUtilMT'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.value !== '' && el.value != null) data.fields[id] = el.value;
+  });
+  document.querySelectorAll('.pmt-submit-inp').forEach(inp => {
+    if (inp.value && inp.dataset.prod) data.submitMT[inp.dataset.prod] = inp.value;
+  });
+  document.querySelectorAll('.pmt-obtained-inp').forEach(inp => {
+    if (inp.value && inp.dataset.prod) data.obtainedMT[inp.dataset.prod] = inp.value;
+  });
+  document.querySelectorAll('.reapply-prod-inp').forEach(inp => {
+    if (inp.value && inp.dataset.prod) data.reapplyMT[inp.dataset.prod] = inp.value;
+  });
+  return { code: codeEl.value, role, data };
+}
+
+function applyFormDraft(draft) {
+  if (!draft || !draft.data) return 0;
+  const d = draft.data;
+  let restored = 0;
+  const _q = sel => { try { return document.querySelector(sel); } catch(e) { return null; } };
+  Object.entries(d.fields || {}).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) { el.value = val; restored++; }
+  });
+  Object.entries(d.submitMT || {}).forEach(([prod, val]) => {
+    const inp = _q(`.pmt-submit-inp[data-prod="${CSS.escape(prod)}"]`);
+    if (inp) { inp.value = val; restored++; }
+  });
+  Object.entries(d.obtainedMT || {}).forEach(([prod, val]) => {
+    const inp = _q(`.pmt-obtained-inp[data-prod="${CSS.escape(prod)}"]`);
+    if (inp) { inp.value = val; restored++; }
+  });
+  Object.entries(d.reapplyMT || {}).forEach(([prod, val]) => {
+    const inp = _q(`.reapply-prod-inp[data-prod="${CSS.escape(prod)}"]`);
+    if (inp) { inp.value = val; restored++; }
+  });
+  return restored;
+}
+
+let _draftSaveTimer = null;
+function scheduleDraftSave() {
+  clearTimeout(_draftSaveTimer);
+  _draftSaveTimer = setTimeout(() => {
+    try {
+      const s = captureModalState();
+      if (s && typeof saveFormDraft === 'function') {
+        saveFormDraft(s.code, s.role, s.data);
+      }
+    } catch(e) { /* swallow */ }
+  }, 500);
+}
+
+/* Add a 📝 badge to dropdown options whose code has a saved draft so
+   the user knows where to resume. Idempotent — safe to call multiple
+   times after open / save / discard. */
+function refreshDropdownDraftBadges() {
+  const sel = document.getElementById('editCo');
+  if (!sel || typeof listDraftCompanyCodes !== 'function') return;
+  const drafts = listDraftCompanyCodes();
+  Array.from(sel.options).forEach(opt => {
+    if (!opt.value) return;
+    const baseText = opt.dataset.baseLabel || opt.textContent.replace(/^📝\s*/, '');
+    opt.dataset.baseLabel = baseText;
+    opt.textContent = drafts.has(opt.value) ? `📝 ${baseText}` : baseText;
+  });
+}
+
+/* One-time wire: attach a debounced input listener to the import modal
+   so any typing / select-change triggers a draft save. Runs after DOM
+   is ready; safe to call multiple times (event listener is idempotent). */
+function _wireDraftCaptureOnce() {
+  const modal = document.getElementById('importModal');
+  if (!modal || modal.dataset.draftWired === '1') return;
+  modal.dataset.draftWired = '1';
+  modal.addEventListener('input',  scheduleDraftSave, true);
+  modal.addEventListener('change', scheduleDraftSave, true);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _wireDraftCaptureOnce);
+} else {
+  _wireDraftCaptureOnce();
+}

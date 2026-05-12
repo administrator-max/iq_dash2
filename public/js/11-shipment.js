@@ -225,14 +225,16 @@ function buildSalesRow(prod, idx, lot, obtMT) {
         class="ship-txt-inp sales-eta-inp"
         data-prod="${prod}" data-idx="${idx}"
         value="${eta}"
-        placeholder="e.g. 07 Mar 26">
+        placeholder="e.g. 07 Mar 26"
+        oninput="onSalesEtaChange(this)">
     </td>
     <td>
       <input type="text"
         class="ship-txt-inp sales-note-inp"
         data-prod="${prod}" data-idx="${idx}"
         value="${note}"
-        placeholder="Vessel / note…">
+        placeholder="Vessel / note…"
+        oninput="onSalesNoteChange(this)">
     </td>
     <td>
       <button class="del-ship-btn" onclick="deleteSalesLot('${prod}', ${idx})"
@@ -403,20 +405,80 @@ async function patchShipmentsToServer(co) {
     const obtByProd = getObtainedByProd(co);
     const totalUtil  = Object.keys(obtByProd).reduce((s, p) => s + totalUtilForProd(co.shipments || {}, p), 0);
     const totalAvail = Math.max(0, (co.obtained || 0) - totalUtil);
+    // Build shipments payload — server expects an object keyed by product
+    // with arrays of lots. Mirrors the shape patchToServer sends.
+    const shipPayload = {};
+    if (co.shipments) {
+      Object.entries(co.shipments).forEach(([prod, lots]) => {
+        if (!Array.isArray(lots) || !lots.length) return;
+        shipPayload[prod] = lots.map((l, i) => ({
+          lotNo:        l.lotNo || l.lot || (i + 1),
+          utilMT:       l.utilMT || 0,
+          etaJKT:       l.etaJKT || '',
+          note:         l.note   || '',
+          realMT:       l.realMT || 0,
+          pibDate:      l.pibDate || '',
+          cargoArrived: l.cargoArrived || l.arrived || false,
+        }));
+      });
+    }
     const body = {
-      shipments: co.shipments || {},
-      utilization_mt:  totalUtil,
-      available_quota: totalAvail,
+      shipments:       shipPayload,
+      utilizationMt:   totalUtil,
+      availableQuota:  totalAvail,
+      // Send concurrency token so a stale write can't clobber newer DB data
+      // (matches the multi-user safety contract used by patchToServer).
+      _ifUpdatedAt:    co._updatedAt || null,
     };
-    const resp = await fetch(`/api/company/${co.code}`, {
-      method: 'PATCH',
+    // Use fetchWithRetry so transient 5xx / network errors don't lose
+    // shipment edits — same resilience the main Save button enjoys.
+    const _fetch = (typeof fetchWithRetry === 'function')
+      ? fetchWithRetry
+      : (url, opts) => fetch(url, opts);
+    const resp = await _fetch(`/api/company/${encodeURIComponent(co.code)}`, {
+      method:  'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body:    JSON.stringify(body),
     });
-    if (!resp.ok) console.error(`PATCH /api/company/${co.code} failed`);
+    if (resp.status === 409) {
+      console.warn(`PATCH shipments ${co.code} — 409 concurrency conflict`);
+      if (typeof showToast === 'function') {
+        showToast(`⚠ ${co.code} diubah pengguna lain — refresh untuk dapat data terbaru sebelum lanjut edit.`, 'error');
+      }
+      return;
+    }
+    if (!resp.ok) {
+      console.error(`PATCH /api/company/${co.code} failed`, resp.status);
+      // Keep the user's edit in localStorage so it can retry next boot
+      if (typeof saveToStorage === 'function') saveToStorage();
+      return;
+    }
+    // Refresh concurrency token from server response
+    const result = await resp.json().catch(() => ({}));
+    if (result && result.updatedAt) co._updatedAt = result.updatedAt;
   } catch (err) {
     console.error('patchShipmentsToServer error:', err);
+    // Network error — keep snapshot in localStorage; migrateLocalToServer
+    // will retry on next boot.
+    if (typeof saveToStorage === 'function') saveToStorage();
   }
+}
+
+/* Debounced autosave for Sales/Ops shipment lot field changes.
+   Previously only the per-lot "Simpan" button (Sales utilMT) or main
+   Save committed shipment edits. Ops realMT/PIB/shipname and Sales
+   ETA/note had no autosave at all — close the modal mid-edit, lose
+   the data. This debounces a single shipments PATCH ~600ms after the
+   last keystroke so DB persistence becomes implicit. */
+let _shipDebounceTimer = null;
+function scheduleShipmentsPersist() {
+  clearTimeout(_shipDebounceTimer);
+  _shipDebounceTimer = setTimeout(() => {
+    const co = getCurrentEditCo();
+    if (!co) return;
+    if (typeof saveToStorage === 'function') saveToStorage();
+    patchShipmentsToServer(co);
+  }, 600);
 }
 
 function saveSalesUtil(prod, idx) {
@@ -599,6 +661,8 @@ function onOpsRealChange(inp) {
   }
 
   livePreview();
+  // Autosave: debounced PATCH so closing the modal won't lose this value
+  scheduleShipmentsPersist();
 }
 
 /* ── Ops: PIB date changed ── */
@@ -613,6 +677,36 @@ function onOpsPibChange(inp) {
     co.shipments[prod][idx].arrived = inp.value.trim() !== '';
   }
   livePreview();
+  scheduleShipmentsPersist(); // autosave so close-without-save can't lose this
+}
+
+/* Sales ETA — autosave on typing so the value doesn't get lost if the
+   modal is closed before main Save. Mirrors Ops' input handlers. */
+function onSalesEtaChange(inp) {
+  const prod = inp.dataset.prod;
+  const idx  = parseInt(inp.dataset.idx);
+  const co   = getCurrentEditCo();
+  if (!co) return;
+  ensureShipments(co);
+  if (co.shipments[prod] && co.shipments[prod][idx] !== undefined) {
+    co.shipments[prod][idx].etaJKT = inp.value.trim();
+  }
+  livePreview();
+  scheduleShipmentsPersist();
+}
+
+/* Sales note / vessel name — autosave on typing. */
+function onSalesNoteChange(inp) {
+  const prod = inp.dataset.prod;
+  const idx  = parseInt(inp.dataset.idx);
+  const co   = getCurrentEditCo();
+  if (!co) return;
+  ensureShipments(co);
+  if (co.shipments[prod] && co.shipments[prod][idx] !== undefined) {
+    co.shipments[prod][idx].note = inp.value;
+  }
+  livePreview();
+  scheduleShipmentsPersist();
 }
 
 /* Ops shipment name — writes to the same `note` field that Sales uses,
@@ -627,6 +721,7 @@ function onOpsShipNameChange(inp) {
     co.shipments[prod][idx].note = inp.value;
   }
   livePreview();
+  scheduleShipmentsPersist();
 }
 
 /* ── Apply role lock to new shipment inputs ── */
@@ -764,7 +859,7 @@ function buildReapplyTable(co) {
       <span style="font-size:11px;font-weight:700;color:var(--txt2)">Target Re-Apply per Produk</span>
       <span class="tti" data-tip="Satu baris per produk. Isi target MT re-apply untuk siklus quota berikutnya — tidak tergantung utilisasi saat ini.">i</span>
     </div>
-    <table class="pmt-table">
+    <table class="pmt-table" id="reapplyProdTable">
       <thead>
         <tr>
           <th>Product</th>
@@ -779,11 +874,80 @@ function buildReapplyTable(co) {
           <td class="pmt-total-val" id="reapplyTotal">${grandTotal.toLocaleString()} MT</td>
         </tr>
       </tfoot>
-    </table>`;
+    </table>
+    <button type="button" class="pmt-add-btn" onclick="addReapplyProductRow()">+ Add Product</button>`;
 
   // Apply role lock
   const canSales = currentRole && (ROLE_PERMISSIONS[currentRole]||[]).includes('salesShipTable');
   wrap.querySelectorAll('.reapply-prod-inp').forEach(inp => { inp.disabled = !canSales; });
+}
+
+/* Add a new product row to the Re-Apply Target table.
+   Lets Sales declare intent to re-apply for a product that's NOT yet
+   in the current obtained quota (forward-looking next-cycle planning).
+   The row's product is picked from the master product list and the
+   .reapply-prod-inp class makes collectReapplyData read it as usual. */
+function addReapplyProductRow() {
+  const table = document.getElementById('reapplyProdTable');
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+
+  const allKeys = Array.from(new Set([
+    ...Object.keys((typeof PROD_DOT_COLORS === 'object' && PROD_DOT_COLORS) || {}),
+    ...Object.keys((typeof PRODUCT_META === 'object' && PRODUCT_META) || {}),
+  ])).sort();
+
+  const used = new Set();
+  tbody.querySelectorAll('.reapply-prod-inp').forEach(inp => {
+    if (inp.dataset.prod) used.add(inp.dataset.prod);
+  });
+  const defaultProd = allKeys.find(p => !used.has(p)) || allKeys[0] || 'GL BORON';
+
+  const opts = allKeys.map(op =>
+    `<option value="${op}"${op === defaultProd ? ' selected' : ''}>${op}</option>`
+  ).join('');
+
+  const tr = document.createElement('tr');
+  tr.dataset.added = '1';
+  tr.innerHTML = `
+    <td>
+      <div class="pmt-sel-wrap">
+        <select class="pmt-prod-select" onchange="onReapplyProdChange(this)">${opts}</select>
+        <div class="pmt-hs-row">
+          <div class="pmt-prod-dot pmt-reapply-dot" style="background:${prodDot(defaultProd)}"></div>
+          <span class="pmt-new-pill" style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);margin-left:4px">+ New</span>
+        </div>
+      </div>
+    </td>
+    <td class="pmt-ref-mt">—</td>
+    <td style="width:140px;padding:5px 8px;display:flex;gap:4px;align-items:center">
+      <input type="text" inputmode="numeric"
+        class="pmt-mt-inp reapply-prod-inp"
+        data-prod="${defaultProd}"
+        value=""
+        placeholder="0"
+        oninput="fmtThousandInline(this)">
+      <button type="button" class="pmt-remove-btn" title="Remove this row" onclick="removeReapplyRow(this)">✕</button>
+    </td>`;
+  tbody.appendChild(tr);
+
+  // Apply role lock to the newly-added input
+  const canSales = currentRole && (ROLE_PERMISSIONS[currentRole]||[]).includes('salesShipTable');
+  tr.querySelectorAll('input, select').forEach(el => { el.disabled = !canSales; });
+}
+
+function onReapplyProdChange(sel) {
+  const tr = sel.closest('tr'); if (!tr) return;
+  const inp = tr.querySelector('.reapply-prod-inp');
+  if (inp) inp.dataset.prod = sel.value;
+  const dot = tr.querySelector('.pmt-reapply-dot');
+  if (dot) dot.style.background = prodDot(sel.value);
+}
+
+function removeReapplyRow(btn) {
+  const tr = btn.closest('tr');
+  if (tr) tr.remove();
 }
 
 /* ── Collect re-apply data from form → co.reapplyByProd ── */

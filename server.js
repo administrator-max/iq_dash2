@@ -878,6 +878,26 @@ app.patch('/api/company/:code', async (req, res) => {
       await client.query(`UPDATE companies SET updated_at = NOW() WHERE code = $1`, [code]);
     }
 
+    // Replace company_products list when client sends it. The frontend's
+    // "+Add Product" / rename flows mutate co.products[]; without this
+    // upsert the master table stays at the original product set so any
+    // query that joins on company_products misses the new entries.
+    // Semantics: full replace (DELETE then INSERT) keyed by company_code.
+    // Frontend always sends the complete current list.
+    if (Array.isArray(body.products)) {
+      await client.query(
+        `DELETE FROM company_products WHERE company_code = $1`, [code]
+      );
+      const dedup = Array.from(new Set(body.products.filter(Boolean)));
+      for (let i = 0; i < dedup.length; i++) {
+        await client.query(
+          `INSERT INTO company_products (company_code, product, sort_order)
+           VALUES ($1, $2, $3)`,
+          [code, dedup[i], i]
+        );
+      }
+    }
+
     // Keep pending_meta in sync for PENDING companies. The frontend stores
     // user edits in co.statusUpdate / co.status / co.date / co.mt; without
     // this upsert the NewSubmission cells re-load with stale data because

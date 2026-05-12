@@ -12,7 +12,100 @@
    via `clearStorageForCode()` so we never overwrite newer DB data.
 ═══════════════════════════════════════ */
 
-const LS_KEY = 'quotaDashboard_v1';
+const LS_KEY        = 'quotaDashboard_v1';
+const LS_DRAFT_KEY  = 'quotaDashboard_v1_drafts';
+
+/* ══════════════════════════════════════════════════════════════════
+   FORM DRAFTS — survive accidental modal close
+   ──────────────────────────────────────────────────────────────────
+   The Input Data modal can be closed by ✕, backdrop click, Esc key,
+   or company-switch — none of which trigger Save. Without drafts the
+   user loses everything they typed. We snapshot the form on every
+   input (debounced 500ms) and on closeImport(); restore on next open.
+   Storage shape (in localStorage[LS_DRAFT_KEY]):
+     { "<role>::<code>": { code, role, ts, data: { fields, submitMT,
+       obtainedMT, reapplyMT } } }
+   Drafts older than 7 days auto-prune on read so localStorage doesn't
+   bloat indefinitely.
+══════════════════════════════════════════════════════════════════ */
+const _DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+function _draftKey(code, role) { return `${role||'_'}::${code||'_'}`; }
+function _readAllDrafts() {
+  try {
+    const drafts = JSON.parse(localStorage.getItem(LS_DRAFT_KEY)) || {};
+    // Auto-prune stale drafts so the store stays small
+    const cutoff = Date.now() - _DRAFT_TTL_MS;
+    let pruned = false;
+    Object.keys(drafts).forEach(k => {
+      const ts = drafts[k] && drafts[k].ts ? new Date(drafts[k].ts).getTime() : 0;
+      if (!ts || ts < cutoff) { delete drafts[k]; pruned = true; }
+    });
+    if (pruned) {
+      try { localStorage.setItem(LS_DRAFT_KEY, JSON.stringify(drafts)); }
+      catch(e) {}
+    }
+    return drafts;
+  } catch(e) {
+    return {};
+  }
+}
+function _writeAllDrafts(drafts) {
+  try { localStorage.setItem(LS_DRAFT_KEY, JSON.stringify(drafts)); }
+  catch(e) { console.warn('draft write failed:', e); }
+}
+
+/** Save (or update) the modal form draft for a given (code, role). */
+function saveFormDraft(code, role, data) {
+  if (!code || !role) return;
+  // Skip if data is effectively empty — don't bloat with no-op drafts
+  if (!data || !_isDraftNonEmpty(data)) {
+    clearFormDraft(code, role);
+    return;
+  }
+  const drafts = _readAllDrafts();
+  drafts[_draftKey(code, role)] = {
+    code, role, data,
+    ts: new Date().toISOString(),
+  };
+  _writeAllDrafts(drafts);
+}
+
+function _isDraftNonEmpty(data) {
+  if (!data) return false;
+  const hasFields = data.fields && Object.values(data.fields).some(v => v != null && v !== '');
+  const hasSubmit = data.submitMT && Object.keys(data.submitMT).length;
+  const hasObtained = data.obtainedMT && Object.keys(data.obtainedMT).length;
+  const hasReapply = data.reapplyMT && Object.keys(data.reapplyMT).length;
+  return !!(hasFields || hasSubmit || hasObtained || hasReapply);
+}
+
+/** Read a single draft, or null if none / stale. */
+function loadFormDraft(code, role) {
+  if (!code || !role) return null;
+  const drafts = _readAllDrafts();
+  return drafts[_draftKey(code, role)] || null;
+}
+
+/** Delete a draft after a successful save (or user discards). */
+function clearFormDraft(code, role) {
+  if (!code || !role) return;
+  const drafts = _readAllDrafts();
+  const key = _draftKey(code, role);
+  if (drafts[key]) {
+    delete drafts[key];
+    _writeAllDrafts(drafts);
+  }
+}
+
+/** Returns a Set of company codes that have at least one draft, for
+    dropdown badging ("📝 draft pending"). Role-agnostic. */
+function listDraftCompanyCodes() {
+  const drafts = _readAllDrafts();
+  const codes = new Set();
+  Object.values(drafts).forEach(d => { if (d && d.code) codes.add(d.code); });
+  return codes;
+}
+
 
 /** Fields that can change at runtime and should be persisted */
 const RA_MUTABLE  = ['berat','realPct','utilPct','cargoArrived','arrivalDate',
@@ -352,6 +445,11 @@ async function patchToServer(co) {
     updatedDate:   co.updatedDate   || '',
     shipments:     shipPayload,
     reapplyTargets,
+    // Sync the canonical company_products list. Without this, adding a
+    // new product via "+Add Product" only writes to cycle_products via
+    // patchCyclesToServer — the master products table stays stale and
+    // some server queries see the OLD product list on reload.
+    products:      Array.isArray(co.products) ? co.products.filter(Boolean) : null,
     // PENDING-specific fields land in the pending_meta table on the server.
     // Without these the NewSubmission row reverts to stale mt/status/date
     // after a refresh even though the user edited them.
