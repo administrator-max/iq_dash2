@@ -40,8 +40,27 @@ const pool = new Pool({
   password: process.env.PGPASSWORD,
   port:     process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
   ssl:      useSSL ? { rejectUnauthorized: false } : false,
-  max:      10,
+  // Pool tuning (board-approved 2026):
+  //   max — small dyno = small pool; oversizing causes "too many clients"
+  //         errors against Neon's free-tier 100-connection ceiling.
+  //   idleTimeoutMillis — return idle clients to free Neon compute faster
+  //   connectionTimeoutMillis — fail fast if pool is exhausted (better than
+  //         hanging forever; user gets a clear error and can retry)
+  //   maxUses — recycle each client after 7500 queries to prevent slow
+  //         backend memory leak common in long-lived PG connections
+  //   keepAlive — keep TCP socket alive so the pooler doesn't time out
+  //         this connection during quiet periods (matters for serverless)
+  max:                     Number(process.env.PG_POOL_MAX) || 10,
+  idleTimeoutMillis:       30_000,
+  connectionTimeoutMillis: 8_000,
+  maxUses:                 7_500,
+  keepAlive:               true,
 });
+
+// Surface pool errors instead of crashing the process. A single bad
+// client (e.g. Neon revoked the conn during scale-to-zero) shouldn't
+// take down the whole server.
+pool.on('error', err => console.error('[pg pool] idle client error:', err.message));
 
 // ── Middleware ───────────────────────────────────────────────────
 // gzip compression — JSON responses (notably /api/data, ~100KB+) drop
@@ -651,6 +670,158 @@ const KPI_RECONCILE = [
   }
 })();
 
+// ── Server-side cache for /api/data (board-approved 2026) ───────
+// Without this, every concurrent user hits the DB. With multiple users
+// loading the dashboard at the same time, query queueing on the pool
+// can spike per-user latency into the tens of seconds.
+//
+// Strategy: in-memory TTL cache + single-flight de-dup.
+//   - First request builds the payload (~500ms-2s) and caches it 30s
+//   - Concurrent requests during the build piggyback on the same promise
+//     (no second DB hit)
+//   - Subsequent requests within 30s serve from RAM (<5ms)
+//   - PATCH endpoints invalidate the cache so writes are visible
+//     immediately on next read
+const _dataCache = {
+  payload:    null,
+  expiresAt:  0,
+  inflight:   null,   // Promise — singleflight for stampede protection
+  ttlMs:      30_000,
+};
+function invalidateDataCache() {
+  _dataCache.payload   = null;
+  _dataCache.expiresAt = 0;
+}
+
+async function _buildDataPayload() {
+  // Product master metadata (HS codes + colors). Always returned, even
+  // when no companies exist yet, so the frontend can hydrate its
+  // PRODUCT_META cache before rendering empty states.
+  const [{ rows: productMeta }, { rows: aliasRows }, { rows: dirRows }] = await Promise.all([
+    pool.query(
+      `SELECT name, hs_code, color_solid, color_light, color_text, sort_order
+       FROM products ORDER BY sort_order, name`
+    ),
+    pool.query(`SELECT alias, canonical FROM product_aliases`).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT full_name, abbreviation, sort_order FROM company_directory ORDER BY sort_order, full_name`
+    ).catch(() => ({ rows: [] })),
+  ]);
+  const productsList = productMeta.map(p => ({
+    name:       p.name,
+    hsCode:     p.hs_code     || '',
+    colorSolid: p.color_solid || '#64748b',
+    colorLight: p.color_light || '#f1f5f9',
+    colorText:  p.color_text  || '#475569',
+    sortOrder:  Number(p.sort_order) || 0,
+  }));
+  const aliasMap = {};
+  aliasRows.forEach(a => { aliasMap[a.alias] = a.canonical; });
+  const companyDirectory = dirRows.map(r => ({
+    fullName:     r.full_name,
+    abbreviation: r.abbreviation,
+    sortOrder:    Number(r.sort_order) || 0,
+  }));
+
+  const { rows: companies } = await pool.query(
+    `SELECT * FROM companies ORDER BY section, code`
+  );
+  const codes = companies.map(c => c.code);
+  if (!codes.length) return { spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory };
+
+  const [
+    { rows: products },
+    { rows: stats },
+    { rows: revChanges },
+    { rows: pendMetas },
+    { rows: raRows },
+    { rows: shipRows },
+    { rows: reapplyRows },
+    cyclesMap,
+  ] = await Promise.all([
+    pool.query(`SELECT * FROM company_products WHERE company_code = ANY($1) ORDER BY company_code, sort_order`, [codes]),
+    pool.query(`SELECT * FROM company_product_stats WHERE company_code = ANY($1)`, [codes]),
+    pool.query(`SELECT * FROM revision_changes WHERE company_code = ANY($1) ORDER BY company_code, direction, sort_order`, [codes]),
+    pool.query(`SELECT * FROM pending_meta WHERE company_code = ANY($1)`, [codes]),
+    pool.query(`SELECT * FROM ra_records WHERE company_code = ANY($1) ORDER BY company_code`, [codes]),
+    pool.query(`SELECT * FROM company_shipments WHERE company_code = ANY($1) ORDER BY company_code, product, lot_no`, [codes]),
+    pool.query(`SELECT * FROM company_reapply_targets WHERE company_code = ANY($1)`, [codes]),
+    getCyclesFor(codes),
+  ]);
+
+  const byCode = (arr, key='company_code') => {
+    const m = {};
+    arr.forEach(r => { const k=r[key]; if(!m[k])m[k]=[]; m[k].push(r); });
+    return m;
+  };
+  const prodMap    = byCode(products);
+  const statsMap   = byCode(stats);
+  const revMap     = byCode(revChanges);
+  const pendMap    = {};
+  pendMetas.forEach(p => pendMap[p.company_code] = p);
+  const shipMap    = {};
+  shipRows.forEach(s => {
+    if (!shipMap[s.company_code]) shipMap[s.company_code] = {};
+    if (!shipMap[s.company_code][s.product]) shipMap[s.company_code][s.product] = [];
+    shipMap[s.company_code][s.product].push({
+      lotNo:        s.lot_no,
+      utilMT:       Number(s.util_mt)||0,
+      etaJKT:       s.eta_jkt||'',
+      note:         s.note||'',
+      realMT:       Number(s.real_mt)||0,
+      pibDate:      s.pib_date||'',
+      cargoArrived: s.cargo_arrived||false,
+    });
+  });
+
+  const spi     = [];
+  const pending = [];
+  companies.forEach(co => {
+    const obj = buildCompanyObj(
+      co,
+      prodMap[co.code],
+      statsMap[co.code],
+      revMap[co.code],
+      revMap[co.code],
+      cyclesMap[co.code],
+      pendMap[co.code],
+      shipMap[co.code] || {},
+      reapplyRows.filter(r => r.company_code === co.code),
+    );
+    if (co.section === 'SPI')     spi.push(obj);
+    else                          pending.push(obj);
+  });
+
+  const ra = [];
+  raRows.forEach(r => {
+    ra.push({
+      code:                r.company_code,
+      product:             r.product,
+      berat:               Number(r.berat)||0,
+      obtained:            Number(r.obtained)||0,
+      cargoArrived:        r.cargo_arrived||false,
+      realPct:             Number(r.real_pct)||0,
+      utilPct:             r.util_pct!=null ? Number(r.util_pct) : null,
+      arrivalDate:         r.arrival_date||null,
+      etaJKT:              r.eta_jkt||null,
+      reapplyEst:          r.reapply_est||'',
+      reapplyStage:        Number(r.reapply_stage)||1,
+      reapplyProduct:      r.reapply_product||null,
+      reapplyNewTotal:     r.reapply_new_total!=null?Number(r.reapply_new_total):null,
+      reapplyPrevObtained: r.reapply_prev_obtained!=null?Number(r.reapply_prev_obtained):null,
+      reapplyAdditional:   r.reapply_additional!=null?Number(r.reapply_additional):null,
+      reapplySubmitDate:   r.reapply_submit_date||null,
+      reapplyStatus:       r.reapply_status||null,
+      target:              r.target!=null?Number(r.target):null,
+      pertek:              r.pertek||null,
+      spi:                 r.spi||null,
+      catatan:             r.catatan||null,
+    });
+  });
+
+  return { spi, pending, ra, products: productsList, productAliases: aliasMap, companyDirectory };
+}
+
 app.get('/api/data', async (req, res) => {
   // Browser cache: 30s fresh + 60s stale-while-revalidate.
   //   - max-age=30   → no network for the first 30s after a fetch
@@ -662,147 +833,41 @@ app.get('/api/data', async (req, res) => {
   // updatedAt concurrency token (HTTP 409 on conflict), so a slightly
   // older read can't cause a clobber.
   res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+
+  // ── Server-side cache check ────────────────────────────────────────
+  const now = Date.now();
+  if (_dataCache.payload && _dataCache.expiresAt > now) {
+    res.set('X-Cache', 'HIT');
+    return res.json(_dataCache.payload);
+  }
+  // Singleflight: piggyback on any in-flight build to prevent stampedes
+  if (_dataCache.inflight) {
+    try {
+      const payload = await _dataCache.inflight;
+      res.set('X-Cache', 'COALESCED');
+      return res.json(payload);
+    } catch (err) {
+      // Fall through to fresh fetch on inflight failure
+    }
+  }
   try {
-    // Product master metadata (HS codes + colors). Always returned, even
-    // when no companies exist yet, so the frontend can hydrate its
-    // PRODUCT_META cache before rendering empty states.
-    const [{ rows: productMeta }, { rows: aliasRows }, { rows: dirRows }] = await Promise.all([
-      pool.query(
-        `SELECT name, hs_code, color_solid, color_light, color_text, sort_order
-         FROM products ORDER BY sort_order, name`
-      ),
-      pool.query(`SELECT alias, canonical FROM product_aliases`).catch(() => ({ rows: [] })),
-      pool.query(
-        `SELECT full_name, abbreviation, sort_order FROM company_directory ORDER BY sort_order, full_name`
-      ).catch(() => ({ rows: [] })),
-    ]);
-    const productsList = productMeta.map(p => ({
-      name:       p.name,
-      hsCode:     p.hs_code     || '',
-      colorSolid: p.color_solid || '#64748b',
-      colorLight: p.color_light || '#f1f5f9',
-      colorText:  p.color_text  || '#475569',
-      sortOrder:  Number(p.sort_order) || 0,
-    }));
-    const aliasMap = {};
-    aliasRows.forEach(a => { aliasMap[a.alias] = a.canonical; });
-    const companyDirectory = dirRows.map(r => ({
-      fullName:     r.full_name,
-      abbreviation: r.abbreviation,
-      sortOrder:    Number(r.sort_order) || 0,
-    }));
-
-    const { rows: companies } = await pool.query(
-      `SELECT * FROM companies ORDER BY section, code`
-    );
-    const codes = companies.map(c => c.code);
-    if (!codes.length) return res.json({ spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory });
-
-    // Run all child-table queries in parallel — including getCyclesFor()
-    // (which itself does 2 sequential queries internally). Previously
-    // cyclesMap was awaited AFTER the batch, costing one extra round-trip
-    // per request. With Neon's per-query latency this saves ~100-200ms.
-    const [
-      { rows: products },
-      { rows: stats },
-      { rows: revChanges },
-      { rows: pendMetas },
-      { rows: raRows },
-      { rows: shipRows },
-      { rows: reapplyRows },
-      cyclesMap,
-    ] = await Promise.all([
-      pool.query(`SELECT * FROM company_products WHERE company_code = ANY($1) ORDER BY company_code, sort_order`, [codes]),
-      pool.query(`SELECT * FROM company_product_stats WHERE company_code = ANY($1)`, [codes]),
-      pool.query(`SELECT * FROM revision_changes WHERE company_code = ANY($1) ORDER BY company_code, direction, sort_order`, [codes]),
-      pool.query(`SELECT * FROM pending_meta WHERE company_code = ANY($1)`, [codes]),
-      pool.query(`SELECT * FROM ra_records WHERE company_code = ANY($1) ORDER BY company_code`, [codes]),
-      pool.query(`SELECT * FROM company_shipments WHERE company_code = ANY($1) ORDER BY company_code, product, lot_no`, [codes]),
-      pool.query(`SELECT * FROM company_reapply_targets WHERE company_code = ANY($1)`, [codes]),
-      getCyclesFor(codes),
-    ]);
-
-    // Group by code for fast lookup
-    const byCode = (arr, key='company_code') => {
-      const m = {};
-      arr.forEach(r => { const k=r[key]; if(!m[k])m[k]=[]; m[k].push(r); });
-      return m;
-    };
-    const prodMap    = byCode(products);
-    const statsMap   = byCode(stats);
-    const revMap     = byCode(revChanges);
-    const pendMap    = {};
-    pendMetas.forEach(p => pendMap[p.company_code] = p);
-    const raMap      = byCode(raRows);
-    const shipMap    = {}; // code → { product: [lot,...] }
-    shipRows.forEach(s => {
-      if (!shipMap[s.company_code]) shipMap[s.company_code] = {};
-      if (!shipMap[s.company_code][s.product]) shipMap[s.company_code][s.product] = [];
-      shipMap[s.company_code][s.product].push({
-        lotNo:        s.lot_no,
-        utilMT:       Number(s.util_mt)||0,
-        etaJKT:       s.eta_jkt||'',
-        note:         s.note||'',
-        realMT:       Number(s.real_mt)||0,
-        pibDate:      s.pib_date||'',
-        cargoArrived: s.cargo_arrived||false,
-      });
-    });
-    const reapplyMap = byCode(reapplyRows);
-
-    const spi     = [];
-    const pending = [];
-
-    companies.forEach(co => {
-      const obj = buildCompanyObj(
-        co,
-        prodMap[co.code],
-        statsMap[co.code],
-        revMap[co.code],
-        revMap[co.code],
-        cyclesMap[co.code],
-        pendMap[co.code],
-        shipMap[co.code] || {},
-        reapplyRows.filter(r => r.company_code === co.code),
-      );
-      if (co.section === 'SPI')     spi.push(obj);
-      else                          pending.push(obj);
-    });
-
-    // Build RA
-    const ra = [];
-    const processedCodes = new Set();
-    raRows.forEach(r => {
-      if (!processedCodes.has(r.company_code)) {
-        processedCodes.add(r.company_code);
-      }
-      ra.push({
-        code:                r.company_code,
-        product:             r.product,
-        berat:               Number(r.berat)||0,
-        obtained:            Number(r.obtained)||0,
-        cargoArrived:        r.cargo_arrived||false,
-        realPct:             Number(r.real_pct)||0,
-        utilPct:             r.util_pct!=null ? Number(r.util_pct) : null,
-        arrivalDate:         r.arrival_date||null,
-        etaJKT:              r.eta_jkt||null,
-        reapplyEst:          r.reapply_est||'',
-        reapplyStage:        Number(r.reapply_stage)||1,
-        reapplyProduct:      r.reapply_product||null,
-        reapplyNewTotal:     r.reapply_new_total!=null?Number(r.reapply_new_total):null,
-        reapplyPrevObtained: r.reapply_prev_obtained!=null?Number(r.reapply_prev_obtained):null,
-        reapplyAdditional:   r.reapply_additional!=null?Number(r.reapply_additional):null,
-        reapplySubmitDate:   r.reapply_submit_date||null,
-        reapplyStatus:       r.reapply_status||null,
-        target:              r.target!=null?Number(r.target):null,
-        pertek:              r.pertek||null,
-        spi:                 r.spi||null,
-        catatan:             r.catatan||null,
-      });
-    });
-
-    res.json({ spi, pending, ra, products: productsList, productAliases: aliasMap, companyDirectory });
+    // ── Single-flight cache build ──────────────────────────────────
+    // Wrap the build in a promise so concurrent /api/data requests reuse
+    // the same DB work. Once finished, populate the TTL cache.
+    _dataCache.inflight = (async () => {
+      const t0 = Date.now();
+      const payload = await _buildDataPayload();
+      _dataCache.payload   = payload;
+      _dataCache.expiresAt = Date.now() + _dataCache.ttlMs;
+      _dataCache.inflight  = null;
+      console.log(`/api/data built in ${Date.now() - t0}ms (cached ${_dataCache.ttlMs/1000}s)`);
+      return payload;
+    })();
+    const payload = await _dataCache.inflight;
+    res.set('X-Cache', 'MISS');
+    res.json(payload);
   } catch (err) {
+    _dataCache.inflight = null;
     console.error('/api/data error:', err);
     res.status(500).json({ error: err.message });
   }
@@ -986,6 +1051,7 @@ app.patch('/api/company/:code', async (req, res) => {
     }
 
     await client.query('COMMIT');
+    invalidateDataCache(); // write happened — next GET /api/data must re-read DB
     // Return the new updated_at so client can refresh its concurrency token
     // without needing a full re-fetch.
     const { rows: tsRow } = await pool.query(
@@ -1082,6 +1148,7 @@ app.post('/api/company', async (req, res) => {
     }
 
     await client.query('COMMIT');
+    invalidateDataCache(); // new company created — refresh cache
     res.json({ ok: true, code, fullName });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1141,6 +1208,7 @@ app.patch('/api/company/:code/cycles', async (req, res) => {
     }
 
     await client.query('COMMIT');
+    invalidateDataCache(); // cycles changed — refresh cache
     res.json({ ok: true, cycles: cycles.length });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1286,6 +1354,36 @@ async function insertRealization(client, code, row, defaults) {
 }
 
 // GET /api/realizations?company_code=CODE  — list realizations (optionally filtered)
+// GET /api/realizations/summary  — lightweight count per company
+// Used by the dashboard drawer to decide whether to show the "Detail
+// Realization" button (and a PIB count badge) WITHOUT pulling all the
+// row data into the initial /api/data payload.
+// Response: { counts: { 'BTS': { pibs: 2, lines: 9 }, ... }, totalPibs, totalLines }
+app.get('/api/realizations/summary', async (req, res) => {
+  res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+  try {
+    const { rows } = await pool.query(
+      `SELECT company_code,
+              COUNT(DISTINCT pib_no)::int AS pibs,
+              COUNT(*)::int              AS lines
+       FROM realizations
+       WHERE company_code IS NOT NULL
+       GROUP BY company_code`
+    );
+    const counts = {};
+    let totalPibs = 0, totalLines = 0;
+    rows.forEach(r => {
+      counts[r.company_code] = { pibs: r.pibs, lines: r.lines };
+      totalPibs  += r.pibs;
+      totalLines += r.lines;
+    });
+    res.json({ counts, totalPibs, totalLines });
+  } catch (err) {
+    console.error('GET /api/realizations/summary error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/realizations', async (req, res) => {
   const { company_code } = req.query;
   try {
@@ -1370,6 +1468,14 @@ app.delete('/api/realizations/:id', async (req, res) => {
 
 // ── Health check ────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+// Ultra-lightweight liveness probe for UptimeRobot / cron pings.
+// Does NOT touch the DB so even a cold pool doesn't queue these requests.
+// Set up an external pinger (UptimeRobot, cron-job.org) to hit /healthz
+// every 5 minutes to prevent Render/Heroku free-tier sleep (15min idle).
+app.get('/healthz', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.status(200).type('text/plain').send('ok');
+});
 
 // ── Fallback SPA ─────────────────────────────────────────────────
 app.get('*', (req, res) => {
@@ -1377,11 +1483,32 @@ app.get('*', (req, res) => {
 });
 
 // ── Start ────────────────────────────────────────────────────────
-initDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`🚀 IQ Dash running on http://localhost:${PORT}`);
-  });
-}).catch(err => {
-  console.error('Fatal startup error:', err);
-  process.exit(1);
+// COLD-START OPTIMIZATION (board-approved 2026):
+//   1. Listen IMMEDIATELY — every second the listener is delayed is a
+//      second the user waits behind the Render/Heroku spin-up.
+//   2. initDB() and pool warmup run in the BACKGROUND. By the time the
+//      first /api/data request lands, the pool has likely warmed and
+//      the schema check is done. If it isn't, the query queues briefly
+//      instead of blocking the whole server boot (5-15s saved).
+//   3. Set `SKIP_INIT_DB=1` in production envs after first deploy so
+//      we don't waste ~20 sequential CREATE TABLE round-trips on every
+//      dyno restart. The schema is already there.
+app.listen(PORT, async () => {
+  console.log(`🚀 IQ Dash listening on http://localhost:${PORT}`);
+  // Background schema check — non-blocking
+  if (process.env.SKIP_INIT_DB === '1') {
+    console.log('⏩ Skipping initDB (SKIP_INIT_DB=1)');
+  } else {
+    initDB().catch(err => console.error('initDB background error:', err));
+  }
+  // Pre-warm pool: open one connection so the first user request doesn't
+  // pay the ~8-roundtrip TCP+SSL handshake cost. Neon docs explicitly
+  // recommend this for serverless functions.
+  try {
+    const t0 = Date.now();
+    await pool.query('SELECT 1');
+    console.log(`🔥 Pool warmed in ${Date.now() - t0}ms`);
+  } catch (e) {
+    console.warn('Pool warmup failed (will retry on first request):', e.message);
+  }
 });

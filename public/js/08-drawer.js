@@ -247,7 +247,42 @@ function openDrawer(code) {
     </div>`;
   }
 
-  document.getElementById('d-body').innerHTML = statRow + buildCycleTimeline(co) + spiInfo + revInfo + utilInfo + reapplyInfo;
+  // ── Realization Details button block ────────────────────────────
+  // Independent dari ra (RA record). Render kalau company punya rows di
+  // table `realizations` (cek lewat REALIZATION_SUMMARY hasil endpoint
+  // /api/realizations/summary). Klik buka modal dengan PIB breakdown.
+  // Kalau belum ada data → tetap render tombol disabled-style sebagai
+  // hint untuk import, biar user tahu fitur tersedia.
+  const raSum = (typeof REALIZATION_SUMMARY === 'object' && REALIZATION_SUMMARY) ? REALIZATION_SUMMARY[co.code] : null;
+  const hasRa = !!(raSum && raSum.pibs > 0);
+  const raDetailBlock = `
+    <div class="d-sec">Realization (PIB Customs Data)</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:${hasRa?'#f0f7ff':'var(--bg2)'};border:1px solid ${hasRa?'var(--blue-bd)':'var(--border)'};border-radius:var(--r);margin-bottom:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--txt);margin-bottom:2px">
+          ${hasRa ? '📦 Imported customs data tersedia' : '📭 Belum ada data realisasi PIB'}
+        </div>
+        ${hasRa
+          ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd);border-radius:10px;font-family:'DM Mono',monospace">${raSum.pibs} PIB${raSum.pibs===1?'':'s'}</span>
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-bd);border-radius:10px;font-family:'DM Mono',monospace">${raSum.lines} line item${raSum.lines===1?'':'s'}</span>
+            </div>`
+          : `<div style="font-size:10.5px;color:var(--txt3);margin-top:2px">Import via Realization Import menu atau manual entry untuk lihat detail per-PIB.</div>`
+        }
+      </div>
+      <button onclick="openRealizationDetail('${co.code}')"
+        style="font-size:11px;font-weight:600;padding:7px 13px;border-radius:6px;
+               background:${hasRa?'var(--blue)':'var(--bg)'};color:${hasRa?'#fff':'var(--txt3)'};
+               border:${hasRa?'none':'1px solid var(--border2)'};cursor:pointer;
+               display:inline-flex;align-items:center;gap:5px;transition:all .14s;white-space:nowrap;flex-shrink:0"
+        onmouseover="this.style.background='${hasRa?'#1746b0':'var(--bg2)'}'"
+        onmouseout="this.style.background='${hasRa?'var(--blue)':'var(--bg)'}'"
+        title="Lihat detail per-PIB (Surat Persetujuan Pengeluaran Barang)">
+        📋 Detail Realization
+      </button>
+    </div>`;
+
+  document.getElementById('d-body').innerHTML = statRow + buildCycleTimeline(co) + spiInfo + revInfo + utilInfo + reapplyInfo + raDetailBlock;
   document.getElementById('overlay').classList.add('open');
 }
 
@@ -328,3 +363,357 @@ function handleSearch(q) {
   dd.classList.add('open');
 }
 document.addEventListener('click', e => { if (!e.target.closest('.g-search') && !e.target.closest('.s-drop')) document.getElementById('sDrop').classList.remove('open'); });
+
+/* ══════════════════════════════════════════════════
+   REALIZATION DETAILS MODAL — per-company PIB breakdown
+   Sources data from /api/realizations?company_code=CODE
+   Renders one card per PIB (= one ship arrival) with:
+     • Header: Company, Ship/Vessel Name, SPPB/PIB Number, Arrived Date
+     • Table:  line items (NO, URAIAN BARANG, HS, VOLUME, ...)
+   Plus Export XLSX of all line items for this company.
+══════════════════════════════════════════════════ */
+let _raDetailRows = []; // cached for export
+
+async function openRealizationDetail(code) {
+  if (!code) return;
+  const modal = document.getElementById('raDetailModal');
+  const body  = document.getElementById('raDetailBody');
+  if (!modal || !body) return;
+
+  // Resolve company full name (header)
+  const fullName = (typeof lookupCompanyNameByCode === 'function')
+    ? lookupCompanyNameByCode(code) : '';
+  const headerName = fullName || code;
+
+  // Lookup vessel candidate from co.shipments (the .note field is the
+  // user-typed ship name). We pass it down to the modal where each PIB
+  // group can fall back to it when realization rows lack vessel info.
+  const co = getSPI(code) || (typeof PENDING !== 'undefined' ? PENDING.find(p => p.code === code) : null);
+  const allShipNotes = new Set();
+  if (co && co.shipments) {
+    Object.values(co.shipments).forEach(lots => {
+      (lots || []).forEach(l => { if (l && l.note) allShipNotes.add(String(l.note).trim()); });
+    });
+  }
+  const vesselHint = Array.from(allShipNotes).filter(Boolean).join(' · ') || '—';
+
+  // Loading state
+  body.innerHTML = `<div style="padding:40px;text-align:center;color:var(--txt3);font-size:13px">
+    <div style="font-size:24px;margin-bottom:8px">⏳</div>
+    Loading realization data for <strong>${code}</strong>…
+  </div>`;
+  modal.style.display = 'block';
+
+  try {
+    const res = await fetch(`/api/realizations?company_code=${encodeURIComponent(code)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const rows = (data && data.realizations) || [];
+    _raDetailRows = rows;
+
+    if (!rows.length) {
+      body.innerHTML = `<div style="padding:40px;text-align:center;color:var(--txt3);font-size:13px">
+        <div style="font-size:32px;margin-bottom:8px">📦</div>
+        Belum ada data realisasi PIB untuk <strong>${headerName}</strong>.<br>
+        <span style="font-size:11px">Import via menu Realization Import atau tambah manual.</span>
+      </div>`;
+      return;
+    }
+
+    // Group rows by pib_no (one PIB = one arrival)
+    const groups = {};
+    rows.forEach(r => {
+      const key = r.pib_no || `(no-pib-${r.id})`;
+      if (!groups[key]) groups[key] = { pib_no: r.pib_no, pib_date: r.pib_date, items: [] };
+      groups[key].items.push(r);
+    });
+    const groupList = Object.values(groups).sort((a, b) =>
+      String(b.pib_date || '').localeCompare(String(a.pib_date || '')));
+
+    // Aggregate stats across ALL PIBs
+    const totalVol = rows.reduce((s, r) => s + (Number(r.volume)    || 0), 0);
+    const totalVal = rows.reduce((s, r) => s + (Number(r.value_usd) || 0), 0);
+    const _fmt = (n, d = 2) => n.toLocaleString(undefined, { maximumFractionDigits: d, minimumFractionDigits: 0 });
+
+    // ── Header summary strip ──────────────────────────────────────────
+    const summaryHTML = `
+      <div style="background:linear-gradient(135deg,#f0f7ff,#dbeafe);border:1px solid var(--blue-bd);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:var(--txt3);margin-bottom:2px">Company</div>
+          <div style="font-size:14px;font-weight:700;color:var(--txt);line-height:1.2">${headerName}</div>
+          <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-top:1px">${code}</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div style="text-align:center;padding:6px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;min-width:80px">
+            <div style="font-size:18px;font-weight:700;color:var(--blue);line-height:1;font-family:'DM Mono',monospace">${groupList.length}</div>
+            <div style="font-size:9.5px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">PIB${groupList.length===1?'':'s'}</div>
+          </div>
+          <div style="text-align:center;padding:6px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;min-width:80px">
+            <div style="font-size:18px;font-weight:700;color:var(--navy);line-height:1;font-family:'DM Mono',monospace">${rows.length}</div>
+            <div style="font-size:9.5px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">Line Items</div>
+          </div>
+          <div style="text-align:center;padding:6px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;min-width:110px">
+            <div style="font-size:18px;font-weight:700;color:var(--teal);line-height:1;font-family:'DM Mono',monospace">${_fmt(totalVol, 2)}</div>
+            <div style="font-size:9.5px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">Total Volume <span style="font-weight:400">(TNE)</span></div>
+          </div>
+          <div style="text-align:center;padding:6px 14px;background:#fff;border:1px solid var(--border);border-radius:8px;min-width:130px">
+            <div style="font-size:18px;font-weight:700;color:var(--green);line-height:1;font-family:'DM Mono',monospace">${_fmt(totalVal, 0)}</div>
+            <div style="font-size:9.5px;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-top:3px">Total Nilai <span style="font-weight:400">(USD)</span></div>
+          </div>
+        </div>
+        ${groupList.length > 1 ? `
+        <div style="display:flex;gap:5px;flex-shrink:0">
+          <button onclick="setAllRaPibs(true)" type="button" title="Expand all PIBs"
+            style="font-size:10px;font-weight:600;padding:5px 10px;border:1px solid var(--border2);background:#fff;color:var(--txt2);border-radius:6px;cursor:pointer">
+            ⬇ Expand all
+          </button>
+          <button onclick="setAllRaPibs(false)" type="button" title="Collapse all PIBs"
+            style="font-size:10px;font-weight:600;padding:5px 10px;border:1px solid var(--border2);background:#fff;color:var(--txt2);border-radius:6px;cursor:pointer">
+            ⬆ Collapse all
+          </button>
+        </div>` : ''}
+      </div>`;
+
+    // ── One collapsible card per PIB (first expanded by default) ────
+    const cardsHTML = groupList.map((g, gi) => {
+      const sppb     = g.pib_no || '—';
+      const arrived  = g.pib_date || '—';
+      const vesselFromRow = (g.items[0] && (g.items[0].vessel || g.items[0].ship_name)) || '';
+      const shipName = vesselFromRow || (vesselHint && vesselHint !== '—' ? vesselHint : '');
+      const pibVol   = g.items.reduce((s, r) => s + (Number(r.volume)    || 0), 0);
+      const pibVal   = g.items.reduce((s, r) => s + (Number(r.value_usd) || 0), 0);
+      const isOpen   = gi === 0; // first PIB expanded; others collapsed
+      const pid      = `raPib-${gi}`;
+
+      return `
+        <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.03)">
+          <!-- Collapsible header row -->
+          <button type="button" onclick="toggleRaPib('${pid}')"
+            style="width:100%;padding:11px 16px;background:#f8fafc;border:none;border-bottom:1px solid var(--border);
+                   display:flex;align-items:center;gap:14px;cursor:pointer;text-align:left;transition:background .14s"
+            onmouseover="this.style.background='#eff4ff'"
+            onmouseout="this.style.background='#f8fafc'">
+            <span id="${pid}-chev" style="font-size:11px;color:var(--txt3);transition:transform .18s;transform:${isOpen?'rotate(90deg)':'rotate(0deg)'};display:inline-block">▶</span>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0">
+              <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3)">PIB</span>
+              <span style="font-size:13px;font-weight:700;color:var(--blue);font-family:'DM Mono',monospace">${sppb}</span>
+              <span style="font-size:11px;color:var(--txt3)">·</span>
+              <span style="font-size:11px;color:var(--txt2)">Arrived <strong style="color:var(--txt);font-family:'DM Mono',monospace">${arrived}</strong></span>
+              ${shipName ? `<span style="font-size:11px;color:var(--txt3)">·</span>
+                <span style="font-size:11px;color:var(--txt2)">🚢 <strong style="color:var(--txt)">${shipName}</strong></span>` : ''}
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;background:var(--blue-bg);color:var(--blue);border-radius:10px;font-family:'DM Mono',monospace">${g.items.length} line${g.items.length===1?'':'s'}</span>
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;background:var(--teal-bg);color:var(--teal);border-radius:10px;font-family:'DM Mono',monospace">${_fmt(pibVol,2)} MT</span>
+              <span style="font-size:10px;font-weight:700;padding:2px 8px;background:var(--green-bg);color:var(--green);border-radius:10px;font-family:'DM Mono',monospace">\$${_fmt(pibVal,0)}</span>
+            </div>
+          </button>
+
+          <!-- Collapsible body -->
+          <!-- IMPORTANT: only overflow-x (for wide tables on small screens).
+               overflow-y MUST stay visible — otherwise each PIB traps the
+               scroll wheel and "Expand all" becomes unscrollable. Sticky
+               table headers stick to the OUTER modal body scroll context. -->
+          <div id="${pid}" style="display:${isOpen?'block':'none'}">
+            ${!shipName ? `<div style="padding:8px 16px;background:#fffbeb;border-bottom:1px solid var(--amber-bd);font-size:10.5px;color:var(--amber);font-style:italic">
+              ⚠ Nama kapal belum diisi — tambahkan via Sales/Ops "Vessel / Note" field
+            </div>` : ''}
+            <div class="ra-table-wrap" style="overflow-x:auto;overflow-y:hidden">
+              <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:1100px">
+                <thead style="position:sticky;top:0;z-index:5">
+                  <tr style="background:var(--navy);color:rgba(255,255,255,.85)">
+                    <th style="padding:7px 8px;text-align:right;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap;width:32px">NO</th>
+                    <th style="padding:7px 8px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.6px;min-width:240px">URAIAN BARANG</th>
+                    <th style="padding:7px 8px;text-align:center;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap" title="Pos Tarif / HS 10 Digit">HS CODE</th>
+                    <th style="padding:7px 8px;text-align:right;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">VOLUME</th>
+                    <th style="padding:7px 8px;text-align:center;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">SATUAN</th>
+                    <th style="padding:7px 8px;text-align:right;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">NILAI</th>
+                    <th style="padding:7px 8px;text-align:right;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">HRG. SATUAN</th>
+                    <th style="padding:7px 8px;text-align:right;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">KURS</th>
+                    <th style="padding:7px 8px;text-align:center;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">NEG. ASAL</th>
+                    <th style="padding:7px 8px;text-align:center;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">PEL. TUJUAN</th>
+                    <th style="padding:7px 8px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">NO. L/S</th>
+                    <th style="padding:7px 8px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">TGL L/S</th>
+                    <th style="padding:7px 8px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">NO. INVOICE</th>
+                    <th style="padding:7px 8px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">TGL INVOICE</th>
+                    <th style="padding:7px 8px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.6px;white-space:nowrap">NO. PENGAJUAN</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${g.items.map((r, idx) => {
+                    const vol  = r.volume     != null ? Number(r.volume).toLocaleString(undefined,{maximumFractionDigits:3}) : '—';
+                    const val  = r.value_usd  != null ? Number(r.value_usd).toLocaleString(undefined,{maximumFractionDigits:2}) : '—';
+                    const up   = r.unit_price != null ? Number(r.unit_price).toLocaleString(undefined,{maximumFractionDigits:2}) : '—';
+                    const kurs = r.kurs       != null ? Number(r.kurs).toLocaleString() : '—';
+                    const desc = (r.description || '—').replace(/\n/g, ' · ');
+                    const descShort = desc.length > 70 ? desc.slice(0, 70) + '…' : desc;
+                    const escDesc = String(desc).replace(/"/g, '&quot;');
+                    const rowBg = idx % 2 === 0 ? '#fff' : '#f9fafb';
+                    return `<tr style="background:${rowBg};border-bottom:1px solid var(--border);transition:background .12s"
+                      onmouseover="this.style.background='#eff4ff'"
+                      onmouseout="this.style.background='${rowBg}'">
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;color:var(--txt3);text-align:right">${r.line_no || (idx+1)}</td>
+                      <td style="padding:6px 8px;font-weight:600;color:var(--txt);line-height:1.4;max-width:340px" title="${escDesc}">${descShort}</td>
+                      <td style="padding:6px 8px;text-align:center"><span style="display:inline-block;font-family:'DM Mono',monospace;font-size:10.5px;font-weight:600;background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd);padding:1px 7px;border-radius:4px;letter-spacing:.2px">${r.hs_code || '—'}</span></td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;font-weight:700;color:var(--blue);text-align:right;white-space:nowrap">${vol}</td>
+                      <td style="padding:6px 8px;color:var(--txt3);text-align:center;font-size:10px">${r.unit || 'TNE'}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;text-align:right;color:var(--txt2);white-space:nowrap">${val}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;text-align:right;color:var(--txt2);white-space:nowrap">${up}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;text-align:right;color:var(--txt3);white-space:nowrap">${kurs}</td>
+                      <td style="padding:6px 8px;color:var(--txt2);text-align:center">${r.country_origin || '—'}</td>
+                      <td style="padding:6px 8px;color:var(--txt2);text-align:center">${r.port_destination || '—'}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;color:var(--txt2);font-size:10px;white-space:nowrap">${r.ls_no || '—'}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;color:var(--txt3);font-size:10px;white-space:nowrap">${r.ls_date || '—'}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;color:var(--txt2);font-size:10px;white-space:nowrap">${r.invoice_no || '—'}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;color:var(--txt3);font-size:10px;white-space:nowrap">${r.invoice_date || '—'}</td>
+                      <td style="padding:6px 8px;font-family:'DM Mono',monospace;color:var(--txt2);font-size:10px;white-space:nowrap">${r.pengajuan_no || '—'}</td>
+                    </tr>`;
+                  }).join('')}
+                </tbody>
+                <tfoot>
+                  <tr style="background:#f1f5f9;border-top:2px solid var(--border);font-weight:700">
+                    <td colspan="3" style="padding:7px 8px;text-align:right;color:var(--txt2);font-size:10px;text-transform:uppercase;letter-spacing:.6px">PIB Subtotal</td>
+                    <td style="padding:7px 8px;text-align:right;font-family:'DM Mono',monospace;color:var(--blue);white-space:nowrap">${_fmt(pibVol, 2)}</td>
+                    <td style="padding:7px 8px;text-align:center;color:var(--txt3);font-size:10px">TNE</td>
+                    <td style="padding:7px 8px;text-align:right;font-family:'DM Mono',monospace;color:var(--green);white-space:nowrap">${_fmt(pibVal, 2)}</td>
+                    <td colspan="9"></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Final assembly:
+    //   Modal body itself is the scroll container (overflow-y:auto).
+    //   Summary strip is position:sticky at top so it always shows.
+    //   PIB cards flow normally below — natural document scroll.
+    // This is the simplest model and avoids nested-scroll trap issues
+    // entirely. Browser handles all wheel/touch/keyboard scroll natively.
+    body.innerHTML = `
+      <div style="position:sticky;top:0;background:var(--bg);z-index:30;
+                  padding:18px 0 10px;margin-bottom:4px">
+        ${summaryHTML}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        ${cardsHTML}
+      </div>`;
+
+    // Wire export button (replace handler each open to capture latest rows)
+    const exportBtn = document.getElementById('raDetailExportBtn');
+    if (exportBtn) {
+      exportBtn.onclick = () => exportRealizationDetail(code, headerName);
+    }
+    // Reset scroll position so each open starts at the summary strip
+    body.scrollTop = 0;
+
+    // ── Wheel forwarding ──────────────────────────────────────────────
+    // Inner table wrappers have overflow-x:auto (for wide tables) — some
+    // browsers still capture vertical wheel even with overflow-y:hidden.
+    // Forward vertical wheels to the modal body (#raDetailBody) so the
+    // user gets one continuous scroll across all PIBs.
+    const pibScroll = document.getElementById('raDetailBody');
+    if (pibScroll) {
+      document.querySelectorAll('.ra-table-wrap').forEach(wrap => {
+        wrap.addEventListener('wheel', e => {
+          if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+            pibScroll.scrollTop += e.deltaY;
+            e.preventDefault();
+          }
+        }, { passive: false });
+      });
+    }
+  } catch (err) {
+    body.innerHTML = `<div style="padding:40px;text-align:center;color:var(--red2);font-size:12px">
+      ⚠ Gagal memuat data realisasi: ${err.message}<br>
+      <button onclick="openRealizationDetail('${code}')" style="margin-top:10px;padding:5px 12px;border:1px solid var(--red-bd);background:var(--red-bg);color:var(--red2);border-radius:5px;cursor:pointer">Coba lagi</button>
+    </div>`;
+  }
+}
+
+/* Toggle a single PIB card open/closed (used by the chevron buttons) */
+function toggleRaPib(pid) {
+  const body = document.getElementById(pid);
+  const chev = document.getElementById(pid + '-chev');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (chev) chev.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
+}
+
+/* Expand or collapse ALL PIB cards in the modal at once */
+function setAllRaPibs(open) {
+  document.querySelectorAll('[id^="raPib-"]').forEach(el => {
+    if (el.id.endsWith('-chev')) {
+      el.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
+    } else {
+      el.style.display = open ? 'block' : 'none';
+    }
+  });
+}
+
+function closeRealizationDetail() {
+  const m = document.getElementById('raDetailModal');
+  if (m) m.style.display = 'none';
+  _raDetailRows = [];
+}
+
+/* Export current realization rows to XLSX. Uses SheetJS already loaded
+   in index.html (CDN). Falls back to CSV blob if XLSX is unavailable. */
+function exportRealizationDetail(code, companyName) {
+  if (!_raDetailRows.length) return;
+  const rows = _raDetailRows.map(r => ({
+    'Company':           companyName || code,
+    'PIB / SPPB':        r.pib_no || '',
+    'PIB Date':          r.pib_date || '',
+    'Line No':           r.line_no || '',
+    'Uraian Barang':     r.description || '',
+    'HS Code':           r.hs_code || '',
+    'Volume':            r.volume != null ? Number(r.volume) : '',
+    'Satuan':            r.unit || '',
+    'Nilai':             r.value_usd != null ? Number(r.value_usd) : '',
+    'Harga Satuan':      r.unit_price != null ? Number(r.unit_price) : '',
+    'Kurs':              r.kurs != null ? Number(r.kurs) : '',
+    'Negara Asal':       r.country_origin || '',
+    'Pelabuhan Tujuan':  r.port_destination || '',
+    'Pelabuhan Muat':    r.port_loading || '',
+    'No. L/S':           r.ls_no || '',
+    'Tgl L/S':           r.ls_date || '',
+    'No. Invoice':       r.invoice_no || '',
+    'Tgl Invoice':       r.invoice_date || '',
+    'No. Pengajuan':     r.pengajuan_no || '',
+    'Tgl Pengajuan':     r.pengajuan_date || '',
+  }));
+  const fname = `Realization_${code}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  if (typeof XLSX !== 'undefined') {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Realization');
+    XLSX.writeFile(wb, fname);
+  } else {
+    // CSV fallback
+    const headers = Object.keys(rows[0]);
+    const csv = [headers.join(',')]
+      .concat(rows.map(r => headers.map(h => {
+        const v = r[h]; const s = v == null ? '' : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+      }).join(',')))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname.replace('.xlsx', '.csv'); a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+
+// Close on Esc (only when modal is visible, before drawer's Esc handler)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const m = document.getElementById('raDetailModal');
+  if (m && m.style.display === 'block') {
+    closeRealizationDetail();
+    e.stopImmediatePropagation();
+  }
+}, true);

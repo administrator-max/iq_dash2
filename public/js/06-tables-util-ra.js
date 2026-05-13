@@ -268,15 +268,25 @@ function renderUtilTable() {
         ? `<span style="font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:3px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)">✓ Arrived JKT</span>`
         : `<span style="font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:3px;background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-bd)">🚢 In Shipment</span>`;
 
+    // All 8 td cells use the same padding (6px 10px) so column widths
+    // line up with the thead. Cell alignment matches header: Obtained/
+    // Utilization/Realization MT = right; Realization%/ETA/Status =
+    // center. Without these explicit classes the body would left-align
+    // while the header centers, creating the visual offset.
+    const cellPad = 'padding:6px 10px';
+    // For center-aligned cells, also wrap the inner content in a flex
+    // container so multi-line values (e.g. "50.0%" + progress bar) stay
+    // centered as a group.
+    const wrapCenter = inner => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px">${inner}</div>`;
     return `<tr style="cursor:pointer;${rowBg};${topBd}" onclick="openDrawer('${r.code}')">
-      <td style="${lBd}">${codeCell}</td>
-      <td>${prodCell}</td>
-      <td class="t-r" style="padding:5px 8px">${obtCell}</td>
-      <td class="t-r" style="padding:5px 8px">${utilCell}</td>
-      <td class="t-r" style="padding:5px 8px">${realMTCell}</td>
-      <td style="padding:5px 8px">${realPctCell}</td>
-      <td style="padding:5px 8px">${etaCell}</td>
-      <td style="padding:5px 8px">${statusCell}</td>
+      <td style="${cellPad};${lBd}">${codeCell}</td>
+      <td style="${cellPad}">${prodCell}</td>
+      <td class="t-r" style="${cellPad}">${obtCell}</td>
+      <td class="t-r" style="${cellPad}">${utilCell}</td>
+      <td class="t-r" style="${cellPad}">${realMTCell}</td>
+      <td class="t-c" style="${cellPad}">${wrapCenter(realPctCell)}</td>
+      <td class="t-c" style="${cellPad}">${etaCell}</td>
+      <td class="t-c" style="${cellPad}">${statusCell}</td>
     </tr>`;
   }
 

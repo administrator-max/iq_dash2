@@ -50,6 +50,24 @@ let COMPANY_CODE_TO_NAME = {};
 const lookupCompanyCodeByName = nm => nm ? COMPANY_NAME_TO_CODE[String(nm).trim().toLowerCase()] || null : null;
 const lookupCompanyNameByCode = code => code ? COMPANY_CODE_TO_NAME[String(code).toUpperCase()] || '' : '';
 
+/* REALIZATION_SUMMARY — { CODE: { pibs, lines } } map indicating which
+   companies have realization data in DB. Used by the drawer to decide
+   whether to show the "Detail Realization" button (and what badge to
+   render). Loaded once at boot via /api/realizations/summary; cached
+   30s on the server side. */
+let REALIZATION_SUMMARY = {};
+async function loadRealizationSummary() {
+  try {
+    const res = await fetch('/api/realizations/summary');
+    if (!res.ok) return;
+    const data = await res.json();
+    REALIZATION_SUMMARY = (data && data.counts) || {};
+  } catch (err) {
+    console.warn('loadRealizationSummary failed:', err);
+  }
+}
+const hasRealizationData = code => !!(REALIZATION_SUMMARY && REALIZATION_SUMMARY[code]);
+
 async function loadData() {
   try {
     const res  = await fetch('/api/data');

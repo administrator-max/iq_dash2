@@ -225,6 +225,11 @@ body { font-family:'DM Sans','Calibri','Segoe UI',sans-serif; background:var(--b
 .tbl-wrap { overflow-x:auto }
 table { width:100%; border-collapse:collapse }
 thead th { padding:9px 12px; background:var(--navy); font-size:9.5px; font-weight:700; letter-spacing:.9px; text-transform:uppercase; color:rgba(255,255,255,.58); white-space:nowrap; cursor:pointer; user-select:none; transition:color .12s }
+/* Realization Monitoring table — compact rows. Padding here MUST match
+   the inline cellPad in renderRow() (06-tables-util-ra.js) so header
+   and body columns line up. */
+.util-mon-tbl thead th { padding:6px 10px }
+.util-mon-tbl td       { padding:6px 10px }
 thead th:hover { color:rgba(255,255,255,.88) }
 thead th.asc::after  { content:' ↑'; color:#7dbbfc }
 thead th.desc::after { content:' ↓'; color:#7dbbfc }
@@ -247,6 +252,7 @@ tr:hover td { background:#f9fafb }
 .t-sub  { font-size:10px; color:var(--txt3); margin-top:1px }
 .t-mono { font-family:'DM Mono',monospace; font-size:11.5px; font-weight:500 }
 .t-r    { text-align:right }
+.t-c    { text-align:center }
 
 /* ── PROGRESS BARS (utilization list) ── */
 .prog-row { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--border) }

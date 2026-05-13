@@ -8,7 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <!-- SheetJS — client-side .xlsx parsing for the Realization Import feature -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<link rel="stylesheet" href="/css/style.css?v=3">
+<link rel="stylesheet" href="/css/style.css?v=5">
 </head>
 <body>
 <!-- ═══ TOPBAR ═══ -->
@@ -296,6 +296,30 @@
   </div>
 </div>
 
+<!-- REALIZATION DETAILS MODAL (per-company PIB breakdown) -->
+<div id="raDetailModal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(15,23,42,.55);backdrop-filter:blur(3px)" onclick="if(event.target===this)closeRealizationDetail()">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(96vw,1280px);max-height:90vh;background:var(--bg);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:14px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--bg)">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--txt)">Realization Details</div>
+      </div>
+      <button onclick="closeRealizationDetail()" aria-label="Close"
+        style="background:transparent;border:none;font-size:18px;color:var(--txt3);cursor:pointer;width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center"
+        onmouseover="this.style.background='var(--bg2)'"
+        onmouseout="this.style.background='transparent'">✕</button>
+    </div>
+    <div id="raDetailBody" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 22px 18px;scroll-behavior:smooth"></div>
+    <div style="padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-shrink:0;background:var(--bg)">
+      <button id="raDetailExportBtn" class="btn" style="background:var(--green);color:#fff;display:inline-flex;align-items:center;gap:5px;border:none;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer">
+        ⬇ Export XLSX
+      </button>
+      <button onclick="closeRealizationDetail()" class="btn" style="background:var(--navy);color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:600;cursor:pointer">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- TARGET RE-APPLY DRILL-DOWN MODAL -->
 <div id="reapplyDrillModal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(15,23,42,.55);backdrop-filter:blur(3px)" onclick="if(event.target===this)closeReapplyDrill()">
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(92vw,860px);max-height:88vh;background:var(--bg);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden">
@@ -484,8 +508,8 @@
 <div id="page-overview" class="page active">
 <div class="wrap">
 
-  <!-- 6 KPI CARDS -->
-  <div class="g6 mb14">
+  <!-- 5 KPI CARDS (Target Re-Apply removed) -->
+  <div class="g5 mb14">
     <div class="kpi" onclick="openSubmitDrill()" style="cursor:pointer" title="Click to see submission breakdown">
       <div class="kpi-accent" style="background:var(--navy)"></div>
       <div class="kpi-lbl">Total Submitted</div>
@@ -535,16 +559,7 @@
         <span>Obtained − Utilization</span><span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
       </div>
     </div>
-    <div class="kpi" onclick="openReapplyDrill()" style="cursor:pointer" title="Click to see re-apply breakdown">
-      <div class="kpi-accent" style="background:var(--amber-lt)"></div>
-      <div class="kpi-lbl">Target Re-Apply</div>
-      <div class="kpi-val" id="kpiReapplyVal">—</div>
-      <div class="kpi-unit">Companies — Re-Apply On Process</div>
-      <div class="kpi-bar"><div class="kpi-fill" id="kpiReapplyFill" style="width:0%;background:var(--amber-lt)"></div></div>
-      <div class="kpi-tag" style="background:#f5f3ff;color:#5b21b6;border:1px solid #c4b5fd;display:flex;align-items:center;justify-content:space-between">
-        <span>—</span><span style="font-size:9px;opacity:.5;margin-left:6px">↗ detail</span>
-      </div>
-    </div>
+    <!-- Target Re-Apply card removed per request -->
 
   </div>
 
@@ -900,16 +915,16 @@
     <!-- Table: In Shipment / Arrived / Waiting (tabs 1-3) -->
     <div id="utilBodyWrap">
       <div class="tbl-wrap">
-        <table>
+        <table class="util-mon-tbl">
           <thead><tr>
             <th>Company</th>
             <th>Product</th>
             <th class="t-r has-tip">Obtained (MT)<span class="tip">Total PERTEK-approved quota tonnage</span></th>
             <th class="t-r has-tip">Utilization (MT)<span class="tip">Quota sold/allocated to customers (in-shipment). Sourced from Sales role data.</span></th>
             <th class="t-r has-tip">Realization (MT)<span class="tip">Import cargo physically arrived at JKT AND Beacukai-registered.</span></th>
-            <th class="has-tip">Realization (%)<span class="tip">Realization MT ÷ Obtained × 100%. Eligibility threshold: ≥ 60%.</span></th>
-            <th class="has-tip">Shipment ETA JKT<span class="tip">Estimated or confirmed arrival date at Jakarta port.</span></th>
-            <th>Shipment Status</th>
+            <th class="t-c has-tip">Realization (%)<span class="tip">Realization MT ÷ Obtained × 100%. Eligibility threshold: ≥ 60%.</span></th>
+            <th class="t-c has-tip">Shipment ETA JKT<span class="tip">Estimated or confirmed arrival date at Jakarta port.</span></th>
+            <th class="t-c">Shipment Status</th>
           </tr></thead>
           <tbody id="utilBody"></tbody>
         </table>
@@ -1619,14 +1634,14 @@
 <!-- Hidden placeholder divs for JS builders that target specific IDs -->
 <div id="revList"      style="display:none"></div>
 <div id="pendingQuick" style="display:none"></div>
-<script defer src="/js/01-data.js?v=7"></script>
+<script defer src="/js/01-data.js?v=8"></script>
 <script defer src="/js/02-period-filter.js"></script>
 <script defer src="/js/03-kpis.js?v=2"></script>
 <script defer src="/js/04-charts.js?v=5"></script>
 <script defer src="/js/05-tables-spi.js?v=3"></script>
-<script defer src="/js/06-tables-util-ra.js?v=2"></script>
+<script defer src="/js/06-tables-util-ra.js?v=4"></script>
 <script defer src="/js/07-tables-main.js"></script>
-<script defer src="/js/08-drawer.js"></script>
+<script defer src="/js/08-drawer.js?v=7"></script>
 <script defer src="/js/09-nav-import.js?v=2"></script>
 <script defer src="/js/10-edit-form.js"></script>
 <script defer src="/js/11-shipment.js?v=4"></script>
@@ -1637,7 +1652,7 @@
 <script defer src="/js/16-storage.js?v=4"></script>
 <script defer src="/js/17-ou-chart.js"></script>
 <script defer src="/js/18-sales-priority.js"></script>
-<script defer src="/js/19-init.js?v=4"></script>
+<script defer src="/js/19-init.js?v=5"></script>
 <script defer src="/js/20-realization-import.js?v=3"></script>
 </body>
 </html>

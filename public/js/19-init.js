@@ -20,7 +20,12 @@ window.onload = async () => {
   // The server is the single source of truth for display. We never
   // merge localStorage into SPI/PENDING/RA anymore — that used to mask
   // newer DB changes from other users with stale local copies.
-  await loadData();
+  // The realization summary loads in parallel — used by the drawer to
+  // decide whether to render the "Detail Realization" button + badge.
+  await Promise.all([
+    loadData(),
+    (typeof loadRealizationSummary === 'function' ? loadRealizationSummary() : Promise.resolve()),
+  ]);
 
   // ── Migrate any pending local edits from a previous session ────────
   // If the user had a save fail (e.g. server was down), buffered edits
