@@ -153,6 +153,94 @@ function showDataError() {
   </div>`;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   fmtDateStd — Normalize ANY date string to a single display format.
+   ─────────────────────────────────────────────────────────────────────
+   Output: 'DD-MMM-YY' (e.g. '29-Apr-26'). Always 2-digit day, English
+   3-letter month with capital initial, 2-digit year. Easy to scan,
+   sort-friendly when paired with year context, and unambiguous (vs.
+   '02/03/26' which can read as March 2 or Feb 3).
+   ─────────────────────────────────────────────────────────────────────
+   Accepts every quirky format already in the DB:
+     • ISO  'YYYY-MM-DD'             → 2026-05-13
+     • Slash 'DD/MM/YYYY' / 'D/M/YY' → 12/05/2026, 7/5/26
+     • Dash  'DD-MM-YYYY'            → 12-05-2026
+     • English long  'DD Mmm YYYY'   → 29 Apr 2026, 29 April 2026
+     • Indonesian long 'DD Mmm YYYY' → 07 Mei 2026, 07 Agustus 2026
+     • Already normalized            → 29-Apr-26 (pass-through)
+     • Mixed case / extra whitespace → handled
+   Returns the original string unchanged if it can't parse, or '' for
+   empty input / TBA. NEVER throws. Safe to call on null/undefined.
+   ═══════════════════════════════════════════════════════════════════ */
+const _MONTHS_EN_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const _MONTH_NAME_MAP = {
+  // English short + long
+  jan:1, january:1, feb:2, february:2, mar:3, march:3,
+  apr:4, april:4, may:5, jun:6, june:6, jul:7, july:7,
+  aug:8, august:8, sep:9, sept:9, september:9,
+  oct:10, october:10, nov:11, november:11, dec:12, december:12,
+  // Indonesian short + long
+  mei:5, agu:8, agust:8, agustus:8, okt:10, oktober:10,
+  des:12, desember:12,
+  // Indonesian variants of others
+  januari:1, februari:2, maret:3, juni:6, juli:7, november_id:11
+};
+
+function fmtDateStd(input) {
+  if (input == null) return '';
+  let s = String(input).trim();
+  if (!s || /^(TBA|null|undefined|—|-)$/i.test(s)) return s === 'TBA' ? 'TBA' : '';
+
+  let d = null, m = null, y = null;
+
+  // Pass 1: ISO  YYYY-MM-DD
+  let mm = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (mm) { y = +mm[1]; m = +mm[2]; d = +mm[3]; }
+
+  // Pass 2: slash/dash  DD[/-]MM[/-]YYYY  or  DD[/-]MM[/-]YY
+  if (d == null) {
+    mm = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (mm) {
+      d = +mm[1]; m = +mm[2]; y = +mm[3];
+      if (y < 100) y += 2000;
+    }
+  }
+
+  // Pass 3: word month  DD Mmm YYYY  or  DD-Mmm-YY (also already normalized)
+  if (d == null) {
+    mm = s.match(/^(\d{1,2})[\s\-\/]+([A-Za-z]+)[\s\-\/]+(\d{2,4})$/);
+    if (mm) {
+      d = +mm[1];
+      const monKey = mm[2].toLowerCase();
+      m = _MONTH_NAME_MAP[monKey] || null;
+      y = +mm[3];
+      if (y < 100) y += 2000;
+    }
+  }
+
+  // Validate
+  if (d == null || m == null || y == null || isNaN(d) || isNaN(m) || isNaN(y) ||
+      d < 1 || d > 31 || m < 1 || m > 12 || y < 1900 || y > 2999) {
+    return s; // give up — return original so user still sees something
+  }
+
+  const dd  = String(d).padStart(2, '0');
+  const mon = _MONTHS_EN_SHORT[m - 1];
+  const yy  = String(y).slice(-2);
+  return `${dd}-${mon}-${yy}`;
+}
+
+/* todayStd — current date in the canonical 'DD-MMM-YY' format. Use this
+   whenever new dates are stamped onto records (revision confirmations,
+   updates) so the data uniformly matches the display format. */
+function todayStd() {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mon = _MONTHS_EN_SHORT[d.getMonth()];
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}-${mon}-${yy}`;
+}
+
 /* ── _fmtMT: format float MT values with up to 2 decimal places, no trailing zeros ── */
 function _fmtMT(val) {
   if (val == null || isNaN(val)) return '0';

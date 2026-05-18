@@ -246,8 +246,8 @@ function buildRevMgmtSection(co) {
       : mtDisp;
 
     // PERTEK/SPI date display
-    const pertekDateDisp = c.pertekDate ? ` · PERTEK: <strong>${c.pertekDate}</strong>` : '';
-    const spiDateDisp    = c.spiDate    ? ` · SPI: <strong>${c.spiDate}</strong>`       : '';
+    const pertekDateDisp = c.pertekDate ? ` · PERTEK: <strong>${fmtDateStd(c.pertekDate)}</strong>` : '';
+    const spiDateDisp    = c.spiDate    ? ` · SPI: <strong>${fmtDateStd(c.spiDate)}</strong>`       : '';
 
     html += `<div class="rr-cycle-row ${rowCls}" style="position:relative">
       <div class="rr-cycle-dot" style="background:${dotColor}"></div>
@@ -261,8 +261,8 @@ function buildRevMgmtSection(co) {
         </div>
         <div class="rr-cycle-meta" style="margin-top:3px;flex-wrap:wrap">${prodLines}</div>
         <div class="rr-cycle-meta" style="margin-top:2px">
-          ${c.submitType||'Submit'}: <strong>${c.submitDate||'TBA'}</strong> &nbsp;·&nbsp;
-          ${c.releaseType||'Release'}: <strong>${c.releaseDate||'TBA'}</strong>${pertekDateDisp}${spiDateDisp}
+          ${c.submitType||'Submit'}: <strong>${c.submitDate==='TBA'?'TBA':(fmtDateStd(c.submitDate)||'TBA')}</strong> &nbsp;·&nbsp;
+          ${c.releaseType||'Release'}: <strong>${c.releaseDate==='TBA'?'TBA':(fmtDateStd(c.releaseDate)||'TBA')}</strong>${pertekDateDisp}${spiDateDisp}
         </div>
         ${c.status ? `<div class="rr-cycle-status">${c.status}</div>` : ''}
       </div>
@@ -466,7 +466,7 @@ function csConfirmRev(prod, pid, code) {
 
   req.status        = 'confirmed';
   req.confirmedMT   = mt;
-  req.confirmedDate = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+  req.confirmedDate = (typeof todayStd === 'function') ? todayStd() : new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}).replace(/ /g,'-');
   req.confirmedBy   = currentRole || 'CorpSec';
 
   // ── Build products object from targetProducts ──────────────────────
@@ -483,7 +483,7 @@ function csConfirmRev(prod, pid, code) {
     !(c.type === `Revision Request — ${prod}` && c.status === 'pending')
   );
 
-  const now = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const now = (typeof todayStd === 'function') ? todayStd() : new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}).replace(/ /g,'-');
   co.cycles.push({
     type:        `Revision Request — ${prod}`,
     mt:          mt || 0,
@@ -1068,7 +1068,7 @@ function saveEdit() {
     const newUpdatedBy = currentRole;
     if (newUpdatedBy) {
       co.updatedBy   = newUpdatedBy;
-      co.updatedDate = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
+      co.updatedDate = (typeof todayStd === 'function') ? todayStd() : new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}).replace(/ /g,'-');
     }
   }
 

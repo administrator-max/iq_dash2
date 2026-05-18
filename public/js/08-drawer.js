@@ -59,11 +59,11 @@ function buildCycleTimeline(co) {
         <div style="display:flex;gap:10px;margin:3px 0;flex-wrap:wrap">
           <div style="font-size:10px;color:var(--txt3)">
             <span style="font-weight:700;color:var(--txt2)">${c.submitType||'Submit'}</span>
-            <span style="margin-left:4px">${c.submitDate||'TBA'}</span>
+            <span style="margin-left:4px">${c.submitDate==='TBA'?'TBA':(fmtDateStd(c.submitDate)||'TBA')}</span>
           </div>
           <div style="font-size:10px;color:var(--txt3)">
             <span style="font-weight:700;color:var(--txt2)">${c.releaseType||'Release'}</span>
-            <span style="margin-left:4px;color:${c.releaseDate==='TBA'?'var(--amber)':'var(--green)'};font-weight:${c.releaseDate==='TBA'?'600':'400'}">${c.releaseDate||'TBA'}</span>
+            <span style="margin-left:4px;color:${c.releaseDate==='TBA'?'var(--amber)':'var(--green)'};font-weight:${c.releaseDate==='TBA'?'600':'400'}">${c.releaseDate==='TBA'?'TBA':(fmtDateStd(c.releaseDate)||'TBA')}</span>
           </div>
         </div>
         ${prodStr?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:2px">${prodStr}</div>`:''}
@@ -170,7 +170,7 @@ function openDrawer(code) {
       <div style="padding:8px 11px;background:${_rstc==='active'?'var(--amber-bg)':_rstc==='revpending'?'var(--orange-bg)':'var(--violet-bg)'};border:1px solid ${_rstc==='active'?'var(--amber-bd)':_rstc==='revpending'?'var(--orange-bd)':'var(--violet-bd)'};border-radius:var(--r);margin-bottom:8px">
         <div style="font-size:11.5px;font-weight:700;color:${_rstc==='active'?'var(--amber)':_rstc==='revpending'?'var(--orange)':'var(--violet)'};margin-bottom:3px">${_rstc==='active'?'🔄 Awaiting Ministry Approval':_rstc==='revpending'?'⏳ PENDING — PERTEK Terbit, SPI Belum Terbit':'✅ COMPLETE — SPI / SPI Perubahan Terbit'}</div>
         <div style="font-size:11px;color:var(--txt2)">${co.revStatus}</div>
-        <div style="font-size:10.5px;color:var(--txt3);margin-top:2px">Submitted: ${co.revSubmitDate}</div>
+        <div style="font-size:10.5px;color:var(--txt3);margin-top:2px">Submitted: ${fmtDateStd(co.revSubmitDate)}</div>
       </div>
       ${chgRows}`;
   }

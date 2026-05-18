@@ -487,7 +487,7 @@ function buildRevDetailTable() {
           })()}
         </td>
         <td>${buildRevChgHtml(co)}</td>
-        <td style="font-size:11px;color:var(--txt3)">${co.revSubmitDate}</td>
+        <td style="font-size:11px;color:var(--txt3)">${fmtDateStd(co.revSubmitDate)}</td>
         <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${co.revStatus}</span></td>
         <td class="t-r t-mono">${co.revMT ? co.revMT.toLocaleString() : '—'}</td>
         <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--blue)">${co.pertekNo || '<span style="color:var(--txt3)">—</span>'}</td>

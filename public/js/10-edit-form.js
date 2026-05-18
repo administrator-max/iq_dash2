@@ -120,6 +120,13 @@ function selectRole(role, btn) {
     applyRolePermissions();
     livePreview();
     buildRoleHistory();
+    // Re-render Revision Management section so action buttons appear/hide
+    // based on the new role's corpsecRevConfirm permission. Without this,
+    // switching role mid-session (e.g. Sales → CorpSec) leaves the section
+    // showing only "Menunggu" badge instead of Konfirmasi/Batal buttons.
+    const c  = gv('editCo');
+    const co = c ? (getSPI(c) || (typeof PENDING !== 'undefined' ? PENDING.find(p => p.code === c) : null)) : null;
+    if (co && typeof buildRevMgmtSection === 'function') buildRevMgmtSection(co);
   }
 }
 
@@ -486,7 +493,7 @@ function buildRoleHistory() {
             <span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;
               background:${stBg};color:${stColor};border:1px solid ${stBd}">${stIcon} ${stLabel}</span>
             ${req.confirmedMT ? `<span style="font-size:10px;font-family:'DM Mono',monospace;font-weight:700;color:${stColor}">${Number(req.confirmedMT).toLocaleString()} MT dikonfirmasi</span>` : ''}
-            ${req.confirmedDate ? `<span style="font-size:9.5px;color:var(--txt3)">oleh ${req.confirmedBy||'CorpSec'} · ${req.confirmedDate}</span>` : ''}
+            ${req.confirmedDate ? `<span style="font-size:9.5px;color:var(--txt3)">oleh ${req.confirmedBy||'CorpSec'} · ${(typeof fmtDateStd==='function'?fmtDateStd(req.confirmedDate):req.confirmedDate)}</span>` : ''}
           </div>`;
         } else if (isBatal) {
           responseHtml = `<div style="margin-top:4px">

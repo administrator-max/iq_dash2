@@ -1511,4 +1511,39 @@ app.listen(PORT, async () => {
   } catch (e) {
     console.warn('Pool warmup failed (will retry on first request):', e.message);
   }
+
+  // ── Background cache pre-warm (Plan A bonus) ─────────────────────
+  // Refresh /api/data payload BEFORE its 30s TTL expires so every user
+  // request always hits a warm cache. Without this, the very first
+  // user after every 30s window pays the 8s "build payload" cost.
+  // With this, _dataCache.payload is continuously kept fresh.
+  //
+  // Set CACHE_PREWARM=0 to disable. Pre-warm runs every 25s (5s margin
+  // before TTL); guard ensures we don't run if there's already an
+  // inflight build (singleflight-friendly).
+  if (process.env.CACHE_PREWARM !== '0') {
+    const PREWARM_MS = 25_000;
+    setInterval(async () => {
+      if (_dataCache.inflight) return; // someone else building, skip
+      try {
+        const t0 = Date.now();
+        _dataCache.inflight = (async () => {
+          const payload = await _buildDataPayload();
+          _dataCache.payload   = payload;
+          _dataCache.expiresAt = Date.now() + _dataCache.ttlMs;
+          _dataCache.inflight  = null;
+          return payload;
+        })();
+        await _dataCache.inflight;
+        // Quiet log — only print every ~5 minutes
+        if (Math.random() < 0.08) {
+          console.log(`🔄 Cache prewarm: ${Date.now()-t0}ms`);
+        }
+      } catch (e) {
+        _dataCache.inflight = null;
+        console.warn('Cache prewarm failed:', e.message);
+      }
+    }, PREWARM_MS).unref(); // unref → don't keep process alive just for this
+    console.log(`🔄 Cache prewarm scheduled every ${PREWARM_MS/1000}s`);
+  }
 });

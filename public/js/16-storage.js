@@ -426,13 +426,42 @@ async function patchToServer(co) {
     salesRevJson = JSON.stringify(envelope);
   }
 
+  // ── SAFEGUARD: don't downgrade rev_type/rev_note/rev_status/etc when
+  // the cycle data clearly shows an active or completed revision.
+  // Without this, ANY save on a company-with-revision can silently wipe
+  // rev_type='active' → 'none' if co.revType happens to be empty for
+  // any reason (e.g. partial state, stale form draft, race condition).
+  // The cycles are the ground truth — Revision Request — XXX + Obtained
+  // #2 cycles always exist for revised companies, so we can detect this
+  // and refuse to send the destructive 'none' value.
+  let safeRevType   = co.revType   || 'none';
+  let safeRevStatus = co.revStatus || '';
+  let safeRevNote   = salesRevJson || co.revNote || '';
+  const hasRevCycle = Array.isArray(co.cycles) && co.cycles.some(c =>
+    (c && c.type && /^Revision Request — /i.test(c.type)) ||
+    (c && c.type && /^obtained\s*#[2-9]/i.test(c.type)) ||
+    (c && c.type && /^obtained.*revision/i.test(c.type))
+  );
+  if (hasRevCycle && safeRevType === 'none') {
+    // Detect complete vs active by checking if any Obtained #N (N>=2)
+    // has a non-TBA release date (SPI Perubahan terbit).
+    const obt2Complete = co.cycles.some(c => c && c.type &&
+      /^obtained\s*#[2-9]/i.test(c.type) &&
+      c.releaseDate && c.releaseDate !== 'TBA');
+    safeRevType = obt2Complete ? 'complete' : 'active';
+    if (!safeRevStatus) {
+      safeRevStatus = obt2Complete ? 'SPI Perubahan Terbit' : 'Revision Request dikonfirmasi';
+    }
+    console.warn(`[patchToServer ${co.code}] guard: revType was 'none' but cycles indicate revision — sending '${safeRevType}' instead`);
+  }
+
   const body = {
     submit1:       co.submit1       != null ? co.submit1      : null,
     obtained:      co.obtained      != null ? co.obtained     : null,
-    revType:       co.revType       || 'none',
-    revNote:       salesRevJson || co.revNote || '',
+    revType:       safeRevType,
+    revNote:       safeRevNote,
     revSubmitDate: co.revSubmitDate || '',
-    revStatus:     co.revStatus     || '',
+    revStatus:     safeRevStatus,
     revMt:         co.revMT         || 0,
     remarks:       co.remarks       || '',
     spiRef:        co.spiRef        || '',
