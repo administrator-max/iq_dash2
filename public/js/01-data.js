@@ -435,6 +435,12 @@ function getSubmittedByProd(co) {
     if (seen.has(key)) return;
     seen.add(key);
     if (c._fromRevReq) return;
+    // Require cycle.mt > 0 — same gate as canonicalSubmitted. Without this,
+    // a Submit #N draft (cycle.mt empty but cycle_products populated)
+    // would inflate the per-product total even though the submission
+    // hasn't actually been submitted yet.
+    const cycMt = typeof c.mt === 'number' ? c.mt : 0;
+    if (cycMt <= 0) return;
     Object.entries(c.products || {}).forEach(([p, v]) => {
       if (typeof v === 'number' && v > 0) result[p] = (result[p] || 0) + v;
     });
@@ -451,9 +457,15 @@ function getObtainedByProdAgg(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;
     seen.add(key);
-    // _fromRevReq Obtained cycles (PERTEK Perubahan terbit) contribute their
-    // confirmed per-product MT to the running total — same accumulation rule
-    // as canonicalObtained. Empty product entries naturally skip via v > 0.
+    // CRITICAL: require cycle.mt > 0 — matches canonicalObtained logic.
+    // Without this, a still-TBA Obtained #N (e.g. revision in progress)
+    // whose cycle_products has placeholder values would DOUBLE-COUNT
+    // against the actual obtained quota.
+    // Real bug example: GKL Obtained #1 = GI BORON 1100 + Obtained #2
+    // (TBA) with cycle_products = GI BORON 1100 → displayed 2200 instead
+    // of 1100. With this gate, Obtained #2 (cycle.mt=0) is skipped.
+    const cycMt = typeof c.mt === 'number' ? c.mt : 0;
+    if (cycMt <= 0) return;
     Object.entries(c.products || {}).forEach(([p, v]) => {
       if (typeof v === 'number' && v > 0) result[p] = (result[p] || 0) + v;
     });
@@ -482,16 +494,18 @@ function getCycleBreakdown(co, mode, prod) {
     if (seen.has(key)) return;
     seen.add(key);
     if (c._fromRevReq) return;
+    // Require cycle.mt > 0 — same gate as canonicalObtained/Submitted.
+    // Skip pending/draft cycles where cycle_products may have placeholder
+    // values but the cycle itself isn't yet "obtained" (TBA).
+    const cycMt = typeof c.mt === 'number' ? c.mt : 0;
+    if (cycMt <= 0) return;
     let mt;
     if (prod) {
       const v = (c.products || {})[prod];
       if (typeof v !== 'number' || v <= 0) return;
       mt = v;
     } else {
-      mt = typeof c.mt === 'number' && c.mt > 0
-        ? c.mt
-        : Object.values(c.products || {}).reduce((s,v) => s + (typeof v === 'number' ? v : 0), 0);
-      if (!mt) return;
+      mt = cycMt;
     }
     // Friendly label: "Submit #1" | "Submit #2 (Re-Apply)" | "Obtained #2 (Re-Apply)" | "Revision #1"
     let label = c.type;
