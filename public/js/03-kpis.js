@@ -6,11 +6,11 @@ function updateOverviewKPIs() {
   const kpis = document.querySelectorAll('#page-overview .kpi');
 
   /* ── KPI 1: Total Submitted ──────────────────────────────────────────────
-     Per user spec 30-Apr-2026: Total Submitted = Σ Submit #N cycles only.
-     Revision cycles are excluded — a revision is a CHANGE to an existing
-     submission, not a new submission, so counting it would double-count.
-     Deduped per (company, cycle_type). Period filter keeps cycles whose
-     submitDate falls in window.
+     Total Submitted = Σ Submit #N cycles only. Revision Request cycles
+     track product re-allocations and superseded sales requests; they are
+     NOT counted as new quota MT. Companies that filed a real "Submit #2"
+     for additional MT have an explicit Submit #2 cycle in DB (matching
+     XLSX master). Deduped per (company, cycle_type).
   ────────────────────────────────────────────────────────────────────────── */
   let totalSubmitMT = 0, submitCoSet = new Set();
   const allCompanies = [...SPI, ...PENDING];

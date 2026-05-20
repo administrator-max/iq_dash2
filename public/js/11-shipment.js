@@ -424,10 +424,11 @@ async function patchShipmentsToServer(co) {
     }
     const body = {
       shipments:       shipPayload,
-      utilizationMt:   totalUtil,
-      availableQuota:  totalAvail,
-      // Send concurrency token so a stale write can't clobber newer DB data
-      // (matches the multi-user safety contract used by patchToServer).
+      // utilizationMt & availableQuota intentionally NOT sent — server-reconciled
+      // via KPI_RECONCILE (XLSX master). Sending them here was overwriting the
+      // reconciled aggregate on every lot edit, fighting the canonical source.
+      // Server still derives them from XLSX targets; shipments table just stores
+      // per-lot detail for display.
       _ifUpdatedAt:    co._updatedAt || null,
     };
     // Use fetchWithRetry so transient 5xx / network errors don't lose

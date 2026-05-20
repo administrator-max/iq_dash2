@@ -98,27 +98,16 @@ async function loadData() {
       if (d.fullName)     COMPANY_NAME_TO_CODE[d.fullName.toLowerCase()] = d.abbreviation;
       if (d.abbreviation) COMPANY_CODE_TO_NAME[d.abbreviation.toUpperCase()] = d.fullName;
     });
-    // Recompute utilizationByProd / availableByProd from shipment lots —
-    // overrides stale stats table values so chart always matches the shipment table.
-    SPI.forEach(co => {
-      if (!co.shipments || !Object.keys(co.shipments).length) return;
-      const obtByProd = getObtainedByProd(co);
-      co.utilizationByProd = {};
-      co.availableByProd   = {};
-      let totalUtil = 0;
-      Object.entries(obtByProd).forEach(([prod, obtMT]) => {
-        const used = (co.shipments[prod] || []).reduce((s, lot) => s + (lot.utilMT || 0), 0);
-        co.utilizationByProd[prod] = used;
-        co.availableByProd[prod]   = Math.max(0, obtMT - used);
-        totalUtil += used;
-      });
-      co.utilizationMT = totalUtil;
-      // CRITICAL FIX: use cycle-based canonical obtained (not raw DB co.obtained)
-      // co.obtained from DB may include in-process cycles not yet PERTEK-issued
-      // canonicalObtained() only counts cycles with valid PERTEK Terbit
-      const coObtCanon = canonicalObtained(co);
-      co.availableQuota = Math.max(0, (coObtCanon || co.obtained || 0) - totalUtil);
-    });
+    // utilizationByProd / availableByProd / utilizationMT / availableQuota
+    // are SERVER-RECONCILED via KPI_RECONCILE in server.js, sourced from XLSX
+    // master. DO NOT recompute on client.
+    //
+    // Previous bug: this block iterated getObtainedByProd(co) keys and looked
+    // up co.shipments[prod] — but cycle product names and shipment lot product
+    // names can diverge (legacy alias vs canonical). Mismatched lots returned
+    // undefined → 0 MT, silently dropping 2,037.5 MT system-wide. The local
+    // recompute then OVERWROTE the correct API values with the undercount.
+    // Trust the server payload — it already reflects XLSX truth.
     // Also override raw co.obtained / co.submit1 with the aggregated canonical
     // totals (Obtained #1 + Obtained #2 + …, Submit #1 + Submit #2 + Revision #N).
     // Per request 30-Apr-2026: every dashboard section should reflect the

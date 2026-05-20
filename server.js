@@ -596,35 +596,48 @@ const PIPELINE_CORRECTIONS = [
   }
 })();
 
-// ── KPI total reconciliation against IQ Dash - Quota Data 240426.xlsx ──
-// Per the Excel grand-total row (image shared 28-Apr-2026):
-//   Total Submit (MT)      = 222,150
-//   Total Obtained (MT)    =  23,090
-//   Total Utilization (MT) =  15,181
-//   Total Available (MT)   =   7,910
+// ── KPI total reconciliation against IQ Dash - Quota Data 120526.xlsx ──
+// Per the Excel grand-total row (master shared 20-May-2026):
+//   Total Submit (MT)      = 252,000 (incl LCP Submit #2 added 20-May)
+//   Total Obtained (MT)    =  23,590
+//   Total Utilization (MT) =  16,500.5
+//   Total Available (MT)   =   7,089.5
 //
-// The DB had three classes of drift from the Excel:
-//   1. Stale Obtained #2 cycle MT values for 8 companies (they reflected
-//      the SUBMIT amount instead of the actually-obtained amount, which
-//      should be 0 or a smaller number for in-process cycles).
-//   2. companies.utilization_mt off by small amounts on 8 rows.
-//   3. companies.available_quota off by small amounts on 7 rows.
-//
-// All idempotent — UPDATEs only fire when current value ≠ target.
+// Idempotent — UPDATEs only fire when current value ≠ target. Acts as a
+// drift guard: if anyone edits via UI to an inconsistent value, this
+// resets on next server restart.
 const KPI_RECONCILE = [
-  { code:'AADC', util:0,      avail:150 },
-  { code:'BBB',  obt2:0 },
-  { code:'CGK',  util:800,    avail:220,   obt2:220 },
-  { code:'EMS',  obt2:0 },
-  { code:'GAS',  obt2:0 },
+  { code:'AADC', util:150,    avail:0 },
+  { code:'ADP',  util:250,    avail:0 },
+  { code:'AMP',  util:800,    avail:0 },
+  { code:'BBB',  util:400,    avail:0,     obt2:0 },
+  { code:'BDG',  util:650,    avail:350 },
+  { code:'BHG',  util:200,    avail:0 },
+  { code:'BTS',  util:1420,   avail:4580 },
+  { code:'CGK',  util:1020,   avail:0,     obt2:220 },
+  { code:'DIOR', util:0,      avail:100 },
+  { code:'EMS',  util:2100,   avail:0,     obt2:500 },
+  { code:'GAS',  util:200,    avail:0,     obt2:0 },
+  { code:'GIS',  util:0,      avail:400 },
   { code:'GKL',  util:1694.5, avail:705.5, obt2:0 },
-  { code:'GNG',  util:400,    obt2:150 },
+  { code:'GNG',  util:400,    avail:0,     obt2:150 },
   { code:'HDP',  util:900,    avail:0 },
+  { code:'HKG',  util:750,    avail:0 },
+  { code:'JKT',  util:300,    avail:0 },
+  { code:'KAN',  util:80,     avail:0 },
   { code:'KARA', util:100,    avail:0 },
-  { code:'KJK',  obt2:0 },
+  { code:'KJK',  util:950,    avail:0,     obt2:0 },
+  { code:'LCP',  util:275,    avail:0 },
+  { code:'LSJ',  util:500,    avail:0 },
   { code:'MIN',  util:247,    avail:353 },
+  { code:'MJU',  util:0,      avail:200 },
+  { code:'MSN',  util:150,    avail:0 },
+  { code:'NCT',  util:150,    avail:0 },
   { code:'SGD',  util:2000,   avail:0 },
+  { code:'SJH',  util:300,    avail:0 },
+  { code:'SMS',  util:150,    avail:0 },
   { code:'SPA',  util:114,    avail:401,   obt2:0 },
+  { code:'SPP',  util:250,    avail:0 },
 ];
 (async () => {
   for (const fix of KPI_RECONCILE) {
@@ -908,12 +921,18 @@ app.patch('/api/company/:code', async (req, res) => {
       }
     }
 
-    // Build dynamic SET clause — only update fields present in body
+    // Build dynamic SET clause — only update fields present in body.
+    //
+    // utilization_mt & available_quota intentionally REMOVED from allowed list:
+    // they are XLSX-reconciled via KPI_RECONCILE (server.js boot IIFE) and
+    // must not be writable from any client path. Allowing them here meant
+    // patchShipmentsToServer (and any future client code) could silently
+    // overwrite the reconciled aggregate on every save.
     const allowed = [
       'submit1','obtained',
       'rev_type','rev_note','rev_submit_date','rev_status','rev_mt',
       'remarks','spi_ref','status_update','pertek_no','spi_no',
-      'utilization_mt','available_quota','updated_by','updated_date',
+      'updated_by','updated_date',
     ];
     const sets = []; const vals = []; let idx = 1;
     for (const f of allowed) {

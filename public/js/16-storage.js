@@ -110,9 +110,13 @@ function listDraftCompanyCodes() {
 /** Fields that can change at runtime and should be persisted */
 const RA_MUTABLE  = ['berat','realPct','utilPct','cargoArrived','arrivalDate',
                      'etaJKT','pibReleaseDate','reapplyEst','reapplySubmitted','target'];
+// NOTE: utilizationMT & availableQuota intentionally EXCLUDED — they are
+// server-reconciled (see KPI_RECONCILE in server.js). Allowing them to
+// roundtrip via localStorage caused stale browser snapshots to silently
+// overwrite reconciled DB values on dashboard load (migrateLocalToServer).
 const SPI_MUTABLE = ['spiRef','remarks','revType','revStatus','revNote','statusUpdate',
                      'salesRevRequest','spiNo','pertekNo','spiDate','pertekDate','updatedBy','updatedDate',
-                     'utilizationMT','availableQuota','shipments','reapplyTargets'];
+                     'shipments','reapplyTargets'];
 
 /** Serialize current state → localStorage (offline-resilient buffer between
     user input and server sync — NOT a display source). */
@@ -468,8 +472,9 @@ async function patchToServer(co) {
     statusUpdate:  co.statusUpdate  || '',
     pertekNo:      co.pertekNo      || '',
     spiNo:         co.spiNo         || '',
-    utilizationMt: co.utilizationMT || 0,
-    availableQuota:co.availableQuota != null ? co.availableQuota : null,
+    // utilizationMt & availableQuota intentionally NOT sent — server-reconciled
+    // via KPI_RECONCILE in server.js. Stale client snapshots used to overwrite
+    // them, causing the dashboard to fight DB fixes on every page load.
     updatedBy:     co.updatedBy     || '',
     updatedDate:   co.updatedDate   || '',
     shipments:     shipPayload,
