@@ -437,10 +437,15 @@ function refreshAvqDrill() {
   // Build ALL rows (unfiltered) — single source of truth
   const allRows = [];
   filteredSPI().forEach(co => {
-    const obtained = typeof co.obtained === 'number' ? co.obtained : 0;
+    // Recompute via canonicalObtained — co.obtained is overwritten by it
+    // in loadData() but be defensive in case helpers ran in odd order.
+    const obtained = (typeof canonicalObtained === 'function' ? canonicalObtained(co) : null)
+                     ?? (typeof co.obtained === 'number' ? co.obtained : 0);
     if (obtained <= 0) return;
     const totalUtil = co.utilizationMT  != null ? co.utilizationMT  : 0;
-    const totalAvq  = co.availableQuota != null ? co.availableQuota : (obtained - totalUtil);
+    // Recompute fresh — stale DB-cached available_quota was inflated from
+    // pre-fix canonicalObtained (which included not-yet-terbit Obtained #2).
+    const totalAvq  = Math.max(0, obtained - totalUtil);
 
     const aProd = co.availableByProd   || {};
     const uProd = co.utilizationByProd || {};
@@ -625,7 +630,7 @@ function refreshUtilDrill() {
       });
     } else if (totalUtil > 0) {
       const prod = (co.products||[])[0] || '—';
-      rows.push({ code: co.code, group: co.group, product: prod, obtained, utilMT: totalUtil, availMT: co.availableQuota ?? Math.max(0, obtained - totalUtil) });
+      rows.push({ code: co.code, group: co.group, product: prod, obtained, utilMT: totalUtil, availMT: Math.max(0, obtained - totalUtil) });
     }
   });
 

@@ -325,17 +325,42 @@ const isReapplySubmitted = r => r && r.reapplyStage === 2;
 const isEligible = r => r && r.realPct >= 0.6 && r.cargoArrived === true && !isReapplySubmitted(r);
 
 /* ════════════════════════════════════════════════════════════════════
+   _isObtainedTerbit — predicate: cycle is countable as "obtained".
+   Rules align with XLSX master semantics (12-May-2026 sheet):
+     • Obtained #1: ALWAYS counted when mt > 0 (PERTEK approval ≈ implicit;
+       absence of date in DB usually = data-entry catch-up, not "not yet
+       obtained"). XLSX includes AADC/KARA Obt1 even with release=TBA.
+     • Obtained #2+: counted only if release_date is NOT explicitly "TBA".
+       Excludes BHG/HKG/MIN/SGD/SJH (PERTEK Perubahan still pending).
+       Accepts release_date holding an SPI number (e.g. "04.PI-…") when
+       paired with spi_date — that's the user convention for "terbit".
+   This eliminates the GKL/BHG/etc. double-counting bug (was inflating
+   canonical obtained by ~12,350 MT vs XLSX truth).
+   ═══════════════════════════════════════════════════════════════════ */
+function _isObtainedTerbit(c) {
+  if (!c) return false;
+  // Obtained #1 → trust mt > 0 (no extra date gate). Matches XLSX.
+  if (/^obtained\s*#?1\b/i.test(c.type || '')) return true;
+  // Obtained #2+ → skip when release_date is explicitly TBA / empty AND
+  // no fallback spi_date / pertek_date is populated.
+  const rd = String(c.releaseDate || '').trim();
+  const isTBA = !rd || /^(TBA|null|undefined|—)$/i.test(rd);
+  if (!isTBA) return true; // any non-TBA release_date counts as terbit
+  // release_date is TBA — accept if spi_date or pertek_date is filled
+  const sd = String(c.spiDate || '').trim();
+  const pd = String(c.pertekDate || '').trim();
+  return (sd && !/^TBA$/i.test(sd)) || (pd && !/^TBA$/i.test(pd));
+}
+
+/* ════════════════════════════════════════════════════════════════════
    CANONICAL OBTAINED — Single source of truth for company total obtained.
-   Rules (per user request 30-Apr-2026: aggregate ALL obtained cycles):
-     Total Obtained = Obtained #1 + Obtained #2 + (next cycles if any)
+   Rules (aligned with XLSX master 12-May-2026):
+     Total Obtained = Σ Obtained #N where PERTEK/SPI Perubahan terbit
      1. Sum every Obtained #N cycle MT
      2. Dedup by cycleType — first occurrence per company wins
-        (legacy DB sometimes has duplicate rows for same cycle_type)
-     3. Skip _fromRevReq cycles (revision re-allocation ≠ new MT)
-     4. Skip mt ≤ 0
-   Note: previously required PERTEK Terbit date from paired Submit cycle —
-   that filter dropped HDP's Obtained #2 (100 MT) when the revision PERTEK
-   wasn't paired through a "Submit #2" naming. Now trusts the cycle data.
+     3. Skip mt ≤ 0  (empty/zero cycles)
+     4. Skip cycles where release_date is TBA / unparseable
+        (PERTEK Perubahan not yet issued — pending revision)
    ═══════════════════════════════════════════════════════════════════ */
 function canonicalObtained(co) {
   if (!co) return 0;
@@ -349,10 +374,7 @@ function canonicalObtained(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;                         // dedup cycleType
     seen.add(key);
-    // _fromRevReq cycles ARE counted when they carry confirmed MT > 0:
-    // a PERTEK Perubahan Terbit fills the Obtained #N MT, which represents
-    // genuine additional quota that adds to the running total. Empty
-    // _fromRevReq stubs (mt = 0) were already excluded by the mt > 0 check.
+    if (!_isObtainedTerbit(c)) return;                // SKIP TBA / not-yet-terbit
     total += mt;
   });
   return total;
@@ -371,12 +393,7 @@ function canonicalObtainedFiltered(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;
     seen.add(key);
-    // _fromRevReq cycles with mt > 0 represent issued PERTEK Perubahan and
-    // are counted (mirrors canonicalObtained). Period filter still applies.
-    // Period filter: use PERTEK Terbit from paired Submit cycle when present;
-    // when absent, fall back to the cycle's own pertekDate field. If neither
-    // exists we still count it (matches the "trust cycle data" rule above)
-    // but it won't pass an active period filter.
+    if (!_isObtainedTerbit(c)) return; // also gate by terbit status
     if (PERIOD.active) {
       let pertekDate = null;
       if (typeof getPertekTerbitForObtained === 'function') {
@@ -457,15 +474,16 @@ function getObtainedByProdAgg(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;
     seen.add(key);
-    // CRITICAL: require cycle.mt > 0 — matches canonicalObtained logic.
-    // Without this, a still-TBA Obtained #N (e.g. revision in progress)
-    // whose cycle_products has placeholder values would DOUBLE-COUNT
-    // against the actual obtained quota.
-    // Real bug example: GKL Obtained #1 = GI BORON 1100 + Obtained #2
-    // (TBA) with cycle_products = GI BORON 1100 → displayed 2200 instead
-    // of 1100. With this gate, Obtained #2 (cycle.mt=0) is skipped.
+    // CRITICAL: same gates as canonicalObtained — cycle.mt > 0 AND
+    // PERTEK/SPI Perubahan actually terbit (release_date parses as
+    // a real date). Without this, in-progress Obtained #N cycles
+    // would inflate per-product totals and break alignment with
+    // the XLSX master totals (real bug: BHG/HKG/SJH/SGD inflated
+    // by 2,250-3,000 MT each because Obtained #2 had mt set but
+    // release_date="TBA").
     const cycMt = typeof c.mt === 'number' ? c.mt : 0;
     if (cycMt <= 0) return;
+    if (typeof _isObtainedTerbit === 'function' && !_isObtainedTerbit(c)) return;
     Object.entries(c.products || {}).forEach(([p, v]) => {
       if (typeof v === 'number' && v > 0) result[p] = (result[p] || 0) + v;
     });
@@ -494,11 +512,11 @@ function getCycleBreakdown(co, mode, prod) {
     if (seen.has(key)) return;
     seen.add(key);
     if (c._fromRevReq) return;
-    // Require cycle.mt > 0 — same gate as canonicalObtained/Submitted.
-    // Skip pending/draft cycles where cycle_products may have placeholder
-    // values but the cycle itself isn't yet "obtained" (TBA).
+    // Same gates as canonicalObtained/Submitted: skip empty (mt=0) and
+    // — for obtained mode — skip not-yet-terbit (release TBA / invalid).
     const cycMt = typeof c.mt === 'number' ? c.mt : 0;
     if (cycMt <= 0) return;
+    if (mode === 'obtained' && typeof _isObtainedTerbit === 'function' && !_isObtainedTerbit(c)) return;
     let mt;
     if (prod) {
       const v = (c.products || {})[prod];

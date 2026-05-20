@@ -266,9 +266,13 @@ function buildAvailableQuota() {
                      || (typeof co.obtained === 'number' ? co.obtained : 0);
     if (obtained <= 0) return;
     const totalUtil = co.utilizationMT  != null ? co.utilizationMT  : 0;
-    // SOURCE OF TRUTH: always use company-level availableQuota (from companies.available_quota).
-    // availableByProd is used only for per-product DISPLAY breakdown, NOT for the total.
-    const totalAvq  = co.availableQuota != null ? co.availableQuota : (obtained - totalUtil);
+    // SOURCE OF TRUTH (board-revised 12-May-2026): always recompute
+    // availableQuota fresh from (canonicalObtained - utilizationMT).
+    // The DB-cached `companies.available_quota` was set from a previous
+    // run where canonicalObtained still included in-progress Obtained #2
+    // cycles (TBA) — it's now stale. Recomputing here makes the KPI
+    // match the XLSX master (Total Available = 7,090 MT).
+    const totalAvq  = Math.max(0, obtained - totalUtil);
 
     const aProd = co.availableByProd   || {};
     const uProd = co.utilizationByProd || {};
