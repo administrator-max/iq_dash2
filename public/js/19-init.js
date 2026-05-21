@@ -205,9 +205,9 @@ function buildAvqPageKPIs() {
   });
 
   const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  set('avqKpi1', totalAvq.toLocaleString());
-  set('avqKpi2', totalObt.toLocaleString());
-  set('avqKpi3', totalUtil.toLocaleString());
+  set('avqKpi1', fmtMt(totalAvq));
+  set('avqKpi2', fmtMt(totalObt));
+  set('avqKpi3', fmtMt(totalUtil));
   set('avqKpi4', coSet.size);
 
   const utilPct = totalObt > 0 ? (totalUtil / totalObt * 100).toFixed(1) : 0;
@@ -261,8 +261,10 @@ function buildAvqProdGrid() {
 
   const entries = Object.entries(prodMap).sort((a,b) => b[1].avail - a[1].avail);
   grid.innerHTML = entries.map(([prod, d]) => {
+    // Suppress tiny negative avail (XLSX manual re-allocation rounding artifacts)
+    const dispAvail = snapZero(d.avail);
     const utilPct = d.obtained > 0 ? Math.min((d.util / d.obtained * 100), 100).toFixed(0) : 0;
-    const avqPct  = d.obtained > 0 ? Math.min((d.avail / d.obtained * 100), 100).toFixed(0) : 0;
+    const avqPct  = d.obtained > 0 ? Math.max(0, Math.min((dispAvail / d.obtained * 100), 100)).toFixed(0) : 0;
     const c = clr(prod);
     return `<div style="border:1px solid var(--border);border-radius:var(--r2);overflow:hidden;box-shadow:var(--sh)">
       <div style="background:${c};padding:9px 14px;display:flex;justify-content:space-between;align-items:center">
@@ -278,9 +280,9 @@ function buildAvqProdGrid() {
       </div>
       <div style="padding:10px 14px">
         <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-          <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:700;color:var(--teal)">${d.obtained.toLocaleString()}</div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3)">Obtained</div></div>
-          <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:700;color:var(--green)">${d.util.toLocaleString()}</div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3)">Utilized</div></div>
-          <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:700;color:${c}">${d.avail.toLocaleString()}</div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3)">Available</div></div>
+          <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:700;color:var(--teal)">${fmtMt(d.obtained)}</div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3)">Obtained</div></div>
+          <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:700;color:var(--green)">${fmtMt(d.util)}</div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3)">Utilized</div></div>
+          <div style="text-align:center;flex:1"><div style="font-size:16px;font-weight:700;color:${c}">${fmtMt(dispAvail)}</div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3)">Available</div></div>
         </div>
         <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin-bottom:5px">
           <div style="height:6px;background:${c};border-radius:3px;width:${avqPct}%;transition:width .8s"></div>
@@ -355,7 +357,7 @@ function openProdCoPopup(event, prodName, anchorEl) {
   const totalAvq  = coRows.reduce((s, r) => s + r.avq,  0);
 
   document.getElementById('prodCoPopupSub').textContent =
-    `${coRows.length} compan${coRows.length !== 1 ? 'ies' : 'y'} · ${totalAvq.toLocaleString()} MT available`;
+    `${coRows.length} compan${coRows.length !== 1 ? 'ies' : 'y'} · ${fmtMt(totalAvq)} MT available`;
 
   // Summary strip
   document.getElementById('prodCoPopupStrip').innerHTML = [
@@ -364,7 +366,7 @@ function openProdCoPopup(event, prodName, anchorEl) {
     ['Available',totalAvq,  col],
   ].map(([lbl, val, c2]) => `
     <div style="flex:1;text-align:center;padding:8px 6px;border-right:1px solid var(--border)">
-      <div style="font-size:15px;font-weight:800;color:${c2};font-family:'DM Mono',monospace">${Math.round(val).toLocaleString()}</div>
+      <div style="font-size:15px;font-weight:800;color:${c2};font-family:'DM Mono',monospace">${fmtMt(val)}</div>
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3);margin-top:1px">${lbl}</div>
     </div>`).join('');
 
@@ -389,9 +391,9 @@ function openProdCoPopup(event, prodName, anchorEl) {
           ${grpBadge}
         </div>
         <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:11px;color:var(--txt3)">Obt <strong style="color:var(--teal)">${Math.round(r.obt).toLocaleString()}</strong></span>
-          <span style="font-size:11px;color:var(--txt3)">Used <strong style="color:var(--green)">${r.util > 0 ? r.util.toLocaleString() : '—'}</strong></span>
-          <span style="font-size:13px;font-weight:800;color:${avqCol};font-family:'DM Mono',monospace">${Math.round(r.avq).toLocaleString()} MT</span>
+          <span style="font-size:11px;color:var(--txt3)">Obt <strong style="color:var(--teal)">${fmtMt(r.obt)}</strong></span>
+          <span style="font-size:11px;color:var(--txt3)">Used <strong style="color:var(--green)">${r.util > 0 ? fmtMt(r.util) : '—'}</strong></span>
+          <span style="font-size:13px;font-weight:800;color:${avqCol};font-family:'DM Mono',monospace">${fmtMt(r.avq)} MT</span>
         </div>
       </div>
       <div style="position:relative;height:7px;background:var(--border);border-radius:4px;overflow:hidden">
@@ -511,9 +513,9 @@ function buildAvqTable() {
       <td style="font-size:11.5px;font-weight:600">${r.grp}</td>
       <td><span class="chip" style="background:#f0f9ff;color:#0369a1;font-size:10px;padding:2px 7px">${r.prod}</span></td>
       <td style="font-size:10.5px;font-family:'DM Mono',monospace;${hsHl}">${r.hs}</td>
-      <td class="t-r t-mono">${r.obt.toLocaleString()}</td>
-      <td class="t-r t-mono" style="color:var(--green)">${r.util > 0 ? r.util.toLocaleString() : '<span style="color:var(--txt3)">—</span>'}</td>
-      <td class="t-r t-mono" style="color:#0891b2;font-weight:700">${r.avq.toLocaleString()}</td>
+      <td class="t-r t-mono">${fmtMt(r.obt)}</td>
+      <td class="t-r t-mono" style="color:var(--green)">${r.util > 0 ? fmtMt(r.util) : '<span style="color:var(--txt3)">—</span>'}</td>
+      <td class="t-r t-mono" style="color:#0891b2;font-weight:700">${fmtMt(r.avq)}</td>
       <td>
         <div style="display:flex;align-items:center;gap:6px">
           <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden">
@@ -611,7 +613,7 @@ function buildPendingSummaryStrip() {
   if (!el) return;
   const pending = filteredPending();
   const totalMT = pending.reduce((s,d) => s + (d.mt||0), 0);
-  if (mtEl)  mtEl.textContent  = totalMT.toLocaleString() + ' MT';
+  if (mtEl)  mtEl.textContent  = fmtMt(totalMT) + ' MT';
   if (bdgEl) bdgEl.textContent = pending.length + ' Pending';
   el.innerHTML = pending.map(d => {
     const daysEl = d.date ? (() => {
@@ -623,7 +625,7 @@ function buildPendingSummaryStrip() {
     })() : '';
     return `<div style="display:flex;align-items:center;gap:5px;padding:4px 9px;background:var(--red-bg);border:1px solid var(--red-bd);border-radius:var(--r)">
       <span style="font-size:11px;font-weight:700;color:var(--red2)">${d.code}</span>
-      <span style="font-size:9.5px;color:var(--txt3)">${(d.mt||0).toLocaleString()} MT</span>
+      <span style="font-size:9.5px;color:var(--txt3)">${fmtMt(d.mt||0)} MT</span>
       ${daysEl}
     </div>`;
   }).join('');

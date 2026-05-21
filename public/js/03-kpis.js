@@ -117,7 +117,7 @@ function updateOverviewKPIs() {
 
   /* ── Update DOM ───────────────────────────────────────────────────── */
   if (kpis[0]) {
-    kpis[0].querySelector('.kpi-val').textContent  = totalSubmitMT > 0 ? totalSubmitMT.toLocaleString() : '—';
+    kpis[0].querySelector('.kpi-val').textContent  = totalSubmitMT > 0 ? fmtMt(totalSubmitMT) : '—';
     kpis[0].querySelector('.kpi-unit').textContent = submitCoSet.size > 0 ? `MT · ${submitCoSet.size} companies` : 'MT';
     const t = kpis[0].querySelector('.kpi-tag');
     if (t) { const n=t.querySelector('#kpiSubmitNote')||t; n.textContent = PERIOD.active ? `Filtered: ${submitCoSet.size} co.` : 'All Submissions'; }
@@ -126,7 +126,7 @@ function updateOverviewKPIs() {
     if (sFill) sFill.style.width = totalSubmitMT > 0 ? '100%' : '0%';
   }
   if (kpis[1]) {
-    kpis[1].querySelector('.kpi-val').textContent  = totalObtainedMT > 0 ? totalObtainedMT.toLocaleString() : '—';
+    kpis[1].querySelector('.kpi-val').textContent  = totalObtainedMT > 0 ? fmtMt(totalObtainedMT) : '—';
     kpis[1].querySelector('.kpi-unit').textContent = obtCoSet.size > 0 ? `MT · ${obtCoSet.size} companies` : 'MT';
     const t = kpis[1].querySelector('.kpi-tag');
     if (t) { const rate = totalSubmitMT>0?(totalObtainedMT/totalSubmitMT*100).toFixed(1):'—'; t.textContent=`${rate}% Approval Rate`; }
@@ -143,7 +143,7 @@ function updateOverviewKPIs() {
   const kpiUtilFillEl = document.getElementById('kpiUtilFill');
   const kpiUtilTagEl  = document.getElementById('kpiUtilTag');
   if (kpiUtilCoEl)   kpiUtilCoEl.textContent   = utilCoCount > 0 ? utilCoCount : '—';
-  if (kpiUtilMTEl)   kpiUtilMTEl.textContent   = totalUtilizedMT > 0 ? totalUtilizedMT.toLocaleString() + ' MT total utilized' : '— MT';
+  if (kpiUtilMTEl)   kpiUtilMTEl.textContent   = totalUtilizedMT > 0 ? fmtMt(totalUtilizedMT) + ' MT total utilized' : '— MT';
   if (kpiUtilUnitEl) kpiUtilUnitEl.textContent = `compan${utilCoCount!==1?'ies':'y'} with shipment`;
   if (kpiUtilFillEl && totalObtainedMT > 0) kpiUtilFillEl.style.width = Math.min(100, totalUtilizedMT / totalObtainedMT * 100).toFixed(1) + '%';
   if (kpiUtilTagEl)  kpiUtilTagEl.textContent  = totalObtainedMT > 0 ? `${(totalUtilizedMT/totalObtainedMT*100).toFixed(1)}% of obtained allocated` : 'Of obtained quota allocated';
@@ -199,22 +199,22 @@ function updateOverviewKPIs() {
   // Use ID-based approach for safety
   const kpiPendValEl = document.getElementById('kpiPendVal');
   if (kpiPendValEl) {
-    kpiPendValEl.textContent = pendMT.toLocaleString();
+    kpiPendValEl.textContent = fmtMt(pendMT);
     const pendKpiEl = kpiPendValEl.closest('.kpi');
     if (pendKpiEl) { const pu = pendKpiEl.querySelector('.kpi-unit'); if(pu) pu.textContent = `MT · ${pendCoSet.size} companies`; }
   }
 
   // ── Also update pipeline sidebar labels ──────────────────────────────
   const pPendStat = document.getElementById('pipelinePendStat');
-  if (pPendStat) pPendStat.textContent = `${pendMT.toLocaleString()} MT · ${pendCoSet.size} co.`;
+  if (pPendStat) pPendStat.textContent = `${fmtMt(pendMT)} MT · ${pendCoSet.size} co.`;
   const pTotalMT = document.getElementById('pendTotalMT');
-  if (pTotalMT) pTotalMT.textContent = `${pendMT.toLocaleString()} MT`;
+  if (pTotalMT) pTotalMT.textContent = `${fmtMt(pendMT)} MT`;
 
   // SPI sidebar stat — recompute from live SPI data
   const spiTotal   = filteredSPI().reduce((s,d)=>s+d.obtained,0);
   const spiCount   = filteredSPI().length;
   const pSpiStat   = document.getElementById('pipelineSpiStat');
-  if (pSpiStat) pSpiStat.textContent = `${spiTotal.toLocaleString()} MT · ${spiCount} co.`;
+  if (pSpiStat) pSpiStat.textContent = `${fmtMt(spiTotal)} MT · ${spiCount} co.`;
 
   // Re-Apply sidebar = realization-based (cargoArrived AND realPct ≥ 60%)
   const raEligPool = RA.filter(r => r.cargoArrived === true && r.realPct >= 0.6);
@@ -288,7 +288,7 @@ function updateOverviewKPIs() {
     const top = sorted[0];
     const topMT = _co(top);
     window._topQuotaCode = top.code;
-    valEl.textContent = `${top.code} — ${topMT.toLocaleString()} MT`;
+    valEl.textContent = `${top.code} — ${fmtMt(topMT)} MT`;
     // Pull PERTEK Terbit date from the first Submit cycle for context
     const subCy = (top.cycles || []).find(c => /^submit\s*#?1/i.test(c.type));
     const pertekTxt = subCy && subCy.releaseDate && subCy.releaseDate !== 'TBA'
@@ -538,9 +538,9 @@ function refreshAvqDrill() {
     `${uniqueCos} companies · ${rows.length} product-rows · Obtained − Utilized${activeHsLabel}`;
 
   document.getElementById('avqDrillSummary').innerHTML = [
-    ['Available (MT)',  totalAvq.toLocaleString()+' MT',  '#0891b2',       '#ecfeff',           '#a5f3fc'],
-    ['Obtained (MT)',   totalObt.toLocaleString()+' MT',  'var(--teal)',   'var(--teal-bg)',    'var(--teal-bd)'],
-    ['Utilized (MT)',   totalUtil.toLocaleString()+' MT', 'var(--blue)',   'var(--blue-bg)',    'var(--blue-bd)'],
+    ['Available (MT)',  fmtMt(totalAvq)+' MT',  '#0891b2',       '#ecfeff',           '#a5f3fc'],
+    ['Obtained (MT)',   fmtMt(totalObt)+' MT',  'var(--teal)',   'var(--teal-bg)',    'var(--teal-bd)'],
+    ['Utilized (MT)',   fmtMt(totalUtil)+' MT', 'var(--blue)',   'var(--blue-bg)',    'var(--blue-bd)'],
     ['Util. Rate',      utilRate+'%',                      'var(--blue)',   'var(--blue-bg)',    'var(--blue-bd)'],
     ['Avail. Rate',     avqRate+'%',                       '#0891b2',       '#ecfeff',           '#a5f3fc'],
   ].map(([lbl,val,col,bg,bd]) => `
@@ -575,15 +575,15 @@ function refreshAvqDrill() {
       <td style="padding:8px 14px;font-weight:700;color:var(--navy);${lBorder};padding-left:11px">${isFirst ? r.code : ''}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--txt2)">${r.product}</td>
       <td style="padding:8px 10px;font-size:10.5px;font-family:'DM Mono',monospace;${hsHl}">${r.hs}</td>
-      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--txt3)">${r.obtained.toLocaleString()}</td>
-      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--blue)">${r.utilMT > 0 ? r.utilMT.toLocaleString() : '—'}</td>
+      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--txt3)">${fmtMt(r.obtained)}</td>
+      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--blue)">${r.utilMT > 0 ? fmtMt(r.utilMT) : '—'}</td>
       <td style="padding:8px 10px;text-align:center;color:var(--blue);font-weight:600">${r.obtained>0?(utilPct*100).toFixed(0)+'%':'—'}</td>
       <td style="padding:8px 10px;text-align:right">
         <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
           <div style="width:60px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0">
             <div style="height:4px;background:${avqCol};border-radius:2px;width:${barW}%"></div>
           </div>
-          <span style="font-weight:${r.avq>0?'700':'400'};font-family:'DM Mono',monospace;color:${avqCol}">${r.avq.toLocaleString()}</span>
+          <span style="font-weight:${r.avq>0?'700':'400'};font-family:'DM Mono',monospace;color:${avqCol}">${fmtMt(r.avq)}</span>
         </div>
       </td>
       <td style="padding:8px 14px">${badge}</td>
@@ -645,9 +645,9 @@ function refreshUtilDrill() {
     `Period: ${periodLabel} · ${rows.length} product-rows · ${new Set(rows.map(r=>r.code)).size} companies`;
 
   document.getElementById('utilDrillSummary').innerHTML = [
-    ['Utilized (MT)',   totalUtil.toLocaleString()+' MT',  'var(--blue)',  'var(--blue-bg)',  'var(--blue-bd)'],
-    ['Available (MT)',  totalAvail.toLocaleString()+' MT', 'var(--teal)',  'var(--teal-bg)',  'var(--teal-bd)'],
-    ['Obtained (MT)',   totalObt.toLocaleString()+' MT',   'var(--navy)',  '#eef2ff',         '#c7d2fe'],
+    ['Utilized (MT)',   fmtMt(totalUtil)+' MT',  'var(--blue)',  'var(--blue-bg)',  'var(--blue-bd)'],
+    ['Available (MT)',  fmtMt(totalAvail)+' MT', 'var(--teal)',  'var(--teal-bg)',  'var(--teal-bd)'],
+    ['Obtained (MT)',   fmtMt(totalObt)+' MT',   'var(--navy)',  '#eef2ff',         '#c7d2fe'],
     ['Util. Rate',      avgUtil+'%',                        'var(--blue)',  'var(--blue-bg)',  'var(--blue-bd)'],
   ].map(([lbl,val,col,bg,bd]) => `
     <div style="text-align:center;padding:6px 14px;background:${bg};border-radius:6px;border:1px solid ${bd}">
@@ -673,17 +673,17 @@ function refreshUtilDrill() {
       <td style="padding:8px 14px;font-weight:700;color:var(--navy)">${r.code}</td>
       <td style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txt2)">${r.group}</td>
       <td style="padding:8px 10px;font-size:11px;color:var(--txt)">${r.product}</td>
-      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--txt3)">${r.obtained.toLocaleString()}</td>
+      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:var(--txt3)">${fmtMt(r.obtained)}</td>
       <td style="padding:8px 10px;text-align:right">
         <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
           <div style="width:60px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0">
             <div style="height:4px;background:${col};border-radius:2px;width:${barW}%"></div>
           </div>
-          <span style="font-weight:700;font-family:'DM Mono',monospace;color:${col}">${r.utilMT.toLocaleString()}</span>
+          <span style="font-weight:700;font-family:'DM Mono',monospace;color:${col}">${fmtMt(r.utilMT)}</span>
         </div>
       </td>
       <td style="padding:8px 10px;text-align:center;font-weight:700;color:${col}">${(pct*100).toFixed(0)}%</td>
-      <td style="padding:8px 10px;text-align:right;font-weight:${r.availMT>0?'700':'400'};font-family:'DM Mono',monospace;color:${avqCol}">${r.availMT.toLocaleString()}</td>
+      <td style="padding:8px 10px;text-align:right;font-weight:${r.availMT>0?'700':'400'};font-family:'DM Mono',monospace;color:${avqCol}">${fmtMt(r.availMT)}</td>
       <td style="padding:8px 14px">${badge}</td>
     </tr>`;
   }).join('');
@@ -918,7 +918,7 @@ function refreshSubmitDrill() {
   document.getElementById('submitDrillSummary').innerHTML = `
     <div style="text-align:center;padding:6px 14px;background:#f8fafc;border-radius:6px;border:1px solid var(--border2)">
       <div style="font-size:9.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.8px">Grand Total</div>
-      <div style="font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${totalMT.toLocaleString()} <span style="font-size:11px">MT</span></div>
+      <div style="font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${fmtMt(totalMT)} <span style="font-size:11px">MT</span></div>
       <div style="font-size:10px;color:var(--txt3);margin-top:1px">${coCount} companies</div>
     </div>
     ${CAT_ORDER.map(cat => {
@@ -926,7 +926,7 @@ function refreshSubmitDrill() {
       if (t.count === 0) return '';
       return `<div style="text-align:center;padding:6px 12px;background:${m.bg};border-radius:6px;border:1px solid ${m.bd};min-width:110px">
         <div style="font-size:9px;font-weight:700;color:${m.tc};text-transform:uppercase;letter-spacing:.7px;line-height:1.3">${m.label.replace(/^[^ ]+ /,'')}</div>
-        <div style="font-size:18px;font-weight:700;color:${m.tc};line-height:1.3">${t.mt.toLocaleString()} <span style="font-size:10px">MT</span></div>
+        <div style="font-size:18px;font-weight:700;color:${m.tc};line-height:1.3">${fmtMt(t.mt)} <span style="font-size:10px">MT</span></div>
         <div style="font-size:10px;color:var(--txt3);margin-top:1px">${t.cos.size} co. · ${t.count} cycle${t.count!==1?'s':''}</div>
       </div>`;
     }).join('')}
@@ -962,7 +962,7 @@ function refreshSubmitDrill() {
       <td colspan="5" style="padding:7px 14px;background:${m.bg};border-top:2px solid ${m.bd};border-bottom:1px solid ${m.bd}">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <span style="font-size:11px;font-weight:700;color:${m.tc}">${m.label}</span>
-          <span style="font-size:10.5px;font-family:'DM Mono',monospace;font-weight:700;color:${m.tc}">${catMT.toLocaleString()} MT · ${catCos} co.</span>
+          <span style="font-size:10.5px;font-family:'DM Mono',monospace;font-weight:700;color:${m.tc}">${fmtMt(catMT)} MT · ${catCos} co.</span>
         </div>
       </td>
     </tr>`;
@@ -981,7 +981,7 @@ function refreshSubmitDrill() {
         <td style="padding:8px 14px 8px 22px;font-weight:700;color:var(--navy);white-space:nowrap">${r.code}${groupBadge}</td>
         <td style="padding:8px 10px;font-size:11px;color:var(--txt2)">${cycleLabel}</td>
         <td style="padding:8px 10px;text-align:center;font-weight:600;color:var(--txt2);font-family:'DM Mono',monospace;font-size:11px">${fmtDate(r.submitDate)}</td>
-        <td style="padding:8px 10px;text-align:right;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace">${r.mt.toLocaleString()}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace">${fmtMt(r.mt)}</td>
         <td style="padding:8px 14px;font-size:11px;color:${r.statusColor}">${r.status}</td>
       </tr>`;
     });
@@ -989,7 +989,7 @@ function refreshSubmitDrill() {
 
   body.innerHTML = html;
   document.getElementById('submitDrillFooter').textContent =
-    `${cycleCount} submissions · Grand total ${totalMT.toLocaleString()} MT (SPI: ${spiOnlyMT.toLocaleString()} MT · Pending: ${pendingMT.toLocaleString()} MT) · Click row to open company detail`;
+    `${cycleCount} submissions · Grand total ${fmtMt(totalMT)} MT (SPI: ${fmtMt(spiOnlyMT)} MT · Pending: ${fmtMt(pendingMT)} MT) · Click row to open company detail`;
 }
 
 function openPendingDrill() {
@@ -1033,11 +1033,11 @@ function refreshPendingDrill() {
   const avgDays  = allDays.length ? Math.round(allDays.reduce((s,d)=>s+d,0)/allDays.length) : 0;
 
   const sub = document.getElementById('pendDrillSubtitle');
-  if (sub) sub.textContent = `${pending.length} compan${pending.length===1?'y':'ies'} · ${totalMT.toLocaleString()} MT total · longest wait ${maxDays} days`;
+  if (sub) sub.textContent = `${pending.length} compan${pending.length===1?'y':'ies'} · ${fmtMt(totalMT)} MT total · longest wait ${maxDays} days`;
 
   const sumEl = document.getElementById('pendDrillSummary');
   if (sumEl) sumEl.innerHTML = [
-    ['Total Volume',   `${totalMT.toLocaleString()} MT`,      'var(--red2)'],
+    ['Total Volume',   `${fmtMt(totalMT)} MT`,      'var(--red2)'],
     ['Companies',      `${pending.length}`,                   'var(--txt)'],
     ['Longest Wait',   `${maxDays} days`,                     maxDays>=90?'var(--red2)':maxDays>=45?'var(--orange)':'var(--green)'],
     ['Avg Wait',       `${avgDays} days`,                     'var(--txt)'],
@@ -1089,7 +1089,7 @@ function refreshPendingDrill() {
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:3px">${prodPills}</div>
         <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-          <span style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace">${(p.mt||0).toLocaleString()} MT</span>
+          <span style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace">${fmtMt(p.mt||0)} MT</span>
           <span class="badge b-pending" style="font-size:9.5px;padding:1px 6px">⏳ Pending</span>
           ${codays !== null ? daysChip(codays) : ''}
         </div>
@@ -1123,7 +1123,7 @@ function refreshPendingDrill() {
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:700;color:var(--txt)">${cy.type}</span>
-            <span style="font-size:11px;font-weight:700;font-family:'DM Mono',monospace;color:var(--txt3)">${totPMT.toLocaleString()} MT</span>
+            <span style="font-size:11px;font-weight:700;font-family:'DM Mono',monospace;color:var(--txt3)">${fmtMt(totPMT)} MT</span>
             ${ds !== null ? daysChip(ds) : ''}
           </div>
           <div style="display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--txt3);margin-top:3px;flex-wrap:wrap">
@@ -1171,7 +1171,7 @@ function refreshPendingDrill() {
             </div>
           </div>
           <div style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;
-            color:var(--blue);text-align:right;min-width:90px">${prodMT.toLocaleString()} MT</div>
+            color:var(--blue);text-align:right;min-width:90px">${fmtMt(prodMT)} MT</div>
           <div style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:3px;
             background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd);
             text-align:right;min-width:55px;margin-left:12px">${pct}%</div>`;
@@ -1354,19 +1354,19 @@ function refreshObtainedDrill() {
   document.getElementById('drillSummary').innerHTML = `
     <div style="text-align:center;padding:6px 14px;background:#eef2ff;border-radius:6px;border:1px solid #c3d3f9">
       <div style="font-size:10px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.8px">Total Submit</div>
-      <div style="font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${totalSub.toLocaleString()} <span style="font-size:12px">MT</span></div>
+      <div style="font-size:20px;font-weight:700;color:var(--navy);line-height:1.2">${fmtMt(totalSub)} <span style="font-size:12px">MT</span></div>
     </div>
     <div style="text-align:center;padding:6px 14px;background:var(--teal-bg);border-radius:6px;border:1px solid var(--teal-bd)">
       <div style="font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.8px">Total Obtained</div>
-      <div style="font-size:20px;font-weight:700;color:var(--teal);line-height:1.2">${totalObt.toLocaleString()} <span style="font-size:12px">MT</span></div>
+      <div style="font-size:20px;font-weight:700;color:var(--teal);line-height:1.2">${fmtMt(totalObt)} <span style="font-size:12px">MT</span></div>
     </div>
     <div style="text-align:center;padding:6px 14px;background:var(--blue-bg);border-radius:6px;border:1px solid var(--blue-bd)">
       <div style="font-size:10px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.8px">Total Utilized</div>
-      <div style="font-size:20px;font-weight:700;color:var(--blue);line-height:1.2">${totalUtil.toLocaleString()} <span style="font-size:12px">MT</span></div>
+      <div style="font-size:20px;font-weight:700;color:var(--blue);line-height:1.2">${fmtMt(totalUtil)} <span style="font-size:12px">MT</span></div>
     </div>
     <div style="text-align:center;padding:6px 14px;background:#ecfeff;border-radius:6px;border:1px solid #a5f3fc">
       <div style="font-size:10px;font-weight:700;color:#0891b2;text-transform:uppercase;letter-spacing:.8px">Total Available</div>
-      <div style="font-size:20px;font-weight:700;color:#0891b2;line-height:1.2">${totalAvq.toLocaleString()} <span style="font-size:12px">MT</span></div>
+      <div style="font-size:20px;font-weight:700;color:#0891b2;line-height:1.2">${fmtMt(totalAvq)} <span style="font-size:12px">MT</span></div>
     </div>
     <div style="text-align:center;padding:6px 14px;background:var(--green-bg);border-radius:6px;border:1px solid var(--green-bd)">
       <div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.8px">Companies</div>
@@ -1386,16 +1386,16 @@ function refreshObtainedDrill() {
   const buildMtCell = (mt, breakdown, color) => {
     if (!mt) return `<span style="color:var(--txt3)">—</span>`;
     if (!breakdown || breakdown.length <= 1) {
-      return `<span style="color:${color};font-weight:700;font-family:'DM Mono',monospace">${mt.toLocaleString()}</span>`;
+      return `<span style="color:${color};font-weight:700;font-family:'DM Mono',monospace">${fmtMt(mt)}</span>`;
     }
     const lines = breakdown
       .map(b => {
         const dateStr = b.date ? ` — ${b.date}` : '';
-        return `• ${b.label}: ${b.mt.toLocaleString()} MT${dateStr}`;
+        return `• ${b.label}: ${fmtMt(b.mt)} MT${dateStr}`;
       })
       .join('\n');
-    const tip = `Total: ${mt.toLocaleString()} MT\nBreakdown:\n${lines}`;
-    return `<span class="cyc-bd" data-bd="${_esc(tip)}" style="color:${color};font-weight:700;font-family:'DM Mono',monospace;cursor:help;border-bottom:1px dashed ${color}">${mt.toLocaleString()} <span style="font-size:9px;opacity:.7">▾</span></span>`;
+    const tip = `Total: ${fmtMt(mt)} MT\nBreakdown:\n${lines}`;
+    return `<span class="cyc-bd" data-bd="${_esc(tip)}" style="color:${color};font-weight:700;font-family:'DM Mono',monospace;cursor:help;border-bottom:1px dashed ${color}">${fmtMt(mt)} <span style="font-size:9px;opacity:.7">▾</span></span>`;
   };
 
   let lastCode = '';
@@ -1412,8 +1412,8 @@ function refreshObtainedDrill() {
       <td style="padding:8px 10px;font-size:11px"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:${dot};display:inline-block"></span>${r.product}</span></td>
       <td style="padding:8px 10px;text-align:right">${buildMtCell(r.subMT, r.subBreakdown, 'var(--navy)')}</td>
       <td style="padding:8px 10px;text-align:right">${buildMtCell(r.obtMT, r.obtBreakdown, 'var(--teal)')}</td>
-      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.utilMT > 0 ? 'var(--blue)' : 'var(--txt3)'};font-weight:${r.utilMT > 0 ? '700' : '400'}">${r.utilMT > 0 ? r.utilMT.toLocaleString() : '—'}</td>
-      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.avqMT > 0 ? '#0891b2' : 'var(--txt3)'};font-weight:${r.avqMT > 0 ? '700' : '400'}">${r.avqMT > 0 ? r.avqMT.toLocaleString() : '—'}</td>
+      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.utilMT > 0 ? 'var(--blue)' : 'var(--txt3)'};font-weight:${r.utilMT > 0 ? '700' : '400'}">${r.utilMT > 0 ? fmtMt(r.utilMT) : '—'}</td>
+      <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.avqMT > 0 ? '#0891b2' : 'var(--txt3)'};font-weight:${r.avqMT > 0 ? '700' : '400'}">${r.avqMT > 0 ? fmtMt(r.avqMT) : '—'}</td>
       <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;font-size:10.5px;color:${r.lastUtil ? 'var(--green)' : 'var(--txt3)'}">${fmtDate(r.lastUtil)}</td>
     </tr>`;
   }).join('');

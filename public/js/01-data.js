@@ -341,6 +341,30 @@ function _isObtainedTerbit(c) {
   return (sd && !/^TBA$/i.test(sd)) || (pd && !/^TBA$/i.test(pd));
 }
 
+/* snapZero — display helper to suppress tiny negative MT values caused by
+   rounding in XLSX manual re-allocation (e.g. GKL ERW PIPE −0.49 / −0.08).
+   Only clamps the (-1, 0) range; real negatives (≤ -1) still surface as bugs. */
+function snapZero(v) {
+  if (typeof v !== 'number' || isNaN(v)) return v;
+  return (v > -1 && v < 0) ? 0 : v;
+}
+
+/* ceilMt — display helper: round UP any MT value to integer (per business
+   rule 21-May-2026). Apply to obtained/util/avail/submit displays — NOT to
+   realization (realMT, totalRealizedMT, realPct etc), per user preference.
+   Negative values handled gracefully: snapZero first, then ceil. */
+function ceilMt(v) {
+  if (typeof v !== 'number' || isNaN(v)) return v;
+  const snapped = snapZero(v);
+  return Math.ceil(snapped);
+}
+/* fmtMt — shorthand: ceilMt → toLocaleString. Use everywhere MT is shown
+   (cards, tables, totals, charts) for util/avail/obtained/submit. */
+function fmtMt(v) {
+  const c = ceilMt(v);
+  return typeof c === 'number' ? c.toLocaleString() : c;
+}
+
 /* ════════════════════════════════════════════════════════════════════
    CANONICAL OBTAINED — Single source of truth for company total obtained.
    Rules (aligned with XLSX master 12-May-2026):

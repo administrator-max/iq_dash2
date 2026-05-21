@@ -52,7 +52,7 @@ function buildRevList() {
         salesReqMini = `<div style="margin-top:4px;font-size:9.5px;color:${col};font-weight:600">
           ${ico} Rev Request: ${reqEntries.map(([p,v]) => {
             const newP = v.newProduct ? ` → ${v.newProduct}` : '';
-            const mt   = v.confirmedMT != null ? v.confirmedMT.toLocaleString() : v.requestedMT != null ? v.requestedMT.toLocaleString() : '?';
+            const mt   = v.confirmedMT != null ? fmtMt(v.confirmedMT) : v.requestedMT != null ? fmtMt(v.requestedMT) : '?';
             return `${p}${newP} (${mt} MT)`;
           }).join(' · ')}
         </div>`;
@@ -145,7 +145,7 @@ function buildPendingQuick() {
         <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:3px">${prodPills}</div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span style="font-size:11px;font-weight:700;font-family:'DM Mono',monospace;color:var(--txt)">
-            ${(p.mt||0).toLocaleString()} MT total
+            ${fmtMt(p.mt||0)} MT total
           </span>
           <span class="badge b-pending" style="font-size:9.5px;padding:1px 6px">⏳ Pending</span>
           ${codays !== null ? daysChip(codays) : ''}
@@ -180,7 +180,7 @@ function buildPendingQuick() {
           <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
             <span class="pq-sub-title">${cy.type}</span>
             <span style="font-size:10px;font-weight:700;font-family:'DM Mono',monospace;
-                         color:var(--txt3)">${totalProdMT.toLocaleString()} MT</span>
+                         color:var(--txt3)">${fmtMt(totalProdMT)} MT</span>
             ${ds !== null ? daysChip(ds) : ''}
           </div>
           <div class="pq-sub-meta">
@@ -206,7 +206,7 @@ function buildPendingQuick() {
         row.innerHTML = `
           <div class="pq-prod-dot" style="background:${dot}"></div>
           <span class="pq-prod-name">${prodName}</span>
-          <span class="pq-prod-mt">${prodMT.toLocaleString()} MT</span>
+          <span class="pq-prod-mt">${fmtMt(prodMT)} MT</span>
           <span class="pq-prod-pct">${pct}%</span>`;
         prodsPanel.appendChild(row);
       });
@@ -263,7 +263,7 @@ function buildPendingQuick() {
     footer.className = 'pq-footer';
     footer.innerHTML = `
       <span class="pq-footer-lbl">Total pending:</span>
-      <span class="pq-footer-val">${totalMT.toLocaleString()} MT</span>
+      <span class="pq-footer-val">${fmtMt(totalMT)} MT</span>
       <span class="pq-footer-lbl" style="margin-left:6px">·</span>
       <span class="pq-footer-lbl">${pending.length} compan${pending.length===1?'y':'ies'}</span>
       <span style="margin-left:auto;font-size:10px;color:var(--txt3)">Longest wait: </span>
@@ -293,11 +293,11 @@ function buildRevNoteHtml(d) {
                     ? v.targetProducts
                     : (v.newProduct ? [{ product: v.newProduct, mt: v.requestedMT }] : []);
       const tDisp = targets.length > 1
-        ? targets.map(t => `${t.product||'—'}${t.mt!=null?' ('+Number(t.mt).toLocaleString()+' MT)':''}`).join(' + ')
+        ? targets.map(t => `${t.product||'—'}${t.mt!=null?' ('+fmtMt(Number(t.mt))+' MT)':''}`).join(' + ')
         : targets.length === 1 && targets[0].product
-          ? ` → ${targets[0].product}${targets[0].mt!=null?' ('+Number(targets[0].mt).toLocaleString()+' MT)':''}`
+          ? ` → ${targets[0].product}${targets[0].mt!=null?' ('+fmtMt(Number(targets[0].mt))+' MT)':''}`
           : '';
-      const confMT = v.confirmedMT != null ? v.confirmedMT.toLocaleString() : null;
+      const confMT = v.confirmedMT != null ? fmtMt(v.confirmedMT) : null;
       return `<span style="font-size:9.5px;color:var(--txt3)">${prod}${tDisp}${confMT?' [conf: '+confMT+' MT]':''}</span>`;
     }).join(' · ');
     salesReqHtml = `<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px;align-items:center">
@@ -322,13 +322,13 @@ function buildRevNoteHtml(d) {
         border:1px solid ${isRet?'var(--blue-bd)':'var(--green-bd)'}">
         ${t.label}: ${t.prod}
       </span>
-      <span style="font-size:10px;font-family:'DM Mono',monospace;color:var(--txt3)">${t.mt.toLocaleString()} MT</span>
+      <span style="font-size:10px;font-family:'DM Mono',monospace;color:var(--txt3)">${fmtMt(t.mt)} MT</span>
     </div>`;
   }).join('');
   return `<div>
     <div style="display:flex;align-items:center;gap:5px;margin-bottom:2px">
       <span style="font-size:9.5px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange-bd)">SPLIT</span>
-      <span style="font-size:10.5px;font-weight:600">${f.label}: ${f.prod} ${f.mt.toLocaleString()} MT</span>
+      <span style="font-size:10.5px;font-weight:600">${f.label}: ${f.prod} ${fmtMt(f.mt)} MT</span>
     </div>
     ${toLines}
     ${salesReqHtml}
@@ -347,7 +347,7 @@ function getObtainedProdBreakdown(co) {
   return entries.map(([prod, mt]) =>
     `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0;border-bottom:1px dashed var(--border)">
        <span style="display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:3px;background:${pc(prod).light};color:${pc(prod).text}">${prod}</span>
-       <span style="font-size:11px;font-family:'DM Mono',monospace;font-weight:600;color:var(--txt2)">${Number(mt).toLocaleString()} MT</span>
+       <span style="font-size:11px;font-family:'DM Mono',monospace;font-weight:600;color:var(--txt2)">${fmtMt(Number(mt))} MT</span>
      </div>`
   ).join('');
 }
@@ -366,12 +366,12 @@ function buildRevChgHtml(co) {
           color:${isRetained?'var(--blue)':'var(--green)'};
           border:1px solid ${isRetained?'var(--blue-bd)':'var(--green-bd)'}">
           ${t.label}: ${t.prod}</span>
-        <span style="font-size:10px;font-family:'DM Mono',monospace;color:var(--txt3)">${t.mt.toLocaleString()} MT</span>
+        <span style="font-size:10px;font-family:'DM Mono',monospace;color:var(--txt3)">${fmtMt(t.mt)} MT</span>
       </div>`;
     }).join('');
     return `<div style="display:flex;align-items:center;gap:4px;padding:2px 0 4px">
         <span class="chg-from-lbl">${f.label}: ${f.prod}</span>
-        <span class="chg-mt">${f.mt.toLocaleString()} MT</span>
+        <span class="chg-mt">${fmtMt(f.mt)} MT</span>
         <span style="font-size:9.5px;color:var(--orange);font-weight:700;padding:1px 5px;background:var(--orange-bg);border:1px solid var(--orange-bd);border-radius:3px">SPLIT</span>
       </div>${toRows}`;
   }
@@ -381,7 +381,7 @@ function buildRevChgHtml(co) {
       <span class="chg-from-lbl">${f.label||'Before'}: ${f.prod}</span>
       <span class="chg-arrow">→</span>
       <span class="chg-to-lbl">${t.label||'After'}: ${t.prod||'?'}</span>
-      <span class="chg-mt">${f.mt.toLocaleString()} MT</span>
+      <span class="chg-mt">${fmtMt(f.mt)} MT</span>
     </div>`;
   }).join('');
 }
@@ -435,8 +435,8 @@ function buildRevDetailTable() {
       if (reqEntries.length > 0) {
         const lines = reqEntries.map(([prod, v]) => {
           const newP     = v.newProduct ? ` → <strong style="color:var(--blue)">${v.newProduct}</strong>` : '';
-          const mt       = v.confirmedMT != null ? v.confirmedMT.toLocaleString()
-                         : v.requestedMT != null ? v.requestedMT.toLocaleString() : '—';
+          const mt       = v.confirmedMT != null ? fmtMt(v.confirmedMT)
+                         : v.requestedMT != null ? fmtMt(v.requestedMT) : '—';
           const stColor  = v.status==='confirmed' ? 'var(--green)' : v.status==='rejected' ? 'var(--red2)' : 'var(--amber)';
           const stIco    = v.status==='confirmed' ? '✅' : v.status==='rejected' ? '✕' : '⏳';
           return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
@@ -478,10 +478,10 @@ function buildRevDetailTable() {
             const obtTot = _co > 0 ? _co : (Number(co.obtained) || 0);
             const breakdown = getObtainedProdBreakdown(co);
             if (!breakdown) {
-              return `<span class="t-mono" style="font-weight:700">${obtTot.toLocaleString()} MT</span>`;
+              return `<span class="t-mono" style="font-weight:700">${fmtMt(obtTot)} MT</span>`;
             }
             return `<div style="min-width:160px">
-              <div style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;text-align:right;margin-bottom:4px;padding-bottom:4px;border-bottom:2px solid var(--border)">${obtTot.toLocaleString()} MT <span style="font-size:9px;color:var(--txt3);font-weight:400">${co.products.length} products</span></div>
+              <div style="font-size:12px;font-weight:700;font-family:'DM Mono',monospace;text-align:right;margin-bottom:4px;padding-bottom:4px;border-bottom:2px solid var(--border)">${fmtMt(obtTot)} MT <span style="font-size:9px;color:var(--txt3);font-weight:400">${co.products.length} products</span></div>
               ${breakdown}
             </div>`;
           })()}
@@ -489,7 +489,7 @@ function buildRevDetailTable() {
         <td>${buildRevChgHtml(co)}</td>
         <td style="font-size:11px;color:var(--txt3)">${fmtDateStd(co.revSubmitDate)}</td>
         <td><span class="badge ${badgeCls}" style="font-size:10px;white-space:normal">${co.revStatus}</span></td>
-        <td class="t-r t-mono">${co.revMT ? co.revMT.toLocaleString() : '—'}</td>
+        <td class="t-r t-mono">${co.revMT ? fmtMt(co.revMT) : '—'}</td>
         <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--blue)">${co.pertekNo || '<span style="color:var(--txt3)">—</span>'}</td>
         <td style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--teal)">${_spiCellHtml}</td>
         <td style="vertical-align:top">${salesReqCell}</td>`;
@@ -558,7 +558,7 @@ function renderSPI() {
         <td><div class="t-code" onclick="openDrawerPending('${d.code}')">${d.code}</div></td>
         <td style="font-size:11.5px;font-weight:600">${d.group}</td>
         <td>${chips(d.products)}</td>
-        <td class="t-r t-mono">${(d.mt||0).toLocaleString()}</td>
+        <td class="t-r t-mono">${fmtMt(d.mt||0)}</td>
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td><span class="badge b-pending">📬 New Submission</span></td>
@@ -605,8 +605,8 @@ function renderSPI() {
         <td><div class="t-code" onclick="openDrawerPending('${d.code}')">${d.code}</div></td>
         <td style="font-size:11.5px;font-weight:600">${d.group}</td>
         <td>${chips(d.products)}</td>
-        <td class="t-r t-mono">${(d.mt||0).toLocaleString()}</td>
-        <td class="t-r t-mono" style="color:${obtMT>0?'var(--teal)':'var(--txt3)'};font-weight:${obtMT>0?'700':'400'}">${obtMT>0?obtMT.toLocaleString():'—'}</td>
+        <td class="t-r t-mono">${fmtMt(d.mt||0)}</td>
+        <td class="t-r t-mono" style="color:${obtMT>0?'var(--teal)':'var(--txt3)'};font-weight:${obtMT>0?'700':'400'}">${obtMT>0?fmtMt(obtMT):'—'}</td>
         <td class="t-r" style="color:var(--txt3);font-size:11px">—</td>
         <td><span class="badge b-revpending">⏳ PERTEK Terbit — Menunggu SPI</span></td>
         <td style="font-size:11px;color:var(--orange);line-height:1.4">${latestStatus}</td>
@@ -656,9 +656,9 @@ function renderSPI() {
       <td><div class="t-code" onclick="openDrawer('${d.code}')">${d.code}${salesRevBadge}</div></td>
       <td style="font-size:11.5px;font-weight:600">${d.group}</td>
       <td>${chips(d.products)}</td>
-      <td class="t-r t-mono">${_s1.toLocaleString()}</td>
-      <td class="t-r t-mono" style="color:var(--teal)">${_obt.toLocaleString()}</td>
-      <td class="t-r t-mono" style="color:${utilColor}">${spiUtil > 0 ? spiUtil.toLocaleString()+' MT' : '<span style="color:var(--txt3);font-size:10px">—</span>'}</td>
+      <td class="t-r t-mono">${fmtMt(_s1)}</td>
+      <td class="t-r t-mono" style="color:var(--teal)">${fmtMt(_obt)}</td>
+      <td class="t-r t-mono" style="color:${utilColor}">${spiUtil > 0 ? fmtMt(spiUtil)+' MT' : '<span style="color:var(--txt3);font-size:10px">—</span>'}</td>
       <td>${statusBadge(d)}</td>
       <td style="font-size:11px;color:${rs==='active'?'var(--amber)':rs==='reapply'?'var(--blue)':rs==='revpending'?'var(--orange)':rs==='completed'?'var(--violet)':'var(--txt3)'}">
         ${d.revType!=='none' ? buildRevNoteHtml(d) : '—'}\n      </td>

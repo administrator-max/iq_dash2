@@ -38,7 +38,7 @@ function buildCycleTimeline(co) {
       ? Object.entries(c.products).map(([k,v]) => {
           const col = PDOT[k] || '#64748b';
           const bg  = col + '18';
-          const mtTxt = v !== 'TBA' && typeof v === 'number' ? v.toLocaleString() + ' MT' : (v || 'TBA');
+          const mtTxt = v !== 'TBA' && typeof v === 'number' ? fmtMt(v) + ' MT' : (v || 'TBA');
           return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 6px;border-radius:3px;background:${bg};border:1px solid ${col}33;color:${col}">
             <span style="display:inline-block;width:6px;height:6px;border-radius:1px;background:${col};flex-shrink:0"></span>
             <span style="font-weight:600">${k}</span>
@@ -54,7 +54,7 @@ function buildCycleTimeline(co) {
       <div style="flex:1;padding:0 0 0 8px;margin-bottom:2px">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px">
           <span style="font-size:11px;font-weight:700;color:${col.tx}">${c.type}</span>
-          ${c.mt!==undefined&&c.mt!==0?`<span style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--txt2);font-weight:600">${c.mt==='TBA'?'TBA MT':Number(Math.abs(typeof c.mt==='number'?c.mt:0)).toLocaleString()+' MT'}</span>`:''}
+          ${c.mt!==undefined&&c.mt!==0?`<span style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--txt2);font-weight:600">${c.mt==='TBA'?'TBA MT':fmtMt(Math.abs(typeof c.mt==='number'?c.mt:0))+' MT'}</span>`:''}
         </div>
         <div style="display:flex;gap:10px;margin:3px 0;flex-wrap:wrap">
           <div style="font-size:10px;color:var(--txt3)">
@@ -102,8 +102,8 @@ function openDrawer(code) {
   document.getElementById('d-grp').textContent = `Group ${co.group}  ·  ${_rs==='clean'?'Completed':_rs==='active'?'Under Revision':_rs==='revpending'?'PENDING — PERTEK Terbit, SPI Belum':'COMPLETE — SPI Terbit'}`;
 
   const statRow = `<div class="d-stats">
-    <div class="d-stat"><div class="d-sv" style="color:var(--teal)">${co.obtained.toLocaleString()}</div><div class="d-sl">MT Obtained</div></div>
-    <div class="d-stat"><div class="d-sv" style="color:var(--navy)">${co.submit1.toLocaleString()}</div><div class="d-sl">MT Submit</div></div>
+    <div class="d-stat"><div class="d-sv" style="color:var(--teal)">${fmtMt(co.obtained)}</div><div class="d-sl">MT Obtained</div></div>
+    <div class="d-stat"><div class="d-sv" style="color:var(--navy)">${fmtMt(co.submit1)}</div><div class="d-sl">MT Submit</div></div>
     ${ra?`<div class="d-stat"><div class="d-sv" style="color:${ra.cargoArrived?realColor(ra.realPct):'var(--blue)'}">${ra.cargoArrived?(ra.realPct*100).toFixed(0):(ra.utilPct!=null?(ra.utilPct*100).toFixed(0):'—')}%</div><div class="d-sl">${ra.cargoArrived?'Realization':'Utilization'}</div></div>`:''}
     ${ra?`<div class="d-stat"><div class="d-sv" style="font-size:13px;color:${isReapplySubmitted(ra)?'#5b21b6':isEligible(ra)?'var(--green)':'var(--orange)'}">${isReapplySubmitted(ra)?'🔵 Submitted':isEligible(ra)?'✓ Eligible':'✗ Not Yet'}</div><div class="d-sl">Re-Apply</div></div>`:''}
   </div>`;
@@ -115,8 +115,8 @@ function openDrawer(code) {
     ${co.pertekNo?`<div class="dl-r"><div class="dl-k">PERTEK No.</div><div class="dl-v" style="font-family:'DM Mono',monospace;color:var(--blue)">${co.pertekNo}</div></div>`:''}
     ${co.spiNo?`<div class="dl-r"><div class="dl-k">SPI No.</div><div class="dl-v" style="font-family:'DM Mono',monospace;color:var(--teal)">${co.spiNo}</div></div>`:''}
     ${co.statusUpdate?`<div class="dl-r"><div class="dl-k" style="color:var(--violet)">📋 Status Update<br><span style="font-size:9px;font-weight:400;color:var(--txt3);font-style:italic">Submission-level</span></div><div class="dl-v" style="font-size:11.5px;white-space:pre-wrap;line-height:1.5;color:var(--txt2)">${co.statusUpdate}</div></div>`:''}
-    ${co.utilizationMT!=null?`<div class="dl-r"><div class="dl-k">Utilization MT</div><div class="dl-v" style="font-family:'DM Mono',monospace">${co.utilizationMT.toLocaleString()} MT</div></div>`:''}
-    ${co.availableQuota!=null?`<div class="dl-r"><div class="dl-k">Available Quota</div><div class="dl-v" style="font-weight:700;color:${co.availableQuota>0?'var(--teal)':co.availableQuota===0?'var(--txt3)':'var(--red2)'};font-family:'DM Mono',monospace">${co.availableQuota.toLocaleString()} MT${co.revType==='active'?' <span style="font-size:9.5px;font-weight:400;color:var(--amber2)">(original PERTEK − revision TBA)</span>':''}</div></div>`:''}
+    ${co.utilizationMT!=null?`<div class="dl-r"><div class="dl-k">Utilization MT</div><div class="dl-v" style="font-family:'DM Mono',monospace">${fmtMt(co.utilizationMT)} MT</div></div>`:''}
+    ${co.availableQuota!=null?`<div class="dl-r"><div class="dl-k">Available Quota</div><div class="dl-v" style="font-weight:700;color:${co.availableQuota>0?'var(--teal)':co.availableQuota===0?'var(--txt3)':'var(--red2)'};font-family:'DM Mono',monospace">${fmtMt(co.availableQuota)} MT${co.revType==='active'?' <span style="font-size:9.5px;font-weight:400;color:var(--amber2)">(original PERTEK − revision TBA)</span>':''}</div></div>`:''}
     ${co.updatedBy?`<div class="dl-r"><div class="dl-k">Last Updated By</div><div class="dl-v"><span class="upd-tag upd-${co.updatedBy.toLowerCase()}">${co.updatedBy}</span>${co.updatedDate?' · '+co.updatedDate:''}</div></div>`:''}
     <div class="dl-r"><div class="dl-k">Submit Date</div><div class="dl-v">${co.remarks}</div></div>
   </div>`;
@@ -133,7 +133,7 @@ function openDrawer(code) {
               <div style="padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);margin-bottom:7px">
                 <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3);margin-bottom:2px">${f.label}</div>
                 <div style="font-weight:600">${f.prod}</div>
-                <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--txt3)">${f.mt.toLocaleString()} MT</div>
+                <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--txt3)">${fmtMt(f.mt)} MT</div>
               </div>
               <div style="display:flex;align-items:center;gap:5px;padding:0 4px 6px;font-size:10px;color:var(--orange);font-weight:700">↓ Split into:</div>
               ${co.revTo.map(t => {
@@ -142,7 +142,7 @@ function openDrawer(code) {
                   <div style="flex:1;padding:5px 9px;background:${isRet?'var(--blue-bg)':'var(--green-bg)'};border:1px solid ${isRet?'var(--blue-bd)':'var(--green-bd)'};border-radius:var(--r)">
                     <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:${isRet?'var(--blue)':'var(--green)'};margin-bottom:2px">${t.label}</div>
                     <div style="font-weight:700;color:${isRet?'var(--blue)':'var(--green)'}">${t.prod}</div>
-                    <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:${isRet?'var(--blue)':'var(--green)'}">${t.mt.toLocaleString()} MT</div>
+                    <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:${isRet?'var(--blue)':'var(--green)'}">${fmtMt(t.mt)} MT</div>
                   </div>
                 </div>`;
               }).join('')}
@@ -154,13 +154,13 @@ function openDrawer(code) {
               <div style="flex:1;padding:5px 9px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);font-size:11.5px">
                 <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--txt3);margin-bottom:2px">${f.label||'Before'}</div>
                 <div style="font-weight:600">${f.prod}</div>
-                <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--txt3)">${f.mt.toLocaleString()} MT</div>
+                <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--txt3)">${fmtMt(f.mt)} MT</div>
               </div>
               <div style="font-size:18px;color:var(--txt3)">→</div>
               <div style="flex:1;padding:5px 9px;background:var(--green-bg);border:1px solid var(--green-bd);border-radius:var(--r);font-size:11.5px">
                 <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--green);margin-bottom:2px">${t.label||'After'}</div>
                 <div style="font-weight:700;color:var(--green)">${t.prod||'?'}</div>
-                <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--green)">${(t.mt||0).toLocaleString()} MT</div>
+                <div style="font-size:10.5px;font-family:'DM Mono',monospace;color:var(--green)">${fmtMt(t.mt||0)} MT</div>
               </div>
             </div>`;
           }).join('')
@@ -187,7 +187,7 @@ function openDrawer(code) {
     const drDispUtil = ra.cargoArrived ? null        : ra.utilPct;
     utilInfo = `<div class="d-sec">Import Status, Utilization &amp; Realization</div><div class="dl">
       <div class="dl-r"><div class="dl-k">Product</div><div class="dl-v">${ra.product}</div></div>
-      <div class="dl-r"><div class="dl-k">Obtained Quota</div><div class="dl-v t-mono">${ra.obtained.toLocaleString()} MT</div></div>
+      <div class="dl-r"><div class="dl-k">Obtained Quota</div><div class="dl-v t-mono">${fmtMt(ra.obtained)} MT</div></div>
       <div class="dl-r"><div class="dl-k">Import Volume</div><div class="dl-v t-mono" style="color:var(--txt2)">${ra.berat.toLocaleString()} MT <span style="font-size:10px;color:var(--txt3)">(allocated/sold)</span></div></div>
       <div class="dl-r"><div class="dl-k">Utilization %</div><div class="dl-v">${drDispUtil!=null?`<strong style='color:var(--blue)'>${(drDispUtil*100).toFixed(1)}%</strong> <span style='font-size:10px;color:var(--txt3)'>(cargo in shipment — moves to Realization upon JKT arrival)</span>`:'<span style="font-size:11px;color:var(--txt3);font-style:italic">— Cargo arrived, see Realization %</span>'}</div></div>
       <div class="dl-r"><div class="dl-k">Realization %</div><div class="dl-v">${drDispReal!=null?`<strong style='color:${realColor(drDispReal)}'>${(drDispReal*100).toFixed(1)}%</strong> <span style='font-size:10px;color:var(--txt3)'>(arrived at JKT &amp; Beacukai ÷ obtained)</span>`:'<span style="font-size:11px;color:var(--txt3);font-style:italic">— Cargo not yet at JKT</span>'}</div></div>
@@ -198,7 +198,7 @@ function openDrawer(code) {
       <div class="dl-r"><div class="dl-k">Eligibility Rule</div><div class="dl-v" style="font-size:11px;color:var(--txt3);line-height:1.5">Realization ≥ 60% <em>AND</em> cargo arrived at JKT &amp; Beacukai-registered.<br><em>Utilization % alone does not confer eligibility.</em></div></div>
       <div class="dl-r"><div class="dl-k">Eligibility</div><div class="dl-v">${isReapplySubmitted(ra)?'<span class="badge b-reapply">🔵 Re-Apply Submitted — Stage 2 On Process</span>':isEligible(ra)?'<span class="badge b-eligible">✓ Eligible for Re-Apply</span>':`<span class="badge b-ineligible">✗ Not Eligible</span><div style='font-size:10.5px;color:var(--txt3);margin-top:4px'>${ineligReason}</div>`}</div></div>
       <div class="dl-r"><div class="dl-k">Shipment Ref.</div><div class="dl-v">${ra.catatan}</div></div>
-      <div class="dl-r"><div class="dl-k">Target Obtained</div><div class="dl-v t-mono" style="color:var(--amber2)">${ra.target?ra.target.toLocaleString()+' MT':'TBA'}</div></div>
+      <div class="dl-r"><div class="dl-k">Target Obtained</div><div class="dl-v t-mono" style="color:var(--amber2)">${ra.target?fmtMt(ra.target)+' MT':'TBA'}</div></div>
       <div class="dl-r"><div class="dl-k">Est. Re-Apply Period</div><div class="dl-v" style="font-weight:700;color:var(--violet)">${ra.reapplyEst || '—'} <span style="font-size:10px;color:var(--txt3);font-weight:400">${ra.cargoArrived ? '(Arrival Date + 7 days)' : '(Available once cargo arrives)'}</span></div></div>
     </div>`;
   }
@@ -223,17 +223,17 @@ function openDrawer(code) {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
         <div style="text-align:center;padding:8px 6px;background:#fff;border:1px solid #e9d5ff;border-radius:var(--r)">
           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);margin-bottom:3px">Prev. Quota #1</div>
-          <div style="font-size:14px;font-weight:700;font-family:'DM Mono',monospace;color:var(--txt2)">${(ra.reapplyPrevObtained||0).toLocaleString()}</div>
+          <div style="font-size:14px;font-weight:700;font-family:'DM Mono',monospace;color:var(--txt2)">${fmtMt(ra.reapplyPrevObtained||0)}</div>
           <div style="font-size:9px;color:var(--txt3)">MT</div>
         </div>
         <div style="text-align:center;padding:8px 6px;background:#fff;border:1px solid #e9d5ff;border-radius:var(--r)">
           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--txt3);margin-bottom:3px">+ Additional</div>
-          <div style="font-size:14px;font-weight:700;font-family:'DM Mono',monospace;color:#5b21b6">+${(ra.reapplyAdditional||0).toLocaleString()}</div>
+          <div style="font-size:14px;font-weight:700;font-family:'DM Mono',monospace;color:#5b21b6">+${fmtMt(ra.reapplyAdditional||0)}</div>
           <div style="font-size:9px;color:var(--txt3)">MT requested</div>
         </div>
         <div style="text-align:center;padding:8px 6px;background:#5b21b6;border-radius:var(--r)">
           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:rgba(255,255,255,.7);margin-bottom:3px">New Total</div>
-          <div style="font-size:16px;font-weight:700;font-family:'DM Mono',monospace;color:#fff">${(ra.reapplyNewTotal||0).toLocaleString()}</div>
+          <div style="font-size:16px;font-weight:700;font-family:'DM Mono',monospace;color:#fff">${fmtMt(ra.reapplyNewTotal||0)}</div>
           <div style="font-size:9px;color:rgba(255,255,255,.6)">MT total quota</div>
         </div>
       </div>
@@ -313,7 +313,7 @@ function openDrawerPending(code) {
     </div>
     <div class="dl">
       <div class="dl-r"><div class="dl-k">Products</div><div class="dl-v">${chips(co.products)}</div></div>
-      <div class="dl-r"><div class="dl-k">Submitted</div><div class="dl-v t-mono">${(co.mt||0).toLocaleString()} MT</div></div>
+      <div class="dl-r"><div class="dl-k">Submitted</div><div class="dl-v t-mono">${fmtMt(co.mt||0)} MT</div></div>
       <div class="dl-r"><div class="dl-k">Submit Date</div><div class="dl-v">${co.remarks||'—'}</div></div>
       <div class="dl-r"><div class="dl-k">Last Update</div><div class="dl-v">${co.date||'—'}</div></div>
       <div class="dl-r"><div class="dl-k">Approval Stage</div><div class="dl-v"><span class="badge ${hasPertek?'b-revpending':'b-pending'}">${co.status||'—'}</span></div></div>

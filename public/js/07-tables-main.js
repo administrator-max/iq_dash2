@@ -140,7 +140,7 @@ function renderMain() {
   const mkAvqCell = (avq, isPending) => {
     if (isPending) return '<span style="color:var(--txt3)">—</span>';
     const col = avq > 0 ? 'var(--teal)' : avq === 0 ? 'var(--txt3)' : 'var(--red2)';
-    return `<span style="color:${col};font-weight:${avq>0?'700':'400'};font-family:'DM Mono',monospace">${avq.toLocaleString()} MT</span>`;
+    return `<span style="color:${col};font-weight:${avq>0?'700':'400'};font-family:'DM Mono',monospace">${fmtMt(avq)} MT</span>`;
   };
 
   const mkPertekCell = (d) => {
@@ -181,8 +181,8 @@ function renderMain() {
         </td>
         <td style="font-size:11.5px;font-weight:600">${d.group}</td>
         <td style="font-size:10.5px;color:var(--txt3);font-style:italic">${d.products.length} products · total</td>
-        <td class="t-r t-mono" style="font-weight:700">${N(d.submit1)}</td>
-        <td class="t-r t-mono" style="color:${d.obtained>0?'var(--teal)':'var(--txt3)'};font-weight:700">${d.obtained>0?N(d.obtained):'—'}</td>
+        <td class="t-r t-mono" style="font-weight:700">${fmtMt(d.submit1)}</td>
+        <td class="t-r t-mono" style="color:${d.obtained>0?'var(--teal)':'var(--txt3)'};font-weight:700">${d.obtained>0?fmtMt(d.obtained):'—'}</td>
         <td class="t-r">${mkNumCell(d.utilMT,'var(--blue)')}</td>
         <td class="t-r">${mkNumCell(d.berat,'var(--green)')}</td>
         <td style="min-width:90px">${mkPctCell(dispPct, d.realPct==null && d.utilPct!=null)}</td>
@@ -204,9 +204,9 @@ function renderMain() {
             <span style="display:inline-block;width:5px;height:5px;background:var(--txt3);border-radius:1px;margin-right:5px;vertical-align:middle;opacity:.4"></span>
             <span style="font-size:11px;color:var(--txt2);font-weight:500">${s.prod}</span>
           </td>
-          <td class="t-r t-mono" style="color:var(--txt3)">${s.subP>0?s.subP.toLocaleString():'—'}</td>
-          <td class="t-r t-mono" style="color:${s.obtP>0?'var(--teal)':'var(--txt3)'}">${s.obtP>0?s.obtP.toLocaleString():'—'}</td>
-          <td class="t-r">${s.utilP>0?`<span style="color:var(--blue);font-family:'DM Mono',monospace">${s.utilP.toLocaleString()}</span>`:'<span style="color:var(--txt3)">—</span>'}</td>
+          <td class="t-r t-mono" style="color:var(--txt3)">${s.subP>0?fmtMt(s.subP):'—'}</td>
+          <td class="t-r t-mono" style="color:${s.obtP>0?'var(--teal)':'var(--txt3)'}">${s.obtP>0?fmtMt(s.obtP):'—'}</td>
+          <td class="t-r">${s.utilP>0?`<span style="color:var(--blue);font-family:'DM Mono',monospace">${fmtMt(s.utilP)}</span>`:'<span style="color:var(--txt3)">—</span>'}</td>
           <td class="t-r">${s.realP>0?`<span style="color:var(--green);font-family:'DM Mono',monospace">${Number(s.realP).toLocaleString()}</span>`:'<span style="color:var(--txt3)">—</span>'}</td>
           <td style="min-width:90px">${mkPctCell(dispPctS, s.realPctP==null && s.utilPctP!=null)}</td>
           <td class="t-r">${mkAvqCell(s.avqP, false)}</td>
@@ -219,8 +219,8 @@ function renderMain() {
         <td><div class="t-code" onclick="openDrawer('${d.code}')">${d.code}</div></td>
         <td style="font-size:11.5px;font-weight:600">${d.group}</td>
         <td>${chips(d.products)}</td>
-        <td class="t-r t-mono">${N(d.submit1)}</td>
-        <td class="t-r t-mono" style="color:${d.obtained>0?'var(--teal)':'var(--txt3)'}">${d.obtained>0?N(d.obtained):'—'}</td>
+        <td class="t-r t-mono">${fmtMt(d.submit1)}</td>
+        <td class="t-r t-mono" style="color:${d.obtained>0?'var(--teal)':'var(--txt3)'}">${d.obtained>0?fmtMt(d.obtained):'—'}</td>
         <td class="t-r">${mkNumCell(d.utilMT,'var(--blue)',
           d.products.length > 1
             ? Object.entries(d.utilizationByProd||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])
@@ -258,12 +258,12 @@ function renderMain() {
       : '<span style="color:var(--txt3)">—</span>';
     tfoot.innerHTML = `<tr class="tr-totals">
       <td colspan="3" style="padding-left:14px">TOTAL &nbsp;·&nbsp; ${rows.length} companies</td>
-      <td class="t-r t-mono">${tSubmit.toLocaleString()}</td>
-      <td class="t-r t-mono" style="color:var(--teal)">${tObtain.toLocaleString()}</td>
-      <td class="t-r t-mono" style="color:var(--blue)">${tUtil.toLocaleString()}</td>
+      <td class="t-r t-mono">${fmtMt(tSubmit)}</td>
+      <td class="t-r t-mono" style="color:var(--teal)">${fmtMt(tObtain)}</td>
+      <td class="t-r t-mono" style="color:var(--blue)">${fmtMt(tUtil)}</td>
       <td class="t-r t-mono" style="color:var(--green)">${tReal.toLocaleString()}</td>
       <td style="min-width:90px">${pctStr}</td>
-      <td class="t-r t-mono" style="color:var(--teal)">${tAvail.toLocaleString()} MT</td>
+      <td class="t-r t-mono" style="color:var(--teal)">${fmtMt(tAvail)} MT</td>
       <td></td><td></td><td></td>
     </tr>`;
   }
@@ -285,15 +285,15 @@ function renderMain() {
     const tR = rows.reduce((s,d) => s+(d.berat||0), 0);
     const tA = rows.reduce((s,d) => s+(d.availMT||0), 0);
     totBar.innerHTML =
-      `<span style="color:var(--navy)">Submit: <strong>${tS.toLocaleString()}</strong></span>` +
+      `<span style="color:var(--navy)">Submit: <strong>${fmtMt(tS)}</strong></span>` +
       `<span style="opacity:.3">·</span>` +
-      `<span style="color:var(--teal)">Obtained: <strong>${tO.toLocaleString()}</strong></span>` +
+      `<span style="color:var(--teal)">Obtained: <strong>${fmtMt(tO)}</strong></span>` +
       `<span style="opacity:.3">·</span>` +
-      `<span style="color:var(--blue)">Utilized: <strong>${tU.toLocaleString()}</strong></span>` +
+      `<span style="color:var(--blue)">Utilized: <strong>${fmtMt(tU)}</strong></span>` +
       `<span style="opacity:.3">·</span>` +
       `<span style="color:var(--green)">Realized: <strong>${tR.toLocaleString()}</strong></span>` +
       `<span style="opacity:.3">·</span>` +
-      `<span style="color:#0891b2">Available: <strong>${tA.toLocaleString()}</strong></span>`;
+      `<span style="color:#0891b2">Available: <strong>${fmtMt(tA)}</strong></span>`;
   }
 
   document.getElementById('mainCount').textContent = `${rows.length} companies`;

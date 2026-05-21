@@ -106,7 +106,7 @@ function buildPipeline() {
   // Update pipeline sidebar stats dynamically — use canonicalObtained for accuracy
   const _pipeObt = co => (typeof canonicalObtained==='function') ? canonicalObtained(co) : (co.obtained||0);
   const ps = document.getElementById('pipelineSpiStat');
-  if (ps) ps.textContent = `${spiPool.reduce((s,d)=>s+_pipeObt(d),0).toLocaleString()} MT · ${spiPool.length} co.`;
+  if (ps) ps.textContent = `${fmtMt(spiPool.reduce((s,d)=>s+_pipeObt(d),0))} MT · ${spiPool.length} co.`;
   const pr = document.getElementById('pipelineReapplyStat');
   if (pr) pr.textContent = `${reapplyN} co.`;
 
@@ -152,7 +152,7 @@ function buildPipelineHover(idx) {
   if (idx === 0) {
     const sorted = [...filteredSPI()].sort((a,b) => b.obtained - a.obtained);
     h.innerHTML = `<div class="ph-title">✅ SPI / PERTEK Obtained — ${sorted.length} companies</div>` +
-      sorted.map(d => `<div class="ph-row"><span class="ph-code">${d.code}</span><span class="ph-mt">${d.obtained.toLocaleString()} MT</span></div>`).join('');
+      sorted.map(d => `<div class="ph-row"><span class="ph-code">${d.code}</span><span class="ph-mt">${fmtMt(d.obtained)} MT</span></div>`).join('');
   } else if (idx === 1) {
     // Re-Apply Eligible = companies with cargoArrived AND realPct ≥ 60%
     const eligible = RA.filter(r => r.cargoArrived === true && r.realPct >= 0.6)
@@ -164,7 +164,7 @@ function buildPipelineHover(idx) {
       }).join('');
   } else {
     h.innerHTML = `<div class="ph-title">⏳ Pertek Pending — ${filteredPending().length} companies</div>` +
-      filteredPending().map(d => `<div class="ph-row"><span class="ph-code">${d.code}</span><span class="ph-mt">${d.mt.toLocaleString()} MT</span></div>`).join('');
+      filteredPending().map(d => `<div class="ph-row"><span class="ph-code">${d.code}</span><span class="ph-mt">${fmtMt(d.mt)} MT</span></div>`).join('');
   }
 }
 
@@ -196,7 +196,7 @@ function buildProductDonut() {
       plugins: {
         legend: { display: false },
         tooltip: { callbacks: {
-          label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()} MT (${(ctx.parsed/total*100).toFixed(1)}%)`
+          label: ctx => ` ${ctx.label}: ${fmtMt(ctx.parsed)} MT (${(ctx.parsed/total*100).toFixed(1)}%)`
         }}
       }
     }
@@ -210,7 +210,7 @@ function buildProductDonut() {
     <div class="pl-row" title="${coMap[k].join(', ')}">
       <div class="pl-dot" style="background:${pc(k).solid}"></div>
       <span class="pl-name">${k}</span>
-      <span class="pl-mt">${Math.round(v).toLocaleString()} MT</span>
+      <span class="pl-mt">${fmtMt(v)} MT</span>
       <span class="pl-pct" style="background:${pc(k).light};color:${pc(k).text}">${pct}%</span>
     </div>
     <div style="padding:0 6px 3px 23px;font-size:9.5px;color:var(--txt3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${coMap[k].slice(0,6).join(', ')}${coMap[k].length>6?'…':''}</div>`;
@@ -369,7 +369,7 @@ function buildAvailableQuota() {
   const kpiUnit = document.getElementById('kpiAvqUnit');
   const kpiTag  = document.getElementById('kpiAvqTag');
   const kpiFill = document.getElementById('kpiAvqFill');
-  if (kpiVal)  kpiVal.textContent  = rows.length > 0 ? totalAvq.toLocaleString() : '—';
+  if (kpiVal)  kpiVal.textContent  = rows.length > 0 ? fmtMt(totalAvq) : '—';
   if (kpiUnit) kpiUnit.textContent = `MT · ${uniqueCos} compan${uniqueCos!==1?'ies':'y'} with PERTEK Terbit`;
   if (kpiTag)  kpiTag.textContent  = rows.length > 0
     ? `${totalObt > 0 ? (totalAvq/totalObt*100).toFixed(1) : '—'}% remaining of obtained`
@@ -420,7 +420,7 @@ function buildAvailableQuota() {
   const badge = document.getElementById('avqTotalBadge');
   if (badge) {
     const filtTotal = filtered.reduce((s,r)=>s+r.avq,0);
-    badge.textContent = `Available: ${filtTotal.toLocaleString()} MT`;
+    badge.textContent = `Available: ${fmtMt(filtTotal)} MT`;
   }
 
   // Build HTML rows
@@ -431,11 +431,13 @@ function buildAvailableQuota() {
   </div>`;
 
   const barRows = filtered.map(r => {
+    // Suppress tiny negative avail (XLSX manual re-allocation rounding artifacts)
+    const dispAvq = (typeof snapZero === 'function') ? snapZero(r.avq) : r.avq;
     const obtW  = (r.obtained / maxObt * 100).toFixed(1);
     const utilW = (r.utilMT   / maxObt * 100).toFixed(1);
-    const avqW  = Math.max(0, r.avq / maxObt * 100).toFixed(1);
+    const avqW  = Math.max(0, dispAvq / maxObt * 100).toFixed(1);
     const col   = pc(r.product);
-    const avqColor = r.avq > 0 ? col : 'var(--red2)';
+    const avqColor = dispAvq > 0 ? col : 'var(--red2)';
     const tag = r.updatedBy
       ? `<span class="upd-tag upd-${r.updatedBy.toLowerCase()}" style="font-size:8.5px;padding:1px 5px">${r.updatedBy}</span>`
       : '';
@@ -445,7 +447,7 @@ function buildAvailableQuota() {
         <div>${tag}</div>
       </div>
       <div>
-        <div class="avq-bar-bg" style="position:relative;cursor:pointer" title="${r.code}: Obtained ${r.obtained.toLocaleString()} MT · Used ${r.utilMT.toLocaleString()} MT · Available ${r.avq.toLocaleString()} MT">
+        <div class="avq-bar-bg" style="position:relative;cursor:pointer" title="${r.code}: Obtained ${fmtMt(r.obtained)} MT · Used ${fmtMt(r.utilMT)} MT · Available ${fmtMt(r.avq)} MT">
           <!-- Obtained (faint background) -->
           <div style="position:absolute;inset:0;background:${col}22;border-radius:5px"></div>
           <!-- Utilized (solid) -->
@@ -454,11 +456,11 @@ function buildAvailableQuota() {
           <div style="position:absolute;top:0;left:${utilW}%;height:100%;width:${avqW}%;background:${avqColor};border-radius:0 5px 5px 0;opacity:${r.avq>0?1:.9}"></div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:2px">
-          <span>Used: ${r.utilMT.toLocaleString()} MT</span>
-          <span>Available: ${r.avq.toLocaleString()} MT</span>
+          <span>Used: ${fmtMt(r.utilMT)} MT</span>
+          <span>Available: ${fmtMt(dispAvq)} MT</span>
         </div>
       </div>
-      <div class="avq-mt" style="color:${avqColor}">${r.avq >= 0 ? r.avq.toLocaleString() : '('+Math.abs(r.avq).toLocaleString()+')'}  MT</div>
+      <div class="avq-mt" style="color:${avqColor}">${dispAvq >= 0 ? fmtMt(dispAvq) : '('+fmtMt(Math.abs(dispAvq))+')'}  MT</div>
       <div class="avq-prod">${r.product}</div>
     </div>`;
   }).join('');
@@ -483,7 +485,7 @@ function buildAvailableQuota() {
       return `<span style="display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:700;` +
         `padding:1px 6px;border-radius:3px;background:${col}18;color:${col};border:1px solid ${col}44;white-space:nowrap">` +
         `<span style="width:5px;height:5px;border-radius:50%;background:${col};display:inline-block;flex-shrink:0"></span>` +
-        `${shortProd}: ${mt.toLocaleString()} MT` +
+        `${shortProd}: ${fmtMt(mt)} MT` +
         `</span>`;
     }).join('');
 
@@ -501,14 +503,14 @@ function buildAvailableQuota() {
             <div style="position:absolute;top:0;left:${totUtilW}%;height:100%;width:${totAvqW}%;background:${avqTotColor};border-radius:0 5px 5px 0"></div>
           </div>
           <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:3px">
-            <span>Used: <strong style="color:var(--navy)">${filtTotalUtil.toLocaleString()} MT</strong></span>
-            <span>Available: <strong style="color:${avqTotColor}">${filtTotalAvq.toLocaleString()} MT</strong></span>
+            <span>Used: <strong style="color:var(--navy)">${fmtMt(filtTotalUtil)} MT</strong></span>
+            <span>Available: <strong style="color:${avqTotColor}">${fmtMt(filtTotalAvq)} MT</strong></span>
           </div>
           <div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px">${prodSummaryHtml}</div>
         </div>
-        <div class="avq-mt" style="color:${avqTotColor};font-size:16px;font-weight:800">${filtTotalAvq.toLocaleString()} MT</div>
+        <div class="avq-mt" style="color:${avqTotColor};font-size:16px;font-weight:800">${fmtMt(filtTotalAvq)} MT</div>
         <div class="avq-prod" style="font-size:9.5px;color:var(--txt3);line-height:1.6">
-          Obtained<br><strong style="color:var(--navy);font-size:11px">${filtTotalObt.toLocaleString()}</strong>
+          Obtained<br><strong style="color:var(--navy);font-size:11px">${fmtMt(filtTotalObt)}</strong>
         </div>
       </div>
     </div>`;
@@ -613,7 +615,7 @@ function buildTopCo() {
             title: ctx2 => {
               const co = dataset[ctx2[0].dataIndex];
               const grpLabel = `Group ${co.group}`;
-              return `${co.code}  [${grpLabel}]  —  ${co.periodObtained.toLocaleString()} MT`;
+              return `${co.code}  [${grpLabel}]  —  ${fmtMt(co.periodObtained)} MT`;
             },
             label: ctx2 => {
               const co = dataset[ctx2.dataIndex];
@@ -626,7 +628,7 @@ function buildTopCo() {
               if (ra && ra.cargoArrived) lines.push(`  Realization: ${(ra.realPct*100).toFixed(0)}%`);
               else if (ra && ra.utilPct) lines.push(`  Utilization: ${(ra.utilPct*100).toFixed(0)}%`);
               if (PERIOD.active && co.obtained !== co.periodObtained)
-                lines.push(`  (All-time total: ${co.obtained.toLocaleString()} MT)`);
+                lines.push(`  (All-time total: ${fmtMt(co.obtained)} MT)`);
               return lines;
             }
           }
@@ -755,12 +757,12 @@ function buildFlowKPIStrip() {
   const eligCount = arrived.filter(r => r.realPct >= 0.6).length;
 
   const steps = [
-    { num:'①', label:'Obtained Quota', val: totalObtained.toLocaleString(), unit:'MT', note:`${fRa.length} companies`, color:'var(--navy)', bg:'#eef2ff', border:'#c7d2fe' },
-    { num:'②', label:'Utilized (In Shipment)', val: totalUtilized > 0 ? totalUtilized.toLocaleString() : '—', unit: totalUtilized > 0 ? 'MT allocated' : 'pending', note: `${inShip.length} in transit`, color:'var(--blue)', bg:'var(--blue-bg)', border:'var(--blue-bd)' },
+    { num:'①', label:'Obtained Quota', val: fmtMt(totalObtained), unit:'MT', note:`${fRa.length} companies`, color:'var(--navy)', bg:'#eef2ff', border:'#c7d2fe' },
+    { num:'②', label:'Utilized (In Shipment)', val: totalUtilized > 0 ? fmtMt(totalUtilized) : '—', unit: totalUtilized > 0 ? 'MT allocated' : 'pending', note: `${inShip.length} in transit`, color:'var(--blue)', bg:'var(--blue-bg)', border:'var(--blue-bd)' },
     { num:'③', label:'Realized', val: totalRealized > 0 ? totalRealized.toLocaleString() : '—', unit: totalRealized > 0 ? 'MT arrived JKT' : 'none yet', note: `${arrived.length} co. arrived`, color:'var(--green)', bg:'var(--green-bg)', border:'var(--green-bd)' },
     { num:'④', label:'Realization %', val: realPct.toFixed(1) + '%', unit: realPct >= 60 ? '≥ 60% threshold' : '< 60% threshold', note: `${eligCount} eligible co.`, color: realPct >= 60 ? 'var(--green)' : realPct >= 40 ? 'var(--amber)' : 'var(--red2)', bg: realPct >= 60 ? 'var(--green-bg)' : realPct >= 40 ? 'var(--amber-bg)' : 'var(--red-bg)', border: realPct >= 60 ? 'var(--green-bd)' : realPct >= 40 ? 'var(--amber-bd)' : 'var(--red-bd)' },
-    { num:'⑤', label:'Remaining Quota', val: totalRemaining.toLocaleString(), unit:'MT unallocated', note:'Obtained − Utilized', color:'var(--teal)', bg:'var(--teal-bg)', border:'var(--teal-bd)' },
-    { num:'⑥', label:'Target Re-Apply', val: totalTarget > 0 ? totalTarget.toLocaleString() : '—', unit: totalTarget > 0 ? 'MT next cycle' : 'TBA', note:`${eligCount} eligible to apply`, color:'var(--amber)', bg:'var(--amber-bg)', border:'var(--amber-bd)' },
+    { num:'⑤', label:'Remaining Quota', val: fmtMt(totalRemaining), unit:'MT unallocated', note:'Obtained − Utilized', color:'var(--teal)', bg:'var(--teal-bg)', border:'var(--teal-bd)' },
+    { num:'⑥', label:'Target Re-Apply', val: totalTarget > 0 ? fmtMt(totalTarget) : '—', unit: totalTarget > 0 ? 'MT next cycle' : 'TBA', note:`${eligCount} eligible to apply`, color:'var(--amber)', bg:'var(--amber-bg)', border:'var(--amber-bd)' },
   ];
 
   const arrows = steps.map((s, i) => {

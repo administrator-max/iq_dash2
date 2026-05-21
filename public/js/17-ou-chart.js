@@ -270,17 +270,17 @@ function buildOUChart() {
   if (kpiStrip) kpiStrip.innerHTML = `
     <div style="padding:11px 16px;border-right:1px solid var(--border)">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--txt3);margin-bottom:3px">Total Obtained</div>
-      <div style="font-size:22px;font-weight:700;color:var(--navy);line-height:1">${totalObtained.toLocaleString()}</div>
+      <div style="font-size:22px;font-weight:700;color:var(--navy);line-height:1">${fmtMt(totalObtained)}</div>
       <div style="font-size:10px;color:var(--txt3);margin-top:2px">MT · ${allRecords.length} product-company pairs</div>
     </div>
     <div style="padding:11px 16px;border-right:1px solid var(--border)">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--blue);margin-bottom:3px">Total Utilized</div>
-      <div style="font-size:22px;font-weight:700;color:var(--blue);line-height:1">${totalUtilized.toLocaleString()}</div>
+      <div style="font-size:22px;font-weight:700;color:var(--blue);line-height:1">${fmtMt(totalUtilized)}</div>
       <div style="font-size:10px;color:var(--txt3);margin-top:2px">MT · ${avgUtilPct}% avg utilization</div>
     </div>
     <div style="padding:11px 16px;border-right:1px solid var(--border)">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--txt3);margin-bottom:3px">Remaining</div>
-      <div style="font-size:22px;font-weight:700;color:var(--teal);line-height:1">${totalRemain.toLocaleString()}</div>
+      <div style="font-size:22px;font-weight:700;color:var(--teal);line-height:1">${fmtMt(totalRemain)}</div>
       <div style="font-size:10px;color:var(--txt3);margin-top:2px">MT · unallocated quota</div>
     </div>
     <div style="padding:11px 16px">
@@ -399,9 +399,9 @@ function buildOUChart() {
               const i = ctx.dataIndex;
               const prod = productKeys[i] || '';
               const prodLabel = ouPC(prod).label;
-              if (ctx.dataset.label.startsWith('Obtained')) return ` Obtained: ${obtData[i].toLocaleString()} MT`;
-              if (ctx.dataset.label.startsWith('Utilized'))  return ` Utilized: ${utilData[i].toLocaleString()} MT (${Math.round(utilData[i]/(obtData[i]||1)*100)}%) · ${prodLabel}`;
-              if (ctx.dataset.label.startsWith('Remaining')) return ` Remaining: ${remainData[i].toLocaleString()} MT`;
+              if (ctx.dataset.label.startsWith('Obtained')) return ` Obtained: ${fmtMt(obtData[i])} MT`;
+              if (ctx.dataset.label.startsWith('Utilized'))  return ` Utilized: ${fmtMt(utilData[i])} MT (${Math.round(utilData[i]/(obtData[i]||1)*100)}%) · ${prodLabel}`;
+              if (ctx.dataset.label.startsWith('Remaining')) return ` Remaining: ${fmtMt(remainData[i])} MT`;
               return null;
             },
             afterBody: ctx => {
@@ -423,7 +423,7 @@ function buildOUChart() {
   const tbody = document.getElementById('ouTableBody');
   if (!tbody) return;
 
-  const Nmt = v => typeof v === 'number' ? v.toLocaleString() : '—';
+  const Nmt = v => typeof v === 'number' ? fmtMt(v) : '—';
 
   // Build RA lookup map
   const raLookup = {};
@@ -642,9 +642,9 @@ function buildOUChartOverview() {
             },
             label: ctx => {
               const i = ctx.dataIndex;
-              if (ctx.dataset.label.startsWith('Obtained'))  return ` Obtained: ${obtData[i].toLocaleString()} MT`;
-              if (ctx.dataset.label.startsWith('Utilized'))  return ` Utilized: ${utilData[i].toLocaleString()} MT`;
-              if (ctx.dataset.label.startsWith('Remaining')) return ` Remaining: ${remainData[i].toLocaleString()} MT`;
+              if (ctx.dataset.label.startsWith('Obtained'))  return ` Obtained: ${fmtMt(obtData[i])} MT`;
+              if (ctx.dataset.label.startsWith('Utilized'))  return ` Utilized: ${fmtMt(utilData[i])} MT`;
+              if (ctx.dataset.label.startsWith('Remaining')) return ` Remaining: ${fmtMt(remainData[i])} MT`;
               return null;
             },
             afterBody: ctx => {
@@ -808,7 +808,7 @@ function refreshLtDrillModal() {
       </div>
       <div style="flex:1;padding:10px 18px;border-right:1px solid var(--border);background:var(--green-bg)">
         <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--green)">Total Obtained</div>
-        <div style="font-size:20px;font-weight:800;color:var(--green);line-height:1.2">${rows.reduce((s,r)=>s+r.obtained,0).toLocaleString()}</div>
+        <div style="font-size:20px;font-weight:800;color:var(--green);line-height:1.2">${fmtMt(rows.reduce((s,r)=>s+r.obtained,0))}</div>
         <div style="font-size:10px;color:var(--txt3)">MT · ${rows.length} co.</div>
       </div>
       <div style="flex:1;padding:10px 18px;">
@@ -848,8 +848,8 @@ function renderLtDrillTable() {
     const leadStr = r.avgLeadDays !== null ? `${r.avgLeadDays}d` : '—';
     return `<tr style="${rowBg}" onclick="closeLeadTimeDrill();openDrawer('${r.code}')" title="Click to open ${r.code}" style="cursor:pointer">
       <td style="padding:10px 14px;${leftBd};cursor:pointer"><span style="font-weight:700;font-size:13px;color:var(--blue)">${r.code}</span></td>
-      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--teal)">${r.obtained.toLocaleString()} MT</td>
-      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--blue)">${r.utilMT > 0 ? r.utilMT.toLocaleString() + ' MT' : '<span style="color:var(--txt3)">—</span>'}</td>
+      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--teal)">${fmtMt(r.obtained)} MT</td>
+      <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;color:var(--blue)">${r.utilMT > 0 ? fmtMt(r.utilMT) + ' MT' : '<span style="color:var(--txt3)">—</span>'}</td>
       <td style="padding:10px 10px;text-align:right;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;color:var(--green)">${r.realMT > 0 ? r.realMT.toLocaleString() + ' MT' : '<span style="color:var(--txt3)">—</span>'}</td>
       <td style="padding:10px 10px;min-width:120px">${realBar}</td>
       <td style="padding:10px 10px;text-align:center;font-family:'DM Mono',monospace;font-size:12px;color:var(--txt2)">${leadStr}</td>
