@@ -24,6 +24,7 @@ const express     = require('express');
 const cors        = require('cors');
 const compression = require('compression');
 const { Pool }    = require('pg');
+const cache       = require('./lib/cache');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -683,28 +684,32 @@ const KPI_RECONCILE = [
   }
 })();
 
-// ── Server-side cache for /api/data (board-approved 2026) ───────
-// Without this, every concurrent user hits the DB. With multiple users
-// loading the dashboard at the same time, query queueing on the pool
-// can spike per-user latency into the tens of seconds.
-//
-// Strategy: in-memory TTL cache + single-flight de-dup.
-//   - First request builds the payload (~500ms-2s) and caches it 30s
-//   - Concurrent requests during the build piggyback on the same promise
-//     (no second DB hit)
-//   - Subsequent requests within 30s serve from RAM (<5ms)
-//   - PATCH endpoints invalidate the cache so writes are visible
-//     immediately on next read
-const _dataCache = {
-  payload:    null,
-  expiresAt:  0,
-  inflight:   null,   // Promise — singleflight for stampede protection
-  ttlMs:      30_000,
-};
-function invalidateDataCache() {
-  _dataCache.payload   = null;
-  _dataCache.expiresAt = 0;
-}
+// ── Server-side cache for GET endpoints (board-approved 2026) ───
+// Two-tier cache (in-memory L1 + Redis L2, see lib/cache.js):
+//   - L1 (per-process Map, 30s TTL) absorbs same-instance request bursts
+//     in <5ms with no network hop.
+//   - L2 (Redis, 60s TTL) survives restarts and is shared between every
+//     dyno, so multi-instance deploys don't each pay the ~500ms-2s
+//     payload build cost independently.
+//   - Singleflight de-dup prevents stampedes when several concurrent
+//     requests arrive during a cold cache.
+//   - PATCH endpoints call cache.invalidate() which clears both tiers
+//     AND publishes on iq_dash:invalidate so other instances flush their
+//     L1 — writes become visible immediately on next read everywhere.
+// If REDIS_URL is unset, cache.js silently degrades to pure in-memory
+// (same behavior as the old _dataCache).
+const CACHE_KEY_DATA               = 'iq:data:v1';
+const CACHE_KEY_REALIZATIONS_SUM   = 'iq:realizations:summary:v1';
+const CACHE_KEY_REALIZATIONS_PFX   = 'iq:realizations:list:v1:';
+const CACHE_KEY_RA_ALL             = 'iq:ra:v1';
+const CACHE_TTL_DATA_SEC           = 60;
+const CACHE_TTL_REALIZATIONS_SEC   = 60;
+const CACHE_TTL_RA_SEC             = 60;
+
+// Kick off Redis connection in the background — server keeps booting
+// even if Redis is slow/unreachable. Reads return false → in-memory
+// path is used until connection succeeds.
+cache.initRedis().catch(e => console.warn('[cache] init error:', e.message));
 
 async function _buildDataPayload() {
   // Product master metadata (HS codes + colors). Always returned, even
@@ -847,40 +852,17 @@ app.get('/api/data', async (req, res) => {
   // older read can't cause a clobber.
   res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
 
-  // ── Server-side cache check ────────────────────────────────────────
-  const now = Date.now();
-  if (_dataCache.payload && _dataCache.expiresAt > now) {
-    res.set('X-Cache', 'HIT');
-    return res.json(_dataCache.payload);
-  }
-  // Singleflight: piggyback on any in-flight build to prevent stampedes
-  if (_dataCache.inflight) {
-    try {
-      const payload = await _dataCache.inflight;
-      res.set('X-Cache', 'COALESCED');
-      return res.json(payload);
-    } catch (err) {
-      // Fall through to fresh fetch on inflight failure
-    }
-  }
   try {
-    // ── Single-flight cache build ──────────────────────────────────
-    // Wrap the build in a promise so concurrent /api/data requests reuse
-    // the same DB work. Once finished, populate the TTL cache.
-    _dataCache.inflight = (async () => {
-      const t0 = Date.now();
-      const payload = await _buildDataPayload();
-      _dataCache.payload   = payload;
-      _dataCache.expiresAt = Date.now() + _dataCache.ttlMs;
-      _dataCache.inflight  = null;
-      console.log(`/api/data built in ${Date.now() - t0}ms (cached ${_dataCache.ttlMs/1000}s)`);
-      return payload;
-    })();
-    const payload = await _dataCache.inflight;
-    res.set('X-Cache', 'MISS');
-    res.json(payload);
+    const t0 = Date.now();
+    const { value, source } = await cache.getOrBuild(
+      CACHE_KEY_DATA, CACHE_TTL_DATA_SEC, _buildDataPayload
+    );
+    res.set('X-Cache', source);
+    if (source === 'BUILD') {
+      console.log(`/api/data built in ${Date.now() - t0}ms (cached ${CACHE_TTL_DATA_SEC}s, redis=${cache.isRedisReady()})`);
+    }
+    res.json(value);
   } catch (err) {
-    _dataCache.inflight = null;
     console.error('/api/data error:', err);
     res.status(500).json({ error: err.message });
   }
@@ -1070,7 +1052,12 @@ app.patch('/api/company/:code', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    invalidateDataCache(); // write happened — next GET /api/data must re-read DB
+    // write happened — next GET /api/data must re-read DB. If body.ra was
+    // touched, the dedicated /api/ra cache is also stale.
+    await Promise.all([
+      cache.invalidate(CACHE_KEY_DATA),
+      body.ra ? cache.invalidate(CACHE_KEY_RA_ALL) : Promise.resolve(),
+    ]);
     // Return the new updated_at so client can refresh its concurrency token
     // without needing a full re-fetch.
     const { rows: tsRow } = await pool.query(
@@ -1167,7 +1154,7 @@ app.post('/api/company', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    invalidateDataCache(); // new company created — refresh cache
+    await cache.invalidate(CACHE_KEY_DATA); // new company created — refresh cache
     res.json({ ok: true, code, fullName });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1227,7 +1214,7 @@ app.patch('/api/company/:code/cycles', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    invalidateDataCache(); // cycles changed — refresh cache
+    await cache.invalidate(CACHE_KEY_DATA); // cycles changed — refresh cache
     res.json({ ok: true, cycles: cycles.length });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1276,19 +1263,27 @@ app.get('/api/company/:code', async (req, res) => {
 // GET /api/ra  — all RA records
 // ═══════════════════════════════════════════════════════════════════
 app.get('/api/ra', async (req, res) => {
+  res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
   try {
-    const { rows } = await pool.query(`SELECT * FROM ra_records ORDER BY company_code`);
-    res.json(rows.map(r => ({
-      code: r.company_code, product: r.product,
-      berat: Number(r.berat)||0, obtained: Number(r.obtained)||0,
-      cargoArrived: r.cargo_arrived, realPct: Number(r.real_pct)||0,
-      utilPct: r.util_pct!=null?Number(r.util_pct):null,
-      arrivalDate: r.arrival_date||null, etaJKT: r.eta_jkt||null,
-      reapplyEst: r.reapply_est||'', reapplyStage: r.reapply_stage||1,
-      reapplyProduct: r.reapply_product||null,
-      target: r.target!=null?Number(r.target):null,
-      pertek: r.pertek||null, spi: r.spi||null, catatan: r.catatan||null,
-    })));
+    const { value, source } = await cache.getOrBuild(
+      CACHE_KEY_RA_ALL, CACHE_TTL_RA_SEC,
+      async () => {
+        const { rows } = await pool.query(`SELECT * FROM ra_records ORDER BY company_code`);
+        return rows.map(r => ({
+          code: r.company_code, product: r.product,
+          berat: Number(r.berat)||0, obtained: Number(r.obtained)||0,
+          cargoArrived: r.cargo_arrived, realPct: Number(r.real_pct)||0,
+          utilPct: r.util_pct!=null?Number(r.util_pct):null,
+          arrivalDate: r.arrival_date||null, etaJKT: r.eta_jkt||null,
+          reapplyEst: r.reapply_est||'', reapplyStage: r.reapply_stage||1,
+          reapplyProduct: r.reapply_product||null,
+          target: r.target!=null?Number(r.target):null,
+          pertek: r.pertek||null, spi: r.spi||null, catatan: r.catatan||null,
+        }));
+      }
+    );
+    res.set('X-Cache', source);
+    res.json(value);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1381,22 +1376,29 @@ async function insertRealization(client, code, row, defaults) {
 app.get('/api/realizations/summary', async (req, res) => {
   res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
   try {
-    const { rows } = await pool.query(
-      `SELECT company_code,
-              COUNT(DISTINCT pib_no)::int AS pibs,
-              COUNT(*)::int              AS lines
-       FROM realizations
-       WHERE company_code IS NOT NULL
-       GROUP BY company_code`
+    const { value, source } = await cache.getOrBuild(
+      CACHE_KEY_REALIZATIONS_SUM, CACHE_TTL_REALIZATIONS_SEC,
+      async () => {
+        const { rows } = await pool.query(
+          `SELECT company_code,
+                  COUNT(DISTINCT pib_no)::int AS pibs,
+                  COUNT(*)::int              AS lines
+           FROM realizations
+           WHERE company_code IS NOT NULL
+           GROUP BY company_code`
+        );
+        const counts = {};
+        let totalPibs = 0, totalLines = 0;
+        rows.forEach(r => {
+          counts[r.company_code] = { pibs: r.pibs, lines: r.lines };
+          totalPibs  += r.pibs;
+          totalLines += r.lines;
+        });
+        return { counts, totalPibs, totalLines };
+      }
     );
-    const counts = {};
-    let totalPibs = 0, totalLines = 0;
-    rows.forEach(r => {
-      counts[r.company_code] = { pibs: r.pibs, lines: r.lines };
-      totalPibs  += r.pibs;
-      totalLines += r.lines;
-    });
-    res.json({ counts, totalPibs, totalLines });
+    res.set('X-Cache', source);
+    res.json(value);
   } catch (err) {
     console.error('GET /api/realizations/summary error:', err);
     res.status(500).json({ error: err.message });
@@ -1405,13 +1407,25 @@ app.get('/api/realizations/summary', async (req, res) => {
 
 app.get('/api/realizations', async (req, res) => {
   const { company_code } = req.query;
+  // Per-company-code key (or "_all" for the unfiltered variant) so each
+  // dashboard drawer caches independently and we can invalidate just the
+  // affected company on POST/DELETE without flushing the whole list.
+  const cacheKey = CACHE_KEY_REALIZATIONS_PFX + (company_code || '_all');
+  res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
   try {
-    const sql = company_code
-      ? `SELECT * FROM realizations WHERE company_code = $1 ORDER BY pib_date DESC, pib_no, line_no`
-      : `SELECT * FROM realizations ORDER BY pib_date DESC, company_code, pib_no, line_no`;
-    const args = company_code ? [company_code] : [];
-    const { rows } = await pool.query(sql, args);
-    res.json({ realizations: rows });
+    const { value, source } = await cache.getOrBuild(
+      cacheKey, CACHE_TTL_REALIZATIONS_SEC,
+      async () => {
+        const sql = company_code
+          ? `SELECT * FROM realizations WHERE company_code = $1 ORDER BY pib_date DESC, pib_no, line_no`
+          : `SELECT * FROM realizations ORDER BY pib_date DESC, company_code, pib_no, line_no`;
+        const args = company_code ? [company_code] : [];
+        const { rows } = await pool.query(sql, args);
+        return { realizations: rows };
+      }
+    );
+    res.set('X-Cache', source);
+    res.json(value);
   } catch (err) {
     console.error('GET /api/realizations error:', err);
     res.status(500).json({ error: err.message });
@@ -1440,6 +1454,15 @@ app.post('/api/realizations', async (req, res) => {
       ids.push(r.rows[0].id);
     }
     await client.query('COMMIT');
+    // Bust both the summary aggregate and any list slice (per-company
+    // and `_all`). PATCH /api/company also depends on /api/data
+    // (utilization vs realization is shown side-by-side), so invalidate
+    // that too — cheap because the prewarm refills it within seconds.
+    await Promise.all([
+      cache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+      cache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+      cache.invalidate(CACHE_KEY_DATA),
+    ]);
     res.json({ ok: true, inserted: ids.length, ids });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1462,6 +1485,11 @@ app.post('/api/realizations/single', async (req, res) => {
     const r = await insertRealization(client, companyCode, row, {
       source: 'manual', sourceFile: '', importedBy: importedBy || '',
     });
+    await Promise.all([
+      cache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+      cache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+      cache.invalidate(CACHE_KEY_DATA),
+    ]);
     res.json({ ok: true, id: r.rows[0].id });
   } catch (err) {
     console.error('POST /api/realizations/single error:', err);
@@ -1478,6 +1506,11 @@ app.delete('/api/realizations/:id', async (req, res) => {
   try {
     const { rowCount } = await pool.query(`DELETE FROM realizations WHERE id = $1`, [id]);
     if (!rowCount) return res.status(404).json({ error: 'not found' });
+    await Promise.all([
+      cache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+      cache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+      cache.invalidate(CACHE_KEY_DATA),
+    ]);
     res.json({ ok: true });
   } catch (err) {
     console.error('DELETE /api/realizations/:id error:', err);
@@ -1532,37 +1565,46 @@ app.listen(PORT, async () => {
   }
 
   // ── Background cache pre-warm (Plan A bonus) ─────────────────────
-  // Refresh /api/data payload BEFORE its 30s TTL expires so every user
+  // Refresh /api/data payload BEFORE its TTL expires so every user
   // request always hits a warm cache. Without this, the very first
-  // user after every 30s window pays the 8s "build payload" cost.
-  // With this, _dataCache.payload is continuously kept fresh.
+  // user after each cache window pays the full ~500ms-2s "build payload"
+  // cost. With this, the cache is continuously kept fresh.
   //
-  // Set CACHE_PREWARM=0 to disable. Pre-warm runs every 25s (5s margin
-  // before TTL); guard ensures we don't run if there's already an
-  // inflight build (singleflight-friendly).
+  // Set CACHE_PREWARM=0 to disable. Pre-warm runs every 25s (well
+  // inside the 60s TTL); cache.getOrBuild's own singleflight prevents
+  // duplicate builds when the prewarm tick and a real request collide.
   if (process.env.CACHE_PREWARM !== '0') {
     const PREWARM_MS = 25_000;
     setInterval(async () => {
-      if (_dataCache.inflight) return; // someone else building, skip
       try {
         const t0 = Date.now();
-        _dataCache.inflight = (async () => {
-          const payload = await _buildDataPayload();
-          _dataCache.payload   = payload;
-          _dataCache.expiresAt = Date.now() + _dataCache.ttlMs;
-          _dataCache.inflight  = null;
-          return payload;
-        })();
-        await _dataCache.inflight;
+        // Force a fresh build by invalidating first, then re-populating.
+        // This keeps Redis (L2) warm for other instances too — every dyno
+        // benefits from any one prewarm tick. With Redis active and N
+        // dynos prewarming, in steady state only ONE rebuild per ~25s
+        // hits Postgres; the rest serve from L2.
+        await cache.invalidate(CACHE_KEY_DATA);
+        await cache.getOrBuild(CACHE_KEY_DATA, CACHE_TTL_DATA_SEC, _buildDataPayload);
         // Quiet log — only print every ~5 minutes
         if (Math.random() < 0.08) {
-          console.log(`🔄 Cache prewarm: ${Date.now()-t0}ms`);
+          console.log(`🔄 Cache prewarm: ${Date.now()-t0}ms (redis=${cache.isRedisReady()})`);
         }
       } catch (e) {
-        _dataCache.inflight = null;
         console.warn('Cache prewarm failed:', e.message);
       }
     }, PREWARM_MS).unref(); // unref → don't keep process alive just for this
     console.log(`🔄 Cache prewarm scheduled every ${PREWARM_MS/1000}s`);
   }
 });
+
+// ── Graceful shutdown: close Redis + pg pool cleanly on SIGTERM ──
+// Without this, Redis may leave dangling subscriptions and the next
+// deploy of the same dyno can race the old connections.
+async function shutdown(signal) {
+  console.log(`\n${signal} received — shutting down`);
+  try { await cache.closeRedis(); } catch (_) {}
+  try { await pool.end();        } catch (_) {}
+  process.exit(0);
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
