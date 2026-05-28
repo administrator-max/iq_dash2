@@ -236,15 +236,19 @@ function buildAvqProdGrid() {
     // cycle rows; without dedup totals multiply by the duplicate factor).
     const cycleProds = (typeof getObtainedByProdAgg === 'function')
       ? getObtainedByProdAgg(co) : {};
-    // Collect per-product data
-    (co.products || []).forEach(p => {
+    // Collect per-product data.
+    // β-1: iterate products that actually carry quota (util+avail from
+    // company_product_stats), NOT the stale co.products list, and use util+avail
+    // as obtained — no even-split fallback. Fixes mis-assignment after a
+    // product-change revision left co.products stale (e.g. GAS/MJU still listing
+    // BORDES ALLOY after moving to GI BORON / HOLLOW PIPE).
+    Object.keys(cycleProds).forEach(p => {
       if (!prodMap[p]) prodMap[p] = { obtained:0, util:0, avail:0, cos:[] };
-      const cycleObt = Number(cycleProds[p]) || 0;
-      const obtForProd = cycleObt > 0 ? cycleObt : (Number(co.obtained) / Math.max((co.products||[]).length, 1));
-      const utilForProd = up[p] || 0;
-      const avqForProd  = ap[p] != null ? ap[p] : (obtForProd - utilForProd);
-      prodMap[p].obtained += Number(obtForProd) || 0;
-      prodMap[p].util     += Number(utilForProd) || 0;
+      const obtForProd  = Number(cycleProds[p]) || 0;
+      const utilForProd = Number(up[p]) || 0;
+      const avqForProd  = ap[p] != null ? Number(ap[p]) : (obtForProd - utilForProd);
+      prodMap[p].obtained += obtForProd;
+      prodMap[p].util     += utilForProd;
       prodMap[p].avail    += Number(avqForProd) || 0;
       prodMap[p].cos.push(co.code);
     });
@@ -336,18 +340,19 @@ function openProdCoPopup(event, prodName, anchorEl) {
   // Collect per-company data for this product
   const coRows = [];
   filteredSPI().forEach(co => {
-    if (!(co.products || []).includes(prodName)) return;
     const ap  = co.availableByProd   || {};
     const up  = co.utilizationByProd || {};
-    // Deduped per-product obtained — legacy DB has duplicate Obtained
-    // cycle rows that would otherwise inflate this number.
     const cycleProds = (typeof getObtainedByProdAgg === 'function')
       ? getObtainedByProdAgg(co) : {};
-    const cycleObt = Number(cycleProds[prodName]) || 0;
-    const obtForProd  = cycleObt > 0 ? cycleObt
-      : (Number(co.obtained) / Math.max((co.products || []).length, 1));
-    const utilForProd = up[prodName] || 0;
-    const avqForProd  = ap[prodName] != null ? ap[prodName] : (obtForProd - utilForProd);
+    // β-1: include a company only if it actually holds quota (util+avail) for
+    // this product, sourced from company_product_stats — NOT the stale
+    // co.products list. obtForProd = util+avail; no even-split fallback (which
+    // used to assign a company's whole total to a product it no longer holds,
+    // e.g. GAS/MJU still appearing under Bordes after revising to GI/Hollow).
+    const obtForProd = Number(cycleProds[prodName]) || 0;
+    if (obtForProd <= 0) return;
+    const utilForProd = Number(up[prodName]) || 0;
+    const avqForProd  = ap[prodName] != null ? Number(ap[prodName]) : (obtForProd - utilForProd);
     coRows.push({ code: co.code, group: co.group, obt: obtForProd, util: utilForProd, avq: avqForProd });
   });
   coRows.sort((a, b) => b.avq - a.avq);
@@ -542,13 +547,14 @@ function buildAvqProdChart() {
     // like GL BORON ~600,000 MT vs real total of 22,870 MT).
     const cycleProds = (typeof getObtainedByProdAgg === 'function')
       ? getObtainedByProdAgg(co) : {};
-    (co.products || []).forEach(p => {
+    // β-1: iterate products with actual quota (util+avail), not the stale
+    // co.products list; obtained = util+avail (no even-split fallback).
+    Object.keys(cycleProds).forEach(p => {
       if (!prodMap[p]) prodMap[p] = { obtained:0, util:0, avail:0 };
-      const cycleObt = Number(cycleProds[p]) || 0;
-      const obt = cycleObt > 0 ? cycleObt : (Number(co.obtained) / Math.max((co.products||[]).length,1));
-      prodMap[p].obtained += Number(obt) || 0;
+      const obt = Number(cycleProds[p]) || 0;
+      prodMap[p].obtained += obt;
       prodMap[p].util     += Number(up[p]) || 0;
-      prodMap[p].avail    += ap[p] != null ? (Number(ap[p]) || 0) : Math.max((Number(obt)||0) - (Number(up[p])||0), 0);
+      prodMap[p].avail    += ap[p] != null ? (Number(ap[p]) || 0) : Math.max(obt - (Number(up[p])||0), 0);
     });
   });
   const sorted = Object.entries(prodMap).sort((a,b) => b[1].obtained - a[1].obtained);
