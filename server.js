@@ -601,9 +601,15 @@ const PIPELINE_CORRECTIONS = [
 // Per the Excel grand-total row (master shared 20-May-2026):
 //   Total Submit (MT)      = 252,000 (incl LCP Submit #2 added 20-May)
 //   Total Obtained (MT)    =  23,590
-//   Total Utilization (MT) =  16,350.5   (was 16,500.5 — SMS Sheet Pile 150 MT
-//                                          was util, master says it's available)
-//   Total Available (MT)   =   7,239.5   (was 7,089.5 — +150 from SMS correction)
+//   Total Utilization (MT) =  16,550.5   (master 16,350.5 + BTS Seamless manual
+//                                          override +200; see note below)
+//   Total Available (MT)   =   7,039.5   (master 7,239.5 − BTS Seamless 200)
+//
+// MANUAL OVERRIDE (beyond the 12-May master): BTS Seamless utilization set to
+// 1,000 / available 0 (master had 800 / 200) to reflect operator-entered
+// shipment lots. ⚠ Re-running importMasterStats.js with the current 12-May
+// master WILL revert BTS Seamless to 800/200 — update the master file (or this
+// entry) to keep it. company_product_stats(BTS,'SEAMLESS PIPE') was set to 1000/0.
 //
 // Idempotent — UPDATEs only fire when current value ≠ target. Acts as a
 // drift guard: if anyone edits via UI to an inconsistent value, this
@@ -615,7 +621,7 @@ const KPI_RECONCILE = [
   { code:'BBB',  util:400,    avail:0,     obt2:0 },
   { code:'BDG',  util:650,    avail:350 },
   { code:'BHG',  util:200,    avail:0 },
-  { code:'BTS',  util:1420,   avail:4580 },
+  { code:'BTS',  util:1620,   avail:4380 },
   { code:'CGK',  util:1020,   avail:0,     obt2:220 },
   { code:'DIOR', util:0,      avail:100 },
   { code:'EMS',  util:2100,   avail:0,     obt2:500 },
