@@ -6,3 +6,6 @@ node_modules/
 Realization_Exports/
 iq-dash-database.json/
 explain.js
+
+# Phase 4 backups (DB snapshots)
+backups/

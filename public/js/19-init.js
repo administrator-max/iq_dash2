@@ -631,6 +631,43 @@ function buildPendingSummaryStrip() {
   }).join('');
 }
 
+/* ── Active Revisions popup (Overview insight → modal, no page navigation) ──
+   Replaces the old behaviour where the insight card jumped to the PERTEK &
+   SPI page. Shows the same Revision / Re-Apply / PERTEK-Pending breakdown in
+   a self-contained modal; clicking a company chip opens its drawer. */
+function openActiveRevPopup() {
+  const modal = document.getElementById('activeRevModal');
+  const body  = document.getElementById('activeRevBody');
+  if (!modal || !body) return;
+  const active  = SPI.filter(d => revisionStatus(d) === 'active');
+  const reapply = SPI.filter(d => revisionStatus(d) === 'reapply');
+  const revpend = SPI.filter(d => revisionStatus(d) === 'revpending');
+  const total   = active.length + reapply.length + revpend.length;
+  const sub = document.getElementById('activeRevSubtitle');
+  if (sub) sub.textContent = `${active.length} Under Revision · ${reapply.length} Re-Apply · ${revpend.length} PERTEK Pending`;
+  const groups = [
+    { items: active,  label: '🔄 Under Revision', color:'var(--amber)', bg:'var(--amber-bg)', bd:'var(--amber-bd)' },
+    { items: reapply, label: '📨 Re-Apply Submit', color:'#7c3aed',      bg:'#f5f3ff',         bd:'#c4b5fd' },
+    { items: revpend, label: '⏳ PERTEK Pending',  color:'var(--red2)',   bg:'var(--red-bg)',   bd:'var(--red-bd)' },
+  ].filter(g => g.items.length > 0);
+  body.innerHTML = total === 0
+    ? `<div style="text-align:center;color:var(--txt3);padding:24px 0;font-size:12px">No active revisions right now.</div>`
+    : groups.map(g => `
+      <div style="border:1px solid ${g.bd};border-radius:var(--r);overflow:hidden">
+        <div style="padding:7px 12px;background:${g.bg};font-size:11px;font-weight:700;color:${g.color};display:flex;justify-content:space-between;align-items:center">
+          <span>${g.label}</span><span>${g.items.length}</span>
+        </div>
+        <div style="padding:9px 12px;display:flex;flex-wrap:wrap;gap:5px">
+          ${g.items.map(d => `<span onclick="closeActiveRevPopup();openDrawer('${d.code}')" title="Buka detail ${d.code}" style="cursor:pointer;font-size:11px;font-weight:700;padding:2px 9px;border-radius:4px;background:rgba(0,0,0,.05);color:${g.color}">${d.code}</span>`).join('')}
+        </div>
+      </div>`).join('');
+  modal.style.display = 'block';
+}
+function closeActiveRevPopup() {
+  const modal = document.getElementById('activeRevModal');
+  if (modal) modal.style.display = 'none';
+}
+
 /* Trigger rebuild when navigating to availquota page */
 const _origGoPage = typeof goPage === 'function' ? goPage : null;
 

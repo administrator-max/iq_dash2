@@ -559,7 +559,7 @@ function buildCmpList() {
   // Coerce to Number and guard against null/missing submit1 — Math.max(...[NaN]) → NaN.
   const filtered = filteredSPI();
   const maxS = Math.max(1, ...filtered.map(d => Number(d.submit1) || 0));
-  const el = document.getElementById('cmpList'); el.innerHTML = '';
+  const el = document.getElementById('cmpList'); if (!el) return; el.innerHTML = '';
   [...filtered].sort((a,b) => a.code.localeCompare(b.code)).forEach(co => {
     const ra = getRA(co.code);
     const div = document.createElement('div');
@@ -594,7 +594,7 @@ function buildCmpList() {
 
 /* Pending table */
 function buildPendingTable() {
-  const tbody = document.getElementById('pendingBody'); tbody.innerHTML = '';
+  const tbody = document.getElementById('pendingBody'); if (!tbody) return; tbody.innerHTML = '';
   [...filteredPending()].sort((a,b) => a.code.localeCompare(b.code)).forEach(d => {
     tbody.innerHTML += `<tr class="tr-pending" style="cursor:pointer" onclick="openDrawerPending('${d.code}')">
       <td><div class="t-code">${d.code}</div></td>

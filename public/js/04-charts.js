@@ -170,6 +170,8 @@ function buildPipelineHover(idx) {
 
 /* PRODUCT DONUT — solid colors, legend with product + company list */
 function buildProductDonut() {
+  // Skip when the Product Mix card has been removed from the Overview DOM.
+  if (!document.getElementById('productDonut')) return;
   // Aggregate MT per product across all SPI companies
   const map = {};
   const coMap = {}; // product → [companies]
@@ -820,6 +822,8 @@ function buildGauge() {
 }
 
 function buildUtilChart() {
+  // Skip when the Realization % chart canvas has been removed from the DOM.
+  if (!document.getElementById('utilChart')) return;
   const sorted = [...filteredRA()].sort((a,b) => b.realPct - a.realPct);
 
   /* ── inject panel container once ── */

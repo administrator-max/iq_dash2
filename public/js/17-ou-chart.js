@@ -246,6 +246,8 @@ function setOUStatus(mode, el) {
 }
 
 function buildOUChart() {
+  // Skip when the util-page "Obtained vs Utilization" chart has been removed.
+  if (!document.getElementById('obtainUtilChart')) return;
   const allRecords  = buildOUData();
   const filtered    = getFilteredOUData(allRecords);
 

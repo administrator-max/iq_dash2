@@ -223,7 +223,7 @@
         <div id="avqDrillSubtitle" style="font-size:11px;color:var(--txt3);margin-top:2px">Obtained − Utilized · per company and product type</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px">
-        <button onclick="goPage('availquota',document.querySelectorAll('.nav-tab')[4]);closeAvqDrill()" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer">Full Detail ↗</button>
+        <button onclick="goPage('availquota',document.querySelectorAll('.nav-tab')[3]);closeAvqDrill()" style="background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-bd);border-radius:6px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer">Full Detail ↗</button>
         <button onclick="closeAvqDrill()" style="background:var(--border);border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;color:var(--txt3);display:flex;align-items:center;justify-content:center">✕</button>
       </div>
     </div>
@@ -426,6 +426,23 @@
   </div>
 </div>
 
+<!-- ACTIVE REVISIONS POPUP (Overview insight detail — no page navigation) -->
+<div id="activeRevModal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(15,23,42,.55);backdrop-filter:blur(3px)" onclick="if(event.target===this)closeActiveRevPopup()">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(94vw,560px);max-height:88vh;background:var(--bg);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--txt)">🔄 Active Revisions</div>
+        <div id="activeRevSubtitle" style="font-size:11px;color:var(--txt3);margin-top:2px">Companies with ongoing revision / re-apply process</div>
+      </div>
+      <button onclick="closeActiveRevPopup()" style="background:var(--border);border:none;border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:14px;color:var(--txt3);display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>
+    </div>
+    <div id="activeRevBody" style="overflow-y:auto;flex:1;padding:14px 18px;display:flex;flex-direction:column;gap:10px"></div>
+    <div style="padding:10px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;flex-shrink:0">
+      <button onclick="closeActiveRevPopup()" style="background:var(--navy);color:#fff;border:none;border-radius:6px;padding:6px 16px;font-size:11.5px;font-weight:600;cursor:pointer">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- SALES PRIORITY ANALYSIS MODAL -->
 <div id="salesPriorityModal" style="display:none;position:fixed;inset:0;z-index:700;background:rgba(15,23,42,.58);backdrop-filter:blur(3px)" onclick="if(event.target===this)closeSalesPriority()">
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(96vw,1020px);max-height:90vh;background:var(--bg);border-radius:14px;box-shadow:0 28px 70px rgba(0,0,0,.32);display:flex;flex-direction:column;overflow:hidden">
@@ -497,7 +514,6 @@
   <div class="nav-tab active" onclick="goPage('overview',this)">Overview</div>
   <div class="nav-tab" onclick="goPage('spi',this)">PERTEK &amp; SPI <span class="n-count" id="navCountSPI">—</span></div>
   <div class="nav-tab" onclick="goPage('utilization',this)">Utilization &amp; Realization</div>
-  <div class="nav-tab" onclick="goPage('comparison',this)">Quota Comparison</div>
   <div class="nav-tab" onclick="goPage('availquota',this)">📊 Available Quota</div>
   <div class="nav-tab" onclick="goPage('all',this)">All Companies <span class="n-count" id="navCountAll">—</span></div>
 </nav>
@@ -577,8 +593,8 @@
       <div class="ins-arrow">↗</div>
     </div>
 
-    <!-- 2: Active Revisions — simplified -->
-    <div class="insight insight-click" onclick="goPage('spi',document.querySelectorAll('.nav-tab')[1]);setTimeout(()=>{setSPIF('REV',document.querySelectorAll('#page-spi .fpill')[2])},80)">
+    <!-- 2: Active Revisions — simplified (opens popup, no page navigation) -->
+    <div class="insight insight-click" onclick="openActiveRevPopup()">
       <div class="ins-ico">🔄</div>
       <div class="ins-body">
         <div class="ins-lbl">Active Revisions</div>
@@ -614,33 +630,7 @@
 
   </div>
 
-    <!-- PRODUCT MIX + TOP COMPANIES (Approval Pipeline removed per request) -->
-  <div class="g-1-2 mb14">
-
-    <!-- PRODUCT MIX — solid colors, visible legend -->
-    <div class="card">
-      <div class="ch"><div><div class="ct">Product Mix — Obtained</div><div class="cs">By product type · MT obtained per category</div></div></div>
-      <div class="cb" style="padding:10px 14px;display:flex;flex-direction:column;align-items:center;gap:10px">
-        <div style="position:relative;display:flex;align-items:center;justify-content:center">
-          <canvas id="productDonut" width="150" height="150"></canvas>
-        </div>
-        <div class="prod-legend" id="prodLegend" style="width:100%;display:flex;flex-direction:column;gap:3px"></div>
-      </div>
-    </div>
-
-    <!-- TOP COMPANIES — smaller, rich hover tooltip -->
-    <div class="card" style="display:flex;flex-direction:column">
-      <div class="ch"><div><div class="ct">Top Companies — Obtained Quota</div><div class="cs">Hover bar for product detail · click to drill down</div></div></div>
-      <div class="cb" style="padding:10px 16px;flex:1;display:flex;flex-direction:column;gap:8px;min-height:260px">
-        <div style="flex:1;min-height:0;position:relative">
-          <canvas id="topCoChart"></canvas>
-        </div>
-        <div id="topCoLegend" style="display:flex;flex-wrap:wrap;justify-content:center;gap:6px 14px;font:600 10px 'DM Sans',sans-serif;color:#334155;padding:4px 0 2px"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- OBTAINED vs UTILIZATION — OVERVIEW PREVIEW CARD (below Top Companies) -->
+  <!-- OBTAINED vs UTILIZATION — OVERVIEW PREVIEW CARD -->
   <div class="card mb14" id="ouOverviewCard">
     <div class="ch" style="flex-wrap:wrap;gap:8px">
       <div style="flex:1;min-width:220px">
@@ -663,42 +653,6 @@
     </div>
     <div id="ouOverviewLegend"></div>
     <div class="cb" style="padding:10px 16px;position:relative;height:210px"><canvas id="obtainUtilChartOverview"></canvas></div>
-  </div>
-
-  <!-- 🔄 ACTIVE REVISIONS & 📬 NEW SUBMISSIONS — below Obtained vs Utilization -->
-  <div class="g2 mb14">
-
-    <!-- Active Revisions card -->
-    <div class="card">
-      <div class="ch">
-        <div>
-          <div class="ct">🔄 Active Revisions</div>
-          <div class="cs">Companies with ongoing revision process · click to view detail</div>
-        </div>
-        <span class="badge b-rev" id="revCardBadge" style="font-size:9.5px;padding:2px 9px">— Active</span>
-      </div>
-      <div class="cb" style="cursor:pointer" onclick="goPage('spi',document.querySelectorAll('.nav-tab')[1])">
-        <div id="revSummaryStrip" style="display:flex;flex-direction:column;gap:5px"></div>
-      </div>
-    </div>
-
-    <!-- New Submissions card -->
-    <div class="card">
-      <div class="ch">
-        <div>
-          <div class="ct">📬 New Submissions</div>
-          <div class="cs">Awaiting PERTEK / SPI · click to view detail</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          <span id="pendTotalMT" style="font-size:11px;font-weight:800;font-family:'DM Mono',monospace;color:var(--red)">— MT</span>
-          <span class="badge b-pending" id="pendingCardBadge" style="font-size:9.5px;padding:2px 9px">—</span>
-        </div>
-      </div>
-      <div class="cb" style="cursor:pointer" onclick="navFilter('PENDING')">
-        <div id="pendingSummaryStrip" style="display:flex;flex-wrap:wrap;gap:5px"></div>
-      </div>
-    </div>
-
   </div>
 
   <!-- PERTEK PROCESS LEAD TIME ANALYTICS -->
@@ -818,34 +772,6 @@
   <!-- ══ ANALYTICAL FLOW STRIP — 6 numbered steps ══ -->
   <div id="utilFlowStrip" class="mb14"></div>
 
-  <!-- ══ SECTION 1: OBTAIN vs UTILIZATION CHART (top) ══ -->
-  <div class="card mb14" id="obtainUtilCard">
-    <div class="ch" style="flex-wrap:wrap;gap:8px">
-      <div>
-        <div class="ct">Obtained vs Utilization</div>
-        <div class="cs">Per-company obtained quota vs utilization · PERTEK → First Util Lead Time · ⚠ Overdue if Lead Time &gt; 14 days</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
-        <div style="display:flex;gap:4px">
-          <button id="ouFiltAll"  class="fpill on"  onclick="setOUFilter('ALL',this)"  style="font-size:10.5px;padding:3px 10px">All</button>
-          <button id="ouFiltProd" class="fpill"     onclick="setOUFilter('PROD',this)" style="font-size:10.5px;padding:3px 10px">By Product</button>
-          <button id="ouFiltCo"   class="fpill"     onclick="setOUFilter('CO',this)"   style="font-size:10.5px;padding:3px 10px">By Company</button>
-        </div>
-        <div style="display:flex;gap:4px">
-          <button id="ouStatusAll"  class="fpill on"  onclick="setOUStatus('ALL',this)"     style="font-size:10.5px;padding:3px 10px">All Status</button>
-          <button id="ouStatusNorm" class="fpill"     onclick="setOUStatus('NORMAL',this)"  style="font-size:10.5px;padding:3px 10px;color:var(--green)">✓ Normal</button>
-          <button id="ouStatusOver" class="fpill"     onclick="setOUStatus('OVERDUE',this)" style="font-size:10.5px;padding:3px 10px;color:var(--red2)">⚠ Revision</button>
-        </div>
-        <div style="display:flex;gap:5px" id="ouSummaryBadges"></div>
-      </div>
-    </div>
-    <div id="ouKpiStrip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--border)"></div>
-    <div id="ouLegend"></div>
-    <div class="cb" style="padding:12px 16px;position:relative;height:280px">
-      <canvas id="obtainUtilChart"></canvas>
-    </div>
-  </div>
-
   <!-- ══ SECTION 2: UTILIZATION - REALIZATION MONITORING (tabbed) ══ -->
   <div class="card mb14">
     <div class="ch" style="flex-wrap:wrap;gap:10px;align-items:flex-start">
@@ -877,13 +803,6 @@
           ⏳ <span id="gaugeWaiting">—</span><span style="font-size:9.5px;font-weight:600;margin-left:2px">Waiting</span>
         </div>
         <canvas id="gaugeChart" width="1" height="1" style="display:none;position:absolute;pointer-events:none"></canvas>
-      </div>
-    </div>
-
-    <!-- Realization % bar chart -->
-      <div style="padding:0 16px 12px;border-bottom:1px solid var(--border)">
-      <div style="position:relative;height:160px">
-        <canvas id="utilChart"></canvas>
       </div>
     </div>
 
@@ -967,36 +886,6 @@
   </div>
 
 
-</div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     PAGE: QUOTA COMPARISON
-══════════════════════════════════════════ -->
-<div id="page-comparison" class="page">
-<div class="wrap">
-  <div class="g-3-2 mb14">
-    <div class="card">
-      <div class="ch"><div><div class="ct">Submit vs. Obtained — Chart</div><div class="cs">Top 15 by submit · click bar for details</div></div></div>
-      <div class="cb" style="position:relative;height:300px"><canvas id="cmpChart"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="ch"><div><div class="ct">Per-Company View</div><div class="cs">S = Submit · O = Obtained · click row</div></div></div>
-      <div id="cmpList" class="cb-sm" style="max-height:370px;overflow-y:auto;padding:8px 12px"></div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="ch"><div><div class="ct">New Submission — Process Status</div><div class="cs" id="pendingTableSubtitle">4 companies · awaiting PERTEK / SPI</div></div></div>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr>
-          <th>Company</th><th>Group</th><th>Product</th>
-          <th class="t-r">Submit (MT)</th><th>Current Status</th><th>Last Updated</th>
-        </tr></thead>
-        <tbody id="pendingBody"></tbody>
-      </table>
-    </div>
-  </div>
 </div>
 </div>
 

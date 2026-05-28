@@ -62,7 +62,15 @@ CREATE TABLE IF NOT EXISTS cycles (
   release_type  TEXT,
   release_date  TEXT,
   status        TEXT DEFAULT '',
-  sort_order    INT  DEFAULT 0
+  sort_order    INT  DEFAULT 0,
+  -- Extra date / flag columns consumed by getCyclesFor() and written by
+  -- importDb.js + the cycle editor. Previously these existed only via the
+  -- boot-time ALTER TABLE in server.js, so a DB provisioned with this file
+  -- alone (e.g. `npm run init` then `npm run import` before first server
+  -- boot) would break. Defined here to keep schema.sql authoritative.
+  pertek_date   TEXT DEFAULT '',
+  spi_date      TEXT DEFAULT '',
+  from_rev_req  BOOLEAN DEFAULT FALSE
 );
 
 -- ── Cycle products (per-product MT breakdown per cycle) ───────────

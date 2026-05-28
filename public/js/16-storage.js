@@ -579,11 +579,22 @@ async function patchRAToServer(co, ra) {
       catatan:       ra.catatan      || null,
     }
   };
-  await fetchWithRetry(`/api/company/${encodeURIComponent(co.code)}`, {
+  const res = await fetchWithRetry(`/api/company/${encodeURIComponent(co.code)}`, {
     method:  'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  const result = await res.json().catch(() => ({}));
+  // Keep the concurrency token fresh: the server also bumps
+  // companies.updated_at on this RA write, so without refreshing co._updatedAt
+  // the NEXT patchToServer would send a stale _ifUpdatedAt and could trip a
+  // false 409 ("modified by another user") even for the same user.
+  if (result && result.updatedAt) co._updatedAt = result.updatedAt;
+  return result;
 }
 /* ── nsShowToast: alias for showSaveToast used in 13-rev-mgmt.js ────────────
    nsShowToast is a notification-only toast (no timestamp) — shows a brief

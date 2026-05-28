@@ -1150,6 +1150,17 @@ function saveEdit() {
   //   since we fetched. Prompt user to refresh — DO NOT auto-overwrite.
   if (co) {
     patchToServer(co).then(() => {
+      // Persist the RA record (realization / re-apply tracking) to ra_records.
+      // patchToServer() does NOT carry the `ra` payload, so without this the
+      // berat / cargoArrived / realPct / target / etaJKT edits applied in
+      // steps 3a-3b above would live only in localStorage and silently revert
+      // on refresh from another device. Chained after patchToServer so the two
+      // PATCHes on the same company row don't race. Note: the server's body.ra
+      // handler is an UPDATE keyed on company_code — it persists edits to an
+      // EXISTING ra_records row; a brand-new in-memory RA (created from
+      // shipment data for a company with no prior RA row) won't insert yet.
+      if (ra && typeof patchRAToServer === 'function') return patchRAToServer(co, ra);
+    }).then(() => {
       showSaveToast(new Date().toISOString());
     }).catch(err => {
       if (err && err.status === 409) {

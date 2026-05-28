@@ -98,9 +98,13 @@ async function loadData() {
       if (d.fullName)     COMPANY_NAME_TO_CODE[d.fullName.toLowerCase()] = d.abbreviation;
       if (d.abbreviation) COMPANY_CODE_TO_NAME[d.abbreviation.toUpperCase()] = d.fullName;
     });
-    // utilizationByProd / availableByProd / utilizationMT / availableQuota
-    // are SERVER-RECONCILED via KPI_RECONCILE in server.js, sourced from XLSX
-    // master. DO NOT recompute on client.
+    // utilizationMT / availableQuota (company-level) + utilizationByProd are
+    // SERVER-RECONCILED via KPI_RECONCILE in server.js, sourced from XLSX
+    // master. DO NOT recompute THESE on client.
+    // EXCEPTION: availableByProd (per-product) is NOT reconciled — only the
+    // company-level available_quota is. Its stored values drifted (revisions
+    // were never applied per product), so we re-derive availableByProd in the
+    // override block below from the revision-aware obtained + utilizationByProd.
     //
     // Previous bug: this block iterated getObtainedByProd(co) keys and looked
     // up co.shipments[prod] — but cycle product names and shipment lot product
@@ -124,6 +128,26 @@ async function loadData() {
         co.submit1 = canonSub;
       }
     }));
+
+    // ── Derive availableByProd in code (per product), overriding the stale
+    // company_product_stats.available_mt. Pattern mirrors the canonicalObtained
+    // override above: available = obtained_net − utilized, per product, floored
+    // at 0. obtained_net comes from the revision-aware getObtainedByProdAgg();
+    // utilizationByProd is the trusted XLSX-sourced value. Company-level
+    // utilizationMT / availableQuota are NOT touched (still server-reconciled).
+    // Follow-up (scheduled separately): migrate company_product_stats.available_mt
+    // to a generated column so per-product available can't drift again.
+    SPI.forEach(co => {
+      const obtNet = (typeof getObtainedByProdAgg === 'function') ? getObtainedByProdAgg(co) : {};
+      const util   = co.utilizationByProd || {};
+      const avail  = {};
+      new Set([...Object.keys(obtNet), ...Object.keys(util)]).forEach(p => {
+        const a = (obtNet[p] || 0) - (Number(util[p]) || 0);
+        avail[p] = a > 0 ? a : 0;
+      });
+      co.availableByProd = avail;
+    });
+
     _dataLoaded = true;
   } catch(err) {
     console.error('Failed to load data from API:', err);
@@ -478,6 +502,13 @@ function getSubmittedByProd(co) {
   return result;
 }
 
+// Tolerance for the balanced-vs-unbalanced revision_changes check below.
+// PostgreSQL NUMERIC → JS float can introduce tiny rounding (e.g.
+// 515.5 - 515.5 ≈ 1.1e-13), so strict equality would occasionally
+// misclassify a reallocation as a re-apply with no warning. 0.01 MT (10 kg)
+// is well below business significance.
+const BALANCE_EPSILON = 0.01;
+
 function getObtainedByProdAgg(co) {
   const result = {};
   if (!co) return result;
@@ -501,6 +532,39 @@ function getObtainedByProdAgg(co) {
       if (typeof v === 'number' && v > 0) result[p] = (result[p] || 0) + v;
     });
   });
+
+  // HEURISTIC: apply revision_changes ONLY when balanced (Σfrom ≈ Σto within
+  // BALANCE_EPSILON). Reasoning: balanced rows encode reallocations NOT yet
+  // reflected in cycles (per-product redistribution within same company, total
+  // preserved). Unbalanced rows encode re-apply increments ALREADY baked into
+  // cycle totals (applying them would double-count).
+  //
+  // This is an EMPIRICAL pattern derived from current data — NOT enforced by
+  // schema. If a future reallocation gets logged as unbalanced (or a re-apply
+  // as balanced), totals will silently diverge.
+  //
+  // Long-term fix: add an explicit `kind` ('reallocation' | 'reapply') column
+  // to revision_changes so the aggregator doesn't need to guess.
+  const revFromRows = Array.isArray(co.revFrom) ? co.revFrom : [];
+  const revToRows   = Array.isArray(co.revTo)   ? co.revTo   : [];
+  if (revFromRows.length || revToRows.length) {
+    const sumFrom = revFromRows.reduce((s, r) => s + Number(r.mt || 0), 0);
+    const sumTo   = revToRows  .reduce((s, r) => s + Number(r.mt || 0), 0);
+    const isBalanced = Math.abs(sumFrom - sumTo) < BALANCE_EPSILON;
+    if (isBalanced) {
+      revFromRows.forEach(r => {
+        const mt = Number(r.mt || 0);
+        if (r.prod && mt) result[r.prod] = (result[r.prod] || 0) - mt;
+      });
+      revToRows.forEach(r => {
+        const mt = Number(r.mt || 0);
+        if (r.prod && mt) result[r.prod] = (result[r.prod] || 0) + mt;
+      });
+      // Drop products zeroed-out (or pushed slightly negative by float math)
+      // by the reallocation so they don't render as phantom 0-MT rows.
+      Object.keys(result).forEach(p => { if (result[p] < BALANCE_EPSILON) delete result[p]; });
+    }
+  }
   return result;
 }
 

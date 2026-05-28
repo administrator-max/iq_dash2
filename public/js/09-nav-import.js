@@ -84,7 +84,7 @@ function goPage(id, el) {
 }
 function navFilter(f) {
   const tabs = document.querySelectorAll('.nav-tab');
-  goPage('all', tabs[5]);
+  goPage('all', tabs[4]);
   mFilter = f;
   document.querySelectorAll('#page-all .fpill').forEach(p=>p.classList.remove('on'));
   const map = {ALL:0,SPI:1,PENDING:2,REV:3,ELIGIBLE:4};
