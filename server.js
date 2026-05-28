@@ -601,8 +601,9 @@ const PIPELINE_CORRECTIONS = [
 // Per the Excel grand-total row (master shared 20-May-2026):
 //   Total Submit (MT)      = 252,000 (incl LCP Submit #2 added 20-May)
 //   Total Obtained (MT)    =  23,590
-//   Total Utilization (MT) =  16,500.5
-//   Total Available (MT)   =   7,089.5
+//   Total Utilization (MT) =  16,350.5   (was 16,500.5 — SMS Sheet Pile 150 MT
+//                                          was util, master says it's available)
+//   Total Available (MT)   =   7,239.5   (was 7,089.5 — +150 from SMS correction)
 //
 // Idempotent — UPDATEs only fire when current value ≠ target. Acts as a
 // drift guard: if anyone edits via UI to an inconsistent value, this
@@ -636,7 +637,7 @@ const KPI_RECONCILE = [
   { code:'NCT',  util:150,    avail:0 },
   { code:'SGD',  util:2000,   avail:0 },
   { code:'SJH',  util:300,    avail:0 },
-  { code:'SMS',  util:150,    avail:0 },
+  { code:'SMS',  util:0,      avail:150 },
   { code:'SPA',  util:114,    avail:401,   obt2:0 },
   { code:'SPP',  util:250,    avail:0 },
 ];
