@@ -601,15 +601,18 @@ const PIPELINE_CORRECTIONS = [
 // Per the Excel grand-total row (master shared 20-May-2026):
 //   Total Submit (MT)      = 252,000 (incl LCP Submit #2 added 20-May)
 //   Total Obtained (MT)    =  23,590
-//   Total Utilization (MT) =  16,550.5   (master 16,350.5 + BTS Seamless manual
-//                                          override +200; see note below)
-//   Total Available (MT)   =   7,039.5   (master 7,239.5 − BTS Seamless 200)
+//   Total Utilization (MT) =  17,806   (master 16,350.5 + lots-based overrides:
+//                                        BTS +200, GIS +400, GKL +705.5, SMS +150)
+//   Total Available (MT)   =   5,784   (master 7,239.5 − 1,455.5 of overrides)
 //
-// MANUAL OVERRIDE (beyond the 12-May master): BTS Seamless utilization set to
-// 1,000 / available 0 (master had 800 / 200) to reflect operator-entered
-// shipment lots. ⚠ Re-running importMasterStats.js with the current 12-May
-// master WILL revert BTS Seamless to 800/200 — update the master file (or this
-// entry) to keep it. company_product_stats(BTS,'SEAMLESS PIPE') was set to 1000/0.
+// MANUAL OVERRIDES (beyond the 12-May master) — over-entered companies treated as
+// fully utilized per their shipment lots (operator allocations meet/exceed master
+// util), so per-product available = 0:
+//   BTS Seamless 1000/0 · GIS Sheetpile 400/0 · GKL ERW≤140 800/0 + ERW>140 500/0
+//   · SMS Sheetpile 150/0 (was 0/150).
+// ⚠ Re-running importMasterStats.js with the 12-May master reverts these to the
+// master split — update the master file to keep them. company_product_stats for
+// these (company,product) pairs were set to util=Σlots / avail=0.
 //
 // Idempotent — UPDATEs only fire when current value ≠ target. Acts as a
 // drift guard: if anyone edits via UI to an inconsistent value, this
@@ -626,8 +629,8 @@ const KPI_RECONCILE = [
   { code:'DIOR', util:0,      avail:100 },
   { code:'EMS',  util:2100,   avail:0,     obt2:500 },
   { code:'GAS',  util:200,    avail:0,     obt2:0 },
-  { code:'GIS',  util:0,      avail:400 },
-  { code:'GKL',  util:1694.5, avail:705.5, obt2:0 },
+  { code:'GIS',  util:400,    avail:0 },
+  { code:'GKL',  util:2400,   avail:0,     obt2:0 },
   { code:'GNG',  util:400,    avail:0,     obt2:150 },
   { code:'HDP',  util:900,    avail:0 },
   { code:'HKG',  util:750,    avail:0 },
@@ -643,7 +646,7 @@ const KPI_RECONCILE = [
   { code:'NCT',  util:150,    avail:0 },
   { code:'SGD',  util:2000,   avail:0 },
   { code:'SJH',  util:300,    avail:0 },
-  { code:'SMS',  util:0,      avail:150 },
+  { code:'SMS',  util:150,    avail:0 },
   { code:'SPA',  util:114,    avail:401,   obt2:0 },
   { code:'SPP',  util:250,    avail:0 },
 ];
