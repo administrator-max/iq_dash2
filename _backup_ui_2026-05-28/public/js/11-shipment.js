@@ -56,7 +56,7 @@ function buildSalesOpsForm(co) {
           <tr>
             <th style="width:32px" class="t-c">Lot</th>
             <th style="width:185px">Utilization</th>
-            <th style="width:105px">ETA JKT <span style="color:var(--red2)" title="Wajib diisi saat simpan utilisasi">*</span></th>
+            <th style="width:105px">ETA JKT</th>
             <th>Note / Vessel</th>
             <th style="width:24px"></th>
           </tr>
@@ -225,8 +225,7 @@ function buildSalesRow(prod, idx, lot, obtMT) {
         class="ship-txt-inp sales-eta-inp"
         data-prod="${prod}" data-idx="${idx}"
         value="${eta}"
-        placeholder="e.g. 07 Mar 26 (wajib)"
-        title="ETA JKT wajib diisi saat menyimpan utilisasi"
+        placeholder="e.g. 07 Mar 26"
         oninput="onSalesEtaChange(this)">
     </td>
     <td>
@@ -499,33 +498,6 @@ function saveSalesUtil(prod, idx) {
   const lot    = co.shipments[prod] && co.shipments[prod][idx];
   if (!lot) return;
 
-  // ── ETA JKT mandatory (Sales manual input) ──────────────────────────────
-  // When Sales records a utilization (newMT > 0), the ETA JKT column must be
-  // filled — Ops/planning rely on the expected JKT arrival per lot, and the
-  // obtained-detail breakdown surfaces this ETA. Block the save and flag the
-  // field if it's empty. (Clearing a lot to 0 MT does not require an ETA.)
-  const etaInp  = document.querySelector(`.sales-eta-inp[data-prod="${prod}"][data-idx="${idx}"]`);
-  const etaVal  = etaInp ? etaInp.value.trim() : String(lot.etaJKT || '').trim();
-  if (newMT > 0 && !etaVal) {
-    const errEl = g(`util-err-${pid}-${idx}`);
-    if (errEl) {
-      errEl.textContent = 'ETA JKT wajib diisi sebelum simpan utilisasi.';
-      errEl.style.display = 'block';
-      errEl.style.color   = 'var(--red2)';
-    }
-    if (etaInp) {
-      etaInp.style.borderColor = 'var(--red2)';
-      etaInp.focus();
-    } else {
-      alert('ETA JKT wajib diisi sebelum menyimpan utilisasi.');
-    }
-    return;
-  }
-  // Passed validation — make sure the lot carries the ETA the user typed
-  // (oninput already syncs it, but read-back guards against edge timing).
-  if (etaVal) lot.etaJKT = etaVal;
-  if (etaInp) etaInp.style.borderColor = '';
-
   const curMT   = lot.utilMT || 0;
   const obtMT   = (getObtainedByProd(co))[prod] || 0;
   const otherMT = totalUtilForProd(co.shipments, prod) - curMT;
@@ -606,25 +578,6 @@ function saveSalesUtil(prod, idx) {
   const _obtByProd2 = getObtainedByProd(co);
   co.utilizationMT  = Object.keys(_obtByProd2).reduce((s, p) => s + totalUtilForProd(co.shipments, p), 0);
   co.availableQuota = Math.max(0, (co.obtained || 0) - co.utilizationMT);
-
-  // β-2 lot-driven: re-split THIS product's per-product util/avail in-memory so
-  // the AVQ cards / obtained drill update live to match what the server will
-  // persist (util = Σlots, OBTAINED preserved so getObtainedByProdAgg = util+avail
-  // stays correct). Mirrors recomputeUtilizationFromLots() on the server.
-  co.utilizationByProd = co.utilizationByProd || {};
-  co.availableByProd   = co.availableByProd   || {};
-  const _prodUtil = totalUtilForProd(co.shipments, prod);
-  const _prodObt  = (Number(co.utilizationByProd[prod]) || 0) + (Number(co.availableByProd[prod]) || 0);
-  const _obtBase  = _prodObt > 0 ? _prodObt : _prodUtil; // new product → avail 0
-  co.utilizationByProd[prod] = _prodUtil;
-  co.availableByProd[prod]   = Math.max(0, _obtBase - _prodUtil);
-
-  // Refresh dashboard views that read these (cheap; each early-returns if its
-  // container isn't mounted). Keeps cards/KPIs consistent with the lot edit.
-  if (typeof updateOverviewKPIs === 'function') updateOverviewKPIs();
-  if (typeof buildAvqPageKPIs   === 'function') buildAvqPageKPIs();
-  if (typeof buildAvqProdGrid   === 'function') buildAvqProdGrid();
-  if (typeof buildAvqProdChart  === 'function') buildAvqProdChart();
 
   // Persist to localStorage + server DB
   if (typeof saveToStorage === 'function') saveToStorage();

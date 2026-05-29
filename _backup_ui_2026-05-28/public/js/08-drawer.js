@@ -408,28 +408,14 @@ async function openRealizationDetail(code) {
     const res = await fetch(`/api/realizations?company_code=${encodeURIComponent(code)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    let rows = (data && data.realizations) || [];
-    // ── Period filter ─────────────────────────────────────────────────────
-    // realizations.pib_date is ISO 'YYYY-MM-DD'; pDate parses it cleanly.
-    // When a period is active, show only PIB lines whose PIB date is in range.
-    // Realization data is 100% dated (see audit), so this is a true time-slice
-    // — unlike per-product utilization, where ~44% of lots have no pib_date.
-    const _raTotalCount = rows.length;
-    if (typeof PERIOD !== 'undefined' && PERIOD.active) {
-      rows = rows.filter(r => inPd(pDate(r.pib_date)));
-    }
-    const _raHidden = _raTotalCount - rows.length;
+    const rows = (data && data.realizations) || [];
     _raDetailRows = rows;
 
     if (!rows.length) {
-      const periodMsg = (_raHidden > 0)
-        ? `Tidak ada PIB pada periode <strong>${PERIOD.label}</strong> untuk <strong>${headerName}</strong>.<br>
-           <span style="font-size:11px">${_raHidden} PIB di luar periode disembunyikan — ubah atau clear filter periode untuk melihatnya.</span>`
-        : `Belum ada data realisasi PIB untuk <strong>${headerName}</strong>.<br>
-           <span style="font-size:11px">Import via menu Realization Import atau tambah manual.</span>`;
       body.innerHTML = `<div style="padding:40px;text-align:center;color:var(--txt3);font-size:13px">
         <div style="font-size:32px;margin-bottom:8px">📦</div>
-        ${periodMsg}
+        Belum ada data realisasi PIB untuk <strong>${headerName}</strong>.<br>
+        <span style="font-size:11px">Import via menu Realization Import atau tambah manual.</span>
       </div>`;
       return;
     }
@@ -605,17 +591,9 @@ async function openRealizationDetail(code) {
     //   PIB cards flow normally below — natural document scroll.
     // This is the simplest model and avoids nested-scroll trap issues
     // entirely. Browser handles all wheel/touch/keyboard scroll natively.
-    // Period-scope banner — only when a filter is active (and trimmed rows)
-    const periodBanner = (typeof PERIOD !== 'undefined' && PERIOD.active)
-      ? `<div style="margin:0 0 8px;padding:6px 12px;background:var(--amber-bg);border:1px solid var(--amber-bd);
-                     border-radius:8px;font-size:11px;color:var(--txt2);display:flex;align-items:center;gap:6px">
-           <span>📅</span><span>Difilter periode <strong>${PERIOD.label}</strong> (by PIB date)${_raHidden > 0 ? ` · ${_raHidden} PIB di luar periode disembunyikan` : ''}</span>
-         </div>`
-      : '';
     body.innerHTML = `
       <div style="position:sticky;top:0;background:var(--bg);z-index:30;
                   padding:18px 0 10px;margin-bottom:4px">
-        ${periodBanner}
         ${summaryHTML}
       </div>
       <div style="display:flex;flex-direction:column;gap:12px">

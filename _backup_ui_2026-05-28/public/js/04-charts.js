@@ -99,7 +99,7 @@ function buildPipeline() {
 
   // Re-Apply Eligible = companies with cargoArrived AND realPct ≥ 60%
   // (includes both "eligible" and "already submitted" — what matters is realization)
-  const reapplyPool = filteredRA().filter(r => r.cargoArrived === true && r.realPct >= 0.6);
+  const reapplyPool = RA.filter(r => r.cargoArrived === true && r.realPct >= 0.6);
   const reapplyMT   = reapplyPool.reduce((s,r) => s + (r.obtained||0), 0);
   const reapplyN    = reapplyPool.length;
 
@@ -155,7 +155,7 @@ function buildPipelineHover(idx) {
       sorted.map(d => `<div class="ph-row"><span class="ph-code">${d.code}</span><span class="ph-mt">${fmtMt(d.obtained)} MT</span></div>`).join('');
   } else if (idx === 1) {
     // Re-Apply Eligible = companies with cargoArrived AND realPct ≥ 60%
-    const eligible = filteredRA().filter(r => r.cargoArrived === true && r.realPct >= 0.6)
+    const eligible = RA.filter(r => r.cargoArrived === true && r.realPct >= 0.6)
                        .sort((a,b) => b.realPct - a.realPct);
     h.innerHTML = `<div class="ph-title">🔵 Re-Apply Eligible — ${eligible.length} companies<br><span style="font-weight:400;font-size:10px;color:var(--txt3)">Realization ≥ 60% &amp; cargo arrived</span></div>` +
       eligible.map(r => {
@@ -170,8 +170,6 @@ function buildPipelineHover(idx) {
 
 /* PRODUCT DONUT — solid colors, legend with product + company list */
 function buildProductDonut() {
-  // Skip when the Product Mix card has been removed from the Overview DOM.
-  if (!document.getElementById('productDonut')) return;
   // Aggregate MT per product across all SPI companies
   const map = {};
   const coMap = {}; // product → [companies]
@@ -822,8 +820,6 @@ function buildGauge() {
 }
 
 function buildUtilChart() {
-  // Skip when the Realization % chart canvas has been removed from the DOM.
-  if (!document.getElementById('utilChart')) return;
   const sorted = [...filteredRA()].sort((a,b) => b.realPct - a.realPct);
 
   /* ── inject panel container once ── */

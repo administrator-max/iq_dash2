@@ -340,15 +340,6 @@ function applyPeriodFilter() {
   buildAvailableQuota(); // ← fix: AVQ chart re-filters per period
   buildFlowKPIStrip();   // ← fix: flow KPI strip re-calculates obtained/utilized
   buildAvqPageKPIs();    // ← fix: Available Quota page KPI cards re-calculate
-  // ── fix: AVQ "By Product" sub-views + Realization% chart were period-AWARE
-  //   (they call filteredSPI()/filteredRA()) but were never re-invoked on a
-  //   filter change, so the per-product cards/table/chart kept showing the
-  //   unfiltered company set. Rebuild them here. They early-return when their
-  //   container is absent, so calling the hidden tabs is cheap and safe. ──
-  if (typeof buildAvqProdGrid  === 'function') buildAvqProdGrid();
-  if (typeof buildAvqTable      === 'function') buildAvqTable();
-  if (typeof buildAvqProdChart  === 'function') buildAvqProdChart();
-  if (typeof buildUtilChart     === 'function') buildUtilChart();
   // Refresh drill-down modal if currently open
   const drillModal = document.getElementById('obtainedDrillModal');
   if (drillModal && drillModal.style.display !== 'none') refreshObtainedDrill();

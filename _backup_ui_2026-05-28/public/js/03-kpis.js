@@ -217,7 +217,7 @@ function updateOverviewKPIs() {
   if (pSpiStat) pSpiStat.textContent = `${fmtMt(spiTotal)} MT · ${spiCount} co.`;
 
   // Re-Apply sidebar = realization-based (cargoArrived AND realPct ≥ 60%)
-  const raEligPool = filteredRA().filter(r => r.cargoArrived === true && r.realPct >= 0.6);
+  const raEligPool = RA.filter(r => r.cargoArrived === true && r.realPct >= 0.6);
   const raEligMT   = raEligPool.reduce((s,r) => s + (r.obtained||0), 0);
   const pRaStat = document.getElementById('pipelineReapplyStat');
   if (pRaStat) pRaStat.textContent = `${raEligPool.length} co.`;
@@ -239,9 +239,9 @@ function updateOverviewKPIs() {
   s('pillMPending', PENDING.length);
 
   // ── Active Revisions insight (dynamic from live data) ──────────────────
-  const revRevision = filteredSPI().filter(d => revisionStatus(d) === 'active');
-  const revReapply  = filteredSPI().filter(d => revisionStatus(d) === 'reapply');
-  const revPending  = filteredSPI().filter(d => revisionStatus(d) === 'revpending');
+  const revRevision = SPI.filter(d => revisionStatus(d) === 'active');
+  const revReapply  = SPI.filter(d => revisionStatus(d) === 'reapply');
+  const revPending  = SPI.filter(d => revisionStatus(d) === 'revpending');
   const revActive   = [...revRevision, ...revReapply];
   const insValEl = document.getElementById('insRevVal');
   const insSubEl = document.getElementById('insRevSub');
@@ -259,8 +259,8 @@ function updateOverviewKPIs() {
   // Revision = active + reapply + revpending (matches setMF('REV') filter)
   s('pillMRev', revActive.length + revPending.length);
   // Eligible: RA records with realPct >= 0.6 AND cargoArrived
-  const eligCountAll = (typeof filteredRA === 'function')
-    ? filteredRA().filter(r => r.cargoArrived === true && r.realPct >= 0.6).length
+  const eligCountAll = (typeof RA !== 'undefined')
+    ? RA.filter(r => r.cargoArrived === true && r.realPct >= 0.6).length
     : 0;
   s('pillMEligible', eligCountAll);
 
@@ -1286,7 +1286,7 @@ function closeObtainedDrill() {
 function refreshObtainedDrill() {
   /* ── New columns (per request 30-Apr-2026) ──────────────────────────
      NO | COMPANY | HS CODE | PRODUCT | QTY SUBMIT | QTY OBTAINED |
-     QTY UTILIZED | QTY AVAILABLE | ETA JKT (filled by Sales)
+     QTY UTILIZED | QTY AVAILABLE | LAST UTIL DATE
      One row per (company, product). Submit & Obtained MT are aggregates
      across all cycles (Submit #1 + Submit #2 + …, Obtained #1 + Obtained #2 + …)
      with hover tooltip showing the cycle breakdown.
@@ -1314,25 +1314,20 @@ function refreshObtainedDrill() {
       const obtMT = obtByProd[prod] || 0;
       const utilMT = utilBy[prod] || 0;
       const avqMT = availBy[prod] != null ? availBy[prod] : Math.max(0, obtMT - utilMT);
-      // ETA JKT — the expected JKT arrival(s) Sales filled on this product's
-      // shipment lots. Show the latest ETA (raw string as entered); tooltip
-      // lists every distinct ETA when a product has multiple lots.
+      // Last util date: latest pibDate or etaJKT among lots with util > 0
       const lots = (co.shipments && co.shipments[prod]) || [];
-      const etaList = lots.map(l => String(l.etaJKT || '').trim()).filter(Boolean);
-      let eta = '';
-      if (etaList.length) {
-        const parseE = s => (typeof parseETA === 'function' ? parseETA(s) : null) || pDate(s);
-        let best = etaList[0], bestD = parseE(best);
-        etaList.forEach(s => { const d = parseE(s); if (d && (!bestD || d > bestD)) { best = s; bestD = d; } });
-        eta = best;
-      }
-      const etaAll = [...new Set(etaList)];
+      let lastUtil = null;
+      lots.forEach(l => {
+        if (!(l.utilMT > 0)) return;
+        const d = pDate(l.pibDate) || (l.etaJKT ? (typeof parseETA === 'function' ? parseETA(l.etaJKT) : pDate(l.etaJKT)) : null);
+        if (d && (!lastUtil || d > lastUtil)) lastUtil = d;
+      });
 
       rows.push({
         code: co.code, group: co.group,
         product: prod, hs: (typeof prodHS === 'function' ? prodHS(prod) : '—'),
         subMT, obtMT, utilMT, avqMT,
-        eta, etaAll,
+        lastUtil,
         subBreakdown: (typeof getCycleBreakdown === 'function') ? getCycleBreakdown(co, 'submit', prod) : [],
         obtBreakdown: (typeof getCycleBreakdown === 'function') ? getCycleBreakdown(co, 'obtained', prod) : [],
       });
@@ -1378,6 +1373,7 @@ function refreshObtainedDrill() {
       <div style="font-size:20px;font-weight:700;color:var(--green);line-height:1.2">${coCount}</div>
     </div>`;
 
+  const fmtDate = d => d ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'2-digit'}) : '—';
   const body = document.getElementById('drillBody');
 
   if (!rows.length) {
@@ -1418,7 +1414,7 @@ function refreshObtainedDrill() {
       <td style="padding:8px 10px;text-align:right">${buildMtCell(r.obtMT, r.obtBreakdown, 'var(--teal)')}</td>
       <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.utilMT > 0 ? 'var(--blue)' : 'var(--txt3)'};font-weight:${r.utilMT > 0 ? '700' : '400'}">${r.utilMT > 0 ? fmtMt(r.utilMT) : '—'}</td>
       <td style="padding:8px 10px;text-align:right;font-family:'DM Mono',monospace;color:${r.avqMT > 0 ? '#0891b2' : 'var(--txt3)'};font-weight:${r.avqMT > 0 ? '700' : '400'}">${r.avqMT > 0 ? fmtMt(r.avqMT) : '—'}</td>
-      <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;font-size:10.5px;color:${r.eta ? 'var(--green)' : 'var(--txt3)'}"${r.etaAll && r.etaAll.length > 1 ? ` title="ETA JKT (semua lot): ${_esc(r.etaAll.join(', '))}"` : ''}>${r.eta ? _esc(r.eta) : '—'}</td>
+      <td style="padding:8px 12px;text-align:center;font-family:'DM Mono',monospace;font-size:10.5px;color:${r.lastUtil ? 'var(--green)' : 'var(--txt3)'}">${fmtDate(r.lastUtil)}</td>
     </tr>`;
   }).join('');
 

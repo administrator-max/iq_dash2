@@ -256,6 +256,69 @@ function buildCompanyObj(co, products, stats, revFrom, revTo, cycles, pendMeta, 
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// β-2  LOT-DRIVEN UTILIZATION
+// ═══════════════════════════════════════════════════════════════════
+/** Recompute utilization from shipment lots for ONE company, in-transaction.
+ *  This makes the Sales "Simpan" path actually drive the dashboard's
+ *  utilization (reverses the β-1 "util is XLSX-only, never client-writable"
+ *  rule — but only for companies that HAVE shipment lots).
+ *
+ *  Per product:
+ *    utilization_mt = Σ company_shipments.util_mt
+ *    available_mt   = max(0, OBTAINED − utilization), where per-product
+ *                     OBTAINED is PRESERVED from the existing stats row
+ *                     (β-1 invariant obtained = util + avail). So the
+ *                     dashboard's per-product "Obtained" never jumps; only the
+ *                     util/avail split follows the lots. A product with lots
+ *                     but no prior stats row falls back to obtained = Σlots.
+ *  Products WITHOUT lots are left untouched (stay XLSX/KPI_RECONCILE-driven).
+ *  Company level: utilization_mt = Σ stats.util; available_quota =
+ *                 max(0, companies.obtained − util).
+ *  Idempotent — Σlots is stable, so re-running yields the same result.
+ */
+async function recomputeUtilizationFromLots(client, code) {
+  const { rows: lotSums } = await client.query(
+    `SELECT product, COALESCE(SUM(util_mt),0)::numeric AS util
+       FROM company_shipments WHERE company_code = $1 GROUP BY product`, [code]);
+  if (!lotSums.length) return; // no lots → leave XLSX-reconciled values intact
+
+  const { rows: statRows } = await client.query(
+    `SELECT product, utilization_mt, available_mt
+       FROM company_product_stats WHERE company_code = $1`, [code]);
+  const statBy = {};
+  statRows.forEach(s => { statBy[s.product] = {
+    util:  Number(s.utilization_mt) || 0,
+    avail: s.available_mt != null ? Number(s.available_mt) : 0,
+  }; });
+
+  for (const r of lotSums) {
+    const newUtil  = Number(r.util) || 0;
+    const prev     = statBy[r.product];
+    const obtained = prev ? (prev.util + prev.avail) : newUtil; // preserve obtained
+    const newAvail = Math.max(0, obtained - newUtil);
+    await client.query(
+      `INSERT INTO company_product_stats (company_code, product, utilization_mt, available_mt)
+       VALUES ($1,$2,$3,$4)
+       ON CONFLICT (company_code, product) DO UPDATE SET
+         utilization_mt = EXCLUDED.utilization_mt,
+         available_mt   = EXCLUDED.available_mt`,
+      [code, r.product, newUtil, newAvail]);
+  }
+
+  const { rows: tot } = await client.query(
+    `SELECT COALESCE(SUM(utilization_mt),0)::numeric AS util
+       FROM company_product_stats WHERE company_code = $1`, [code]);
+  const coUtil = Number(tot[0].util) || 0;
+  const { rows: coRow } = await client.query(
+    `SELECT obtained FROM companies WHERE code = $1`, [code]);
+  const coObt   = coRow[0] && coRow[0].obtained != null ? Number(coRow[0].obtained) : coUtil;
+  const coAvail = Math.max(0, coObt - coUtil);
+  await client.query(
+    `UPDATE companies SET utilization_mt = $1, available_quota = $2, updated_at = NOW()
+       WHERE code = $3`, [coUtil, coAvail, code]);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // GET /api/data  — full dataset for frontend
 // ═══════════════════════════════════════════════════════════════════
 // ── Auto-migrate: add extra columns to cycles table if missing ──────
@@ -692,6 +755,35 @@ const KPI_RECONCILE = [
       console.log(`KPI reconcile skipped for ${fix.code}:`, e.message);
     }
   }
+
+  // ── β-2 LOT-DRIVEN override (runs AFTER KPI_RECONCILE so lots win) ──────
+  // For every company that has shipment lots, recompute util/avail from
+  // Σlots so the boot state matches what the Sales "Simpan" path persists.
+  // Companies WITHOUT lots keep the XLSX/KPI_RECONCILE values set above.
+  // Idempotent. ⚠ This means lots — not the 12-May master split — are now the
+  // source of truth for any company with lots (see DESIGN/​memory).
+  try {
+    const { rows: lotCos } = await pool.query(
+      `SELECT DISTINCT company_code FROM company_shipments`);
+    if (lotCos.length) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const { company_code } of lotCos) {
+          await recomputeUtilizationFromLots(client, company_code);
+        }
+        await client.query('COMMIT');
+        console.log(`✅ Lot-driven utilization reconciled for ${lotCos.length} companies`);
+      } catch (e) {
+        await client.query('ROLLBACK');
+        console.log('lot-driven reconcile failed:', e.message);
+      } finally {
+        client.release();
+      }
+    }
+  } catch (e) {
+    console.log('lot-driven reconcile skipped:', e.message);
+  }
 })();
 
 // ── Server-side cache for GET endpoints (board-approved 2026) ───
@@ -1027,6 +1119,16 @@ app.patch('/api/company/:code', async (req, res) => {
           );
         }
       }
+    }
+
+    // β-2: lots are now the source of truth for utilization. Recompute
+    // company_product_stats + companies util/avail from the lots we just
+    // upserted, so the Sales "Simpan" path actually moves the dashboard's
+    // utilization (per-product cards, KPIs). No-op when the company has no
+    // lots. utilization_mt / available_quota are still NOT taken from the
+    // client body — they're derived server-side from the lot rows.
+    if (body.shipments) {
+      await recomputeUtilizationFromLots(client, code);
     }
 
     // Handle reapply targets
