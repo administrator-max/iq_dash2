@@ -671,8 +671,10 @@ const PIPELINE_CORRECTIONS = [
 // MANUAL OVERRIDES (beyond the 12-May master) — over-entered companies treated as
 // fully utilized per their shipment lots (operator allocations meet/exceed master
 // util), so per-product available = 0:
-//   BTS Seamless 1000/0 · GIS Sheetpile 400/0 · GKL ERW≤140 800/0 + ERW>140 500/0
-//   · SMS Sheetpile 150/0 (was 0/150).
+//   BTS Seamless 1000/0 · GKL ERW≤140 800/0 + ERW>140 500/0.
+// 2026-05-29 REVERSAL: GIS Sheetpile & SMS Sheetpile flipped back to AVAILABLE
+//   (GIS 0/400, SMS 0/150) — lots freed (not shipped). Their sheetpile shipment
+//   lots were deleted so β-2 lot-driven won't re-utilize them.
 // ⚠ Re-running importMasterStats.js with the 12-May master reverts these to the
 // master split — update the master file to keep them. company_product_stats for
 // these (company,product) pairs were set to util=Σlots / avail=0.
@@ -692,7 +694,7 @@ const KPI_RECONCILE = [
   { code:'DIOR', util:0,      avail:100 },
   { code:'EMS',  util:2100,   avail:0,     obt2:500 },
   { code:'GAS',  util:200,    avail:0,     obt2:0 },
-  { code:'GIS',  util:400,    avail:0 },
+  { code:'GIS',  util:0,      avail:400 },
   { code:'GKL',  util:2400,   avail:0,     obt2:0 },
   { code:'GNG',  util:400,    avail:0,     obt2:150 },
   { code:'HDP',  util:900,    avail:0 },
@@ -709,7 +711,7 @@ const KPI_RECONCILE = [
   { code:'NCT',  util:150,    avail:0 },
   { code:'SGD',  util:2000,   avail:0 },
   { code:'SJH',  util:300,    avail:0 },
-  { code:'SMS',  util:150,    avail:0 },
+  { code:'SMS',  util:0,      avail:150 },
   { code:'SPA',  util:114,    avail:401,   obt2:0 },
   { code:'SPP',  util:250,    avail:0 },
 ];
