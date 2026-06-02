@@ -452,6 +452,30 @@ function canonicalSubmitted(co) {
   return total;
 }
 
+/* ── canonicalSubmittedFiltered: period-aware version of canonicalSubmitted ──
+   Rule #1: each Submit #N cycle gated by its OWN submission date (Submit MOI).
+   Rule #4/#6: Revision cycles excluded (replace, not add); _fromRevReq skipped.
+   All Time → identical to canonicalSubmitted. Mirrors canonicalObtainedFiltered. */
+function canonicalSubmittedFiltered(co) {
+  if (!co) return 0;
+  if (!PERIOD.active) return canonicalSubmitted(co);
+  const allCycles = co.cycles || [];
+  const seen      = new Set();
+  let   total     = 0;
+  allCycles.forEach(c => {
+    if (!/^submit\s*#\d/i.test(c.type)) return;     // Submit #N only — NOT Revision
+    const mt = typeof c.mt === 'number' ? c.mt : 0;
+    if (mt <= 0) return;
+    const key = c.type.toLowerCase().trim();
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (c._fromRevReq) return;
+    if (!inPd(pDate(c.submitDate))) return;          // gate by Submit MOI date
+    total += mt;
+  });
+  return total;
+}
+
 /* ════════════════════════════════════════════════════════════════════
    getSubmittedByProd / getObtainedByProdAgg — per-product aggregation.
    Sums each product's MT across all Submit / Obtained cycles (deduped

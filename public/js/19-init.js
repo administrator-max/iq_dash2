@@ -462,9 +462,12 @@ function buildAvqTable() {
       // duplicate Obtained cycle rows for the same cycle_type.
       const cycleProds = (typeof getObtainedByProdAgg === 'function')
         ? getObtainedByProdAgg(co) : {};
-      (co.products || []).forEach(p => {
-        const cycleObt = Number(cycleProds[p]) || 0;
-        const obt  = cycleObt || (obtained / (co.products||[]).length);
+      // rule #4: iterate the post-revision obtained product set (util+avail),
+      // NOT the stale co.products list, and use the actual per-product obtained
+      // (no even-split fallback that would mis-assign a revised-away product).
+      Object.keys(cycleProds).forEach(p => {
+        const obt  = Number(cycleProds[p]) || 0;
+        if (obt <= 0) return;
         const util = up[p] || 0;
         const avq  = ap[p] != null ? ap[p] : (obt - util);
         allRows.push({ code:co.code, grp, prod:p, hs:getHS(p), obt, util, avq, updBy:co.updatedBy||'', updDate:co.updatedDate||'' });

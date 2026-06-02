@@ -176,9 +176,17 @@ function buildProductDonut() {
   const map = {};
   const coMap = {}; // product → [companies]
   filteredSPI().forEach(co => {
-    co.products.forEach(p => {
+    // β-1 / rule #4: use the post-revision NET per-product obtained (util+avail
+    // from company_product_stats), NOT an even-split of co.obtained across the
+    // stale co.products list. The old even-split mis-assigned a company's total
+    // to products it no longer holds after a product-change revision (e.g.
+    // GAS/MJU still under Bordes after revising to GI/Hollow) and double-shaped
+    // the mix. getObtainedByProdAgg already encodes Revision=replace.
+    const obtByProd = (typeof getObtainedByProdAgg === 'function') ? getObtainedByProdAgg(co) : {};
+    Object.entries(obtByProd).forEach(([p, mt]) => {
+      if (!(Number(mt) > 0)) return;
       if (!map[p]) { map[p] = 0; coMap[p] = []; }
-      map[p] += co.obtained / co.products.length;
+      map[p] += Number(mt);
       coMap[p].push(co.code);
     });
   });

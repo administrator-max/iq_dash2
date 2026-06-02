@@ -13,16 +13,9 @@ function exportExecutivePDF() {
   // CRITICAL FIX: dedup by cycleType per company — prevents duplicate cycle rows inflating total
   let s1_mt = 0; const s1_co = new Set();
   [...SPI, ...PENDING].forEach(co => {
-    const _seenSubmitTypes = new Set();
-    (co.cycles||[]).forEach(c => {
-      if (!/^submit #?\d/i.test(c.type) || /obtained/i.test(c.type)) return;
-      const cycleKey = c.type.toLowerCase().trim();
-      if (_seenSubmitTypes.has(cycleKey)) return;
-      _seenSubmitTypes.add(cycleKey);
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      if (!PERIOD.active || inPd(pDate(c.submitDate))) { s1_mt += mt; s1_co.add(co.code); }
-    });
+    // rule #1/#4/#6: per-cycle Submit MOI date gate, dedup, Revision/_fromRevReq excluded
+    const v = (typeof canonicalSubmittedFiltered === 'function') ? canonicalSubmittedFiltered(co) : 0;
+    if (v > 0) { s1_mt += v; s1_co.add(co.code); }
   });
 
   // KPI 2 — Obtained: use canonicalObtainedFiltered for consistency with Overview KPI2
@@ -1046,29 +1039,24 @@ function doExportXLSX() {
      Mirrors updateOverviewKPIs() logic exactly
   ───────────────────────────────────────────────────── */
 
-  // KPI 1: Total Submitted MT (Submit #N cycles, Submit MOI date in period)
+  // KPI 1: Total Submitted — use canonicalSubmittedFiltered so the export matches
+  // the Overview exactly (dedup by cycle, per-cycle Submit MOI date gate, Revision
+  // cycles & _fromRevReq excluded → rule #1/#4/#6). The old inline loop double-counted
+  // duplicate cycles and revision submissions.
   let kpi1_mt = 0, kpi1_co = new Set();
-  const allForSubmit = [...SPI, ...PENDING];
-  allForSubmit.forEach(co => {
-    (co.cycles || []).forEach(c => {
-      if (!/^submit #\d/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const sd = pDate(c.submitDate);
-      if (!PERIOD.active || inPd(sd)) { kpi1_mt += mt; kpi1_co.add(co.code); }
-    });
+  [...SPI, ...PENDING].forEach(co => {
+    const v = (typeof canonicalSubmittedFiltered === 'function') ? canonicalSubmittedFiltered(co) : 0;
+    if (v > 0) { kpi1_mt += v; kpi1_co.add(co.code); }
   });
 
-  // KPI 2: SPI Obtained (Obtained #N cycles, Submit MOT date in period)
+  // KPI 2: SPI Obtained — use canonicalObtainedFiltered (PERTEK-terbit gate, dedup,
+  // Revision/pending re-apply excluded → rule #2/#4/#5). The old inline loop used
+  // /^obtained/ (which also matched "Obtained (Revision #N)") with no dedup or terbit
+  // gate, inflating Total Obtained to ~47,415 vs the true 23,590.
   let kpi2_mt = 0, kpi2_co = new Set();
   fSPI.forEach(co => {
-    (co.cycles || []).forEach(c => {
-      if (!/^obtained/i.test(c.type)) return;
-      const mt = typeof c.mt === 'number' ? c.mt : 0;
-      if (mt <= 0) return;
-      const sd = pDate(c.submitDate); // Submit MOT date
-      if (!PERIOD.active || inPd(sd)) { kpi2_mt += mt; kpi2_co.add(co.code); }
-    });
+    const v = (typeof canonicalObtainedFiltered === 'function') ? canonicalObtainedFiltered(co) : (co.obtained || 0);
+    if (v > 0) { kpi2_mt += v; kpi2_co.add(co.code); }
   });
 
   // KPI 3: Total Realized (cargoArrived=true in filtered RA)
@@ -1261,17 +1249,22 @@ function doExportXLSX() {
     ]);
   });
 
-  /* ── VALIDATION CHECK — recalculate totals to confirm no drift ── */
-  const checkObtained = fSPI.reduce((s,co) => {
-    (co.cycles||[]).forEach(c => {
-      if (/^obtained/i.test(c.type) && typeof c.mt==='number') s += c.mt;
-    });
-    return s;
-  }, 0);
+  /* ── VALIDATION CHECK — cross-check KPI2 (canonical, terbit-gated obtained)
+     against the independent per-product stats truth (Σ util+avail). Only at
+     All Time, since per-product stats carry no period dimension. ── */
+  let checkObtained = kpi2_mt;
+  if (!PERIOD.active) {
+    checkObtained = fSPI.reduce((s, co) => {
+      const up = co.utilizationByProd || {}, ap = co.availableByProd || {};
+      let v = 0;
+      new Set([...Object.keys(up), ...Object.keys(ap)]).forEach(p => { v += (Number(up[p])||0) + (Number(ap[p])||0); });
+      return s + v;
+    }, 0);
+  }
   // If drift detected, add a note row to summary
-  if (Math.abs(checkObtained - kpi2_mt) > 0.01) {
+  if (Math.abs(checkObtained - kpi2_mt) > 1) {
     summaryRows.push([]);
-    summaryRows.push(['⚠ VALIDATION WARNING', `Cycle-sum obtained (${checkObtained}) differs from KPI2 (${kpi2_mt}). Review filter logic.`]);
+    summaryRows.push(['⚠ VALIDATION WARNING', `Per-product stats obtained (${Math.round(checkObtained)}) differs from KPI2 (${Math.round(kpi2_mt)}). Review filter logic.`]);
   }
 
   /* ── BUILD WORKBOOK ── */
