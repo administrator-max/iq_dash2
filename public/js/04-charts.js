@@ -267,7 +267,7 @@ function buildAvailableQuota() {
     const obtained = (typeof canonicalObtained === 'function' ? canonicalObtained(co) : null)
                      || (typeof co.obtained === 'number' ? co.obtained : 0);
     if (obtained <= 0) return;
-    const totalUtil = co.utilizationMT  != null ? co.utilizationMT  : 0;
+    const totalUtil = scopedUtilTotal(co);   // period-aware (rule #3): util sliced by lot date
     // SOURCE OF TRUTH (board-revised 12-May-2026): always recompute
     // availableQuota fresh from (canonicalObtained - utilizationMT).
     // The DB-cached `companies.available_quota` was set from a previous
@@ -276,8 +276,8 @@ function buildAvailableQuota() {
     // match the XLSX master (Total Available = 7,090 MT).
     const totalAvq  = Math.max(0, obtained - totalUtil);
 
-    const aProd = co.availableByProd   || {};
-    const uProd = co.utilizationByProd || {};
+    const aProd = scopedAvailByProd(co);     // period-aware (rule #3)
+    const uProd = scopedUtilByProd(co);
 
     // Build cycle-level obtained-per-product map (used for display only).
     // Use the deduped helper — legacy DB has duplicate Obtained #N rows
@@ -743,10 +743,7 @@ function buildFlowKPIStrip() {
     : filteredSPI().reduce((s, co) => s + (co.obtained || 0), 0);
   // ② Utilized — sum of utilizationByProd across ALL SPI companies
   //    This is the SINGLE source of truth: same data used by Detail — Company & Product Level
-  const totalUtilized = filteredSPI().reduce((s, co) => {
-    const ubp = co.utilizationByProd || {};
-    return s + Object.values(ubp).reduce((t, v) => t + (typeof v === 'number' ? v : 0), 0);
-  }, 0);
+  const totalUtilized = filteredSPI().reduce((s, co) => s + scopedUtilTotal(co), 0); // rule #3: lot-date sliced
   // ③ Realized — sum of berat for arrived companies
   const totalRealized = arrived.reduce((s, r) => s + r.berat, 0);
   // ④ Realization % (of obtained)

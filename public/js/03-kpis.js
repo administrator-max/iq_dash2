@@ -112,8 +112,8 @@ function updateOverviewKPIs() {
   const utilPool = PERIOD.active
     ? [...filteredSPI(), ...filteredPending()]
     : allCompanies; // already SPI + PENDING from KPI 1
-  const totalUtilizedMT = utilPool.reduce((s, co) => s + (Number(co.utilizationMT) || 0), 0);
-  const utilCoCount     = utilPool.filter(co => (Number(co.utilizationMT) || 0) > 0).length;
+  const totalUtilizedMT = utilPool.reduce((s, co) => s + scopedUtilTotal(co), 0); // rule #3: lot-date sliced
+  const utilCoCount     = utilPool.filter(co => scopedUtilTotal(co) > 0).length;
 
   /* ── Update DOM ───────────────────────────────────────────────────── */
   if (kpis[0]) {
@@ -442,13 +442,13 @@ function refreshAvqDrill() {
     const obtained = (typeof canonicalObtained === 'function' ? canonicalObtained(co) : null)
                      ?? (typeof co.obtained === 'number' ? co.obtained : 0);
     if (obtained <= 0) return;
-    const totalUtil = co.utilizationMT  != null ? co.utilizationMT  : 0;
+    const totalUtil = scopedUtilTotal(co);   // period-aware (rule #3)
     // Recompute fresh — stale DB-cached available_quota was inflated from
     // pre-fix canonicalObtained (which included not-yet-terbit Obtained #2).
     const totalAvq  = Math.max(0, obtained - totalUtil);
 
-    const aProd = co.availableByProd   || {};
-    const uProd = co.utilizationByProd || {};
+    const aProd = scopedAvailByProd(co);     // period-aware (rule #3)
+    const uProd = scopedUtilByProd(co);
 
     // Build cycle-level obtained-per-product map
     const cycleProds = {};
@@ -609,9 +609,9 @@ function refreshUtilDrill() {
   filteredSPI().forEach(co => {
     const obtained = typeof co.obtained === 'number' ? co.obtained : 0;
     if (obtained <= 0) return;
-    const ubp = co.utilizationByProd || {};
-    const abp = co.availableByProd   || {};
-    const totalUtil = co.utilizationMT != null ? co.utilizationMT : 0;
+    const ubp = scopedUtilByProd(co);    // period-aware (rule #3)
+    const abp = scopedAvailByProd(co);
+    const totalUtil = scopedUtilTotal(co);
     if (totalUtil <= 0 && Object.keys(ubp).length === 0) return; // skip zero-util companies
 
     if (Object.keys(ubp).length > 0) {
@@ -1302,8 +1302,8 @@ function refreshObtainedDrill() {
   pool.forEach(co => {
     const subByProd = (typeof getSubmittedByProd === 'function') ? getSubmittedByProd(co) : {};
     const obtByProd = (typeof getObtainedByProdAgg === 'function') ? getObtainedByProdAgg(co) : {};
-    const utilBy    = co.utilizationByProd || {};
-    const availBy   = co.availableByProd   || {};
+    const utilBy    = scopedUtilByProd(co);   // period-aware (rule #3)
+    const availBy   = scopedAvailByProd(co);
 
     // Union of products across submit + obtained (some products only in re-apply cycle)
     const allProds = [...new Set([...Object.keys(subByProd), ...Object.keys(obtByProd)])];

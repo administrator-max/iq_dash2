@@ -91,6 +91,81 @@ function inPd(d) {
   return true;
 }
 
+/* ════════════════════════════════════════════════════════════════════
+   UTILIZATION DATE SLICING  (β-2 lot-driven + period filter)
+   ─────────────────────────────────────────────────────────────────────
+   Rule #3: Utilization (MT) is filtered by each lot's OWN utilization date.
+   Since β-2 made utilization = Σ shipment lots, every utilization unit lives
+   on a lot that carries a date: actual PIB date (pibDate) preferred, else the
+   expected ETA (etaJKT — free-text, incl. Indonesian months and month-only
+   like "April 2026"). A lot with no parseable date is EXCLUDED from any active
+   period (it can't be attributed to one); when the filter is OFF (All Time)
+   the full server stats are used unchanged.
+   ═══════════════════════════════════════════════════════════════════ */
+function _parseEtaLoose(str) {
+  if (str == null) return null;
+  const s = String(str).trim();
+  if (!s || /^(TBA|null|undefined|-|—)$/i.test(s)) return null;
+  let d = pDate(s); if (d) return d;                       // DD/MM/YYYY or ISO
+  const map = (typeof _MONTH_NAME_MAP !== 'undefined') ? _MONTH_NAME_MAP : null;
+  if (map) {
+    let m = s.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{2,4})$/); // "15 Juni 26"
+    if (m && map[m[2].toLowerCase()]) {
+      let y = +m[3]; if (y < 100) y += 2000;
+      return new Date(y, map[m[2].toLowerCase()] - 1, +m[1]);
+    }
+    m = s.match(/^([A-Za-z]+)\s+(\d{2,4})$/);                // "April 2026" → mid-month
+    if (m && map[m[1].toLowerCase()]) {
+      let y = +m[2]; if (y < 100) y += 2000;
+      return new Date(y, map[m[1].toLowerCase()] - 1, 15);
+    }
+  }
+  return (typeof parseETA === 'function') ? parseETA(s) : null;  // English "DD Mon YY"
+}
+/* Utilization date for one shipment lot: actual PIB date, else expected ETA. */
+function lotUtilDate(lot) {
+  if (!lot) return null;
+  return pDate(lot.pibDate) || _parseEtaLoose(lot.etaJKT);
+}
+/* Per-product utilization for a company, sliced to the active period from its
+   shipment lots. All Time → the server stats (co.utilizationByProd) verbatim.
+   Keys match co.utilizationByProd (shipment product == stats product post β-2). */
+function scopedUtilByProd(co) {
+  if (!co) return {};
+  if (!PERIOD.active) return co.utilizationByProd || {};
+  const out = {}; const ships = co.shipments || {};
+  Object.keys(ships).forEach(prod => {
+    let sum = 0;
+    (ships[prod] || []).forEach(l => {
+      const mt = Number(l.utilMT) || 0; if (mt <= 0) return;
+      if (inPd(lotUtilDate(l))) sum += mt;
+    });
+    if (sum > 0) out[prod] = (out[prod] || 0) + sum;
+  });
+  return out;
+}
+/* Company-level utilization total, period-sliced. */
+function scopedUtilTotal(co) {
+  if (!co) return 0;
+  if (!PERIOD.active) return Number(co.utilizationMT) || 0;
+  return Object.values(scopedUtilByProd(co)).reduce((s, v) => s + v, 0);
+}
+/* Per-product available, kept consistent with the period view:
+   available = OBTAINED (all-time per-product = stats util+avail) − period util.
+   So the AVQ card identity obtained = utilized + available still holds when a
+   period is active. All Time → the server stats (co.availableByProd) verbatim. */
+function scopedAvailByProd(co) {
+  if (!co) return {};
+  if (!PERIOD.active) return co.availableByProd || {};
+  const util_all = co.utilizationByProd || {}, avail_all = co.availableByProd || {};
+  const su = scopedUtilByProd(co); const out = {};
+  new Set([...Object.keys(util_all), ...Object.keys(avail_all)]).forEach(p => {
+    const obtained = (Number(util_all[p]) || 0) + (Number(avail_all[p]) || 0);
+    out[p] = Math.max(0, obtained - (Number(su[p]) || 0));
+  });
+  return out;
+}
+
 /**
  * Extract all key dates from a single cycle object.
  *

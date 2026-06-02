@@ -57,7 +57,7 @@ function renderUtilTable() {
   // ── Build flat per-product rows from RA + SPI data ────────────────────────────
   function buildFlatRows(d) {
     const co  = getSPI(d.code);
-    const ubp = co ? (co.utilizationByProd  || {}) : {};
+    const ubp = co ? scopedUtilByProd(co) : {};   // period-aware (rule #3): util sliced by lot date
     const rbp = co ? (co.realizationByProd  || {}) : {};
     const ebp = co ? (co.etaByProd          || {}) : {};
     const abp = co ? (co.arrivedByProd      || {}) : {};

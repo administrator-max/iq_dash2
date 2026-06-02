@@ -80,16 +80,18 @@ function buildOUData() {
   filteredSPI().forEach(co => {
     const pertekDate = getPertekDateForCo(co);
     const obtByProd  = getObtainedByProd(co);
+    const _su = scopedUtilByProd(co);   // period-aware (rule #3): util sliced by lot date
+    const _sa = scopedAvailByProd(co);
 
     Object.entries(obtByProd).forEach(([prod, obtMT]) => {
       if (!obtMT || obtMT <= 0) return;
 
       // Utilized MT — from utilizationByProd[prod], the single source of truth
-      const utilMT = (co.utilizationByProd || {})[prod] || 0;
+      const utilMT = _su[prod] || 0;
 
       // Remaining: use availableByProd[prod] when available (same source of truth
       // as availableQuota company-level). Fall back to obtMT - utilMT.
-      const aProd = co.availableByProd || {};
+      const aProd = _sa;
       const remaining = aProd[prod] != null
         ? Math.max(0, Number(aProd[prod]))
         : Math.max(0, obtMT - utilMT);
@@ -260,8 +262,9 @@ function buildOUChart() {
   // REMAINING: canonical obtained − utilization (consistent formula)
   const totalRemain   = filteredSPI().reduce((s, co) => {
     const obt   = canonicalObtainedFiltered(co);
-    const util  = co.utilizationMT  || 0;
-    const avail = co.availableQuota != null ? co.availableQuota : Math.max(0, obt - util);
+    const util  = scopedUtilTotal(co);   // period-aware (rule #3)
+    const avail = PERIOD.active ? Math.max(0, obt - util)
+                                : (co.availableQuota != null ? co.availableQuota : Math.max(0, obt - util));
     return s + Math.max(0, avail);
   }, 0);
   const overdueCount  = allRecords.filter(r => r.leadStatus === 'overdue').length;
@@ -451,7 +454,7 @@ function buildOUChart() {
     const coObtained = prods.reduce((s, r) => s + r.obtained, 0);
     // Utilization from SPI utilizationByProd — same source as Shipment & Realization Monitoring
     const coSPIrec   = getSPI(code);
-    const coUBP      = coSPIrec ? (coSPIrec.utilizationByProd || {}) : {};
+    const coUBP      = coSPIrec ? scopedUtilByProd(coSPIrec) : {};   // period-aware (rule #3)
     const coUtilized = Object.values(coUBP).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0);
 
     // Realization from RA (cargo-arrived gives single berat total)

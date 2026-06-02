@@ -21,15 +21,16 @@ function renderMain() {
                   : _rs==='active'   ? 'REV'
                   : _rs==='revpending' ? 'REV' : 'SPI';
 
-    const utilMT  = d.utilizationMT || 0;
-    const availMT = (d.availableQuota != null) ? d.availableQuota : Math.max(0, d.obtained - utilMT);
+    const utilMT  = scopedUtilTotal(d);   // period-aware (rule #3): util sliced by lot date
+    const availMT = PERIOD.active ? Math.max(0, (d.obtained || 0) - utilMT)
+                                  : ((d.availableQuota != null) ? d.availableQuota : Math.max(0, (d.obtained || 0) - utilMT));
     const realMT  = (ra && ra.cargoArrived) ? ra.berat   : 0;
     const realPct = (ra && ra.cargoArrived) ? ra.realPct : null;
     const utilPct = (ra && !ra.cargoArrived) ? ra.utilPct : null;
 
     // Per-product data
-    const ubp = d.utilizationByProd  || {};
-    const abp = d.availableByProd    || {};
+    const ubp = scopedUtilByProd(d);   // period-aware (rule #3): util sliced by lot date
+    const abp = scopedAvailByProd(d);
     const rbp = d.realizationByProd  || {};
     const arb = d.arrivedByProd      || {};
     const obtByProd = getObtainedByProd(d);
@@ -223,7 +224,7 @@ function renderMain() {
         <td class="t-r t-mono" style="color:${d.obtained>0?'var(--teal)':'var(--txt3)'}">${d.obtained>0?fmtMt(d.obtained):'—'}</td>
         <td class="t-r">${mkNumCell(d.utilMT,'var(--blue)',
           d.products.length > 1
-            ? Object.entries(d.utilizationByProd||{}).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])
+            ? Object.entries(scopedUtilByProd(d)).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1])
             : null
         )}</td>
         <td class="t-r">${mkNumCell(d.berat,'var(--green)',

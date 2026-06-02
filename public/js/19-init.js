@@ -196,8 +196,9 @@ function buildAvqPageKPIs() {
   [...filteredSPI(), ...filteredPending()].forEach(co => {
     const coObt = canonicalObtainedFiltered(co);
     if (coObt <= 0) return;
-    const util  = co.utilizationMT  || 0;
-    const avail = co.availableQuota != null ? co.availableQuota : Math.max(0, coObt - util);
+    const util  = scopedUtilTotal(co);   // period-aware (rule #3): util sliced by lot date
+    const avail = PERIOD.active ? Math.max(0, coObt - util)
+                                : (co.availableQuota != null ? co.availableQuota : Math.max(0, coObt - util));
     totalObt  += coObt;
     totalUtil += util;
     totalAvq  += avail;
@@ -230,8 +231,8 @@ function buildAvqProdGrid() {
   if (!grid) return;
   const prodMap = {}; // product → { obtained, util, avail, companies[] }
   filteredSPI().forEach(co => {
-    const ap = co.availableByProd || {};
-    const up = co.utilizationByProd || {};
+    const ap = scopedAvailByProd(co);   // period-aware (rule #3): util sliced by lot date
+    const up = scopedUtilByProd(co);
     // Deduped per-product obtained map (legacy DB has duplicate Obtained
     // cycle rows; without dedup totals multiply by the duplicate factor).
     const cycleProds = (typeof getObtainedByProdAgg === 'function')
@@ -340,8 +341,8 @@ function openProdCoPopup(event, prodName, anchorEl) {
   // Collect per-company data for this product
   const coRows = [];
   filteredSPI().forEach(co => {
-    const ap  = co.availableByProd   || {};
-    const up  = co.utilizationByProd || {};
+    const ap  = scopedAvailByProd(co);   // period-aware (rule #3)
+    const up  = scopedUtilByProd(co);
     const cycleProds = (typeof getObtainedByProdAgg === 'function')
       ? getObtainedByProdAgg(co) : {};
     // β-1: include a company only if it actually holds quota (util+avail) for
@@ -451,8 +452,8 @@ function buildAvqTable() {
     // Use canonical obtained — not raw co.obtained from DB
     const obtained = canonicalObtained(co) || co.obtained || 0;
     if (obtained <= 0) return;
-    const ap = co.availableByProd || {};
-    const up = co.utilizationByProd || {};
+    const ap = scopedAvailByProd(co);   // period-aware (rule #3)
+    const up = scopedUtilByProd(co);
     const spi = getSPI(co.code);
     const grp = spi ? spi.group : '';
     const getHS = p => (typeof PROD_HS_CODES !== 'undefined' ? (PROD_HS_CODES[p] || '—') : '—');
@@ -469,8 +470,9 @@ function buildAvqTable() {
         allRows.push({ code:co.code, grp, prod:p, hs:getHS(p), obt, util, avq, updBy:co.updatedBy||'', updDate:co.updatedDate||'' });
       });
     } else {
-      const util = co.utilizationMT || 0;
-      const avq  = co.availableQuota != null ? co.availableQuota : (obtained - util);
+      const util = scopedUtilTotal(co);
+      const avq  = PERIOD.active ? Math.max(0, obtained - util)
+                                 : (co.availableQuota != null ? co.availableQuota : (obtained - util));
       (co.products || [co.products[0] || '—']).forEach(p => {
         allRows.push({ code:co.code, grp, prod:p, hs:getHS(p), obt:obtained/((co.products||[p]).length), util, avq, updBy:co.updatedBy||'', updDate:co.updatedDate||'' });
       });
@@ -540,8 +542,8 @@ function buildAvqProdChart() {
   if (!el) return;
   const prodMap = {};
   filteredSPI().forEach(co => {
-    const ap = co.availableByProd || {};
-    const up = co.utilizationByProd || {};
+    const ap = scopedAvailByProd(co);   // period-aware (rule #3)
+    const up = scopedUtilByProd(co);
     // Use deduped helper so legacy duplicate Obtained #N rows don't
     // multiply the per-product obtained MT (was producing huge values
     // like GL BORON ~600,000 MT vs real total of 22,870 MT).
