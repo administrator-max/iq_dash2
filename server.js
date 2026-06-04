@@ -702,7 +702,8 @@ const KPI_RECONCILE = [
   { code:'JKT',  util:300,    avail:0 },
   { code:'KAN',  util:80,     avail:0 },
   { code:'KARA', util:100,    avail:0 },
-  { code:'KJK',  util:950,    avail:0,     obt2:0 },
+  { code:'KJK',  util:950,    avail:450,   obt2:450 }, // re-apply Obtained #2 GL Boron 450, PERTEK Perubahan terbit 04/06/2026
+  { code:'PPGL', util:0,      avail:50 },              // new apply Obtained #1 GL Boron 50, PERTEK terbit 30/05/2026 (moved PENDING→SPI)
   { code:'LCP',  util:275,    avail:0 },
   { code:'LSJ',  util:500,    avail:0 },
   { code:'MIN',  util:247,    avail:353 },
