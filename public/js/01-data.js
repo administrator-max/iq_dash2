@@ -393,6 +393,7 @@ function canonicalObtained(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;                         // dedup cycleType
     seen.add(key);
+    if (c._fromRevReq) return;                         // rule #4: revision-request artifact ≠ new obtained
     if (!_isObtainedTerbit(c)) return;                // SKIP TBA / not-yet-terbit
     total += mt;
   });
@@ -412,6 +413,7 @@ function canonicalObtainedFiltered(co) {
     const key = c.type.toLowerCase().trim();
     if (seen.has(key)) return;
     seen.add(key);
+    if (c._fromRevReq) return;          // rule #4: revision-request artifact ≠ new obtained
     if (!_isObtainedTerbit(c)) return; // also gate by terbit status
     if (PERIOD.active) {
       let pertekDate = null;

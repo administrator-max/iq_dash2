@@ -56,6 +56,9 @@ function updateOverviewKPIs() {
       seen.add(key);
       const mt = typeof c.mt === 'number' ? c.mt : Number(c.mt) || 0;
       if (mt <= 0) return;
+      // rule #2/#5: only count obtained that is actually terbit (PERTEK/SPI issued),
+      // consistent with canonicalObtained. Excludes not-yet-terbit re-applies.
+      if (typeof _isObtainedTerbit === 'function' && !_isObtainedTerbit(c)) return;
       if (PERIOD.active) {
         const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
         if (!inPd(pertekTerbit)) return;
