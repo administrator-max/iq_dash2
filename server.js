@@ -165,6 +165,25 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.use((req, res, next) => {
   const sheets = hostUsesSheets(req);
   res.set('X-Data-Source', sheets ? 'sheets' : 'neon');
+
+  // ── Traffic / access logging ──────────────────────────────────────
+  // Console line for EVERY request (visible in heroku logs / any drain),
+  // plus a permanent Access_Log Sheet row for WRITES (best-effort, so it
+  // never blocks or fails a save). Identity = client IP + the role/actor
+  // the client supplied (the app has no login, so that's the best signal).
+  const t0 = Date.now();
+  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+    || (req.socket && req.socket.remoteAddress) || '';
+  res.on('finish', () => {
+    if (req.path === '/healthz' || req.path === '/health') return;
+    const actor = (req.body && (req.body.updatedBy || req.body.importedBy)) || req.query.role || '';
+    const ms = Date.now() - t0;
+    console.log(`[req] ${ip} ${req.method} ${req.path} ${res.statusCode} ${ms}ms${actor ? ' actor=' + actor : ''}`);
+    if (sheets && req.path.startsWith('/api/') && ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method)) {
+      store.logAccess({ ip, actor, method: req.method, path: req.path, status: res.statusCode, ms }).catch(() => {});
+    }
+  });
+
   _srcCtx.run({ sheets }, next);
 });
 
