@@ -1,0 +1,29 @@
+{
+  "name": "iq-dash",
+  "description": "Import Quota Monitor — runs entirely on Google Sheets (Neon fully detached).",
+  "repository": "https://github.com/administrator-max/iq_dash2",
+  "keywords": ["node", "express", "heroku", "google-sheets"],
+  "stack": "heroku-24",
+  "buildpacks": [{ "url": "heroku/nodejs" }],
+  "formation": {
+    "web": { "quantity": 1, "size": "basic" }
+  },
+  "env": {
+    "DATA_SOURCE": {
+      "description": "Data source. Default 'sheets'. Set to 'neon' only to use the legacy Postgres path.",
+      "value": "sheets"
+    },
+    "SHEETS_DB_ID": {
+      "description": "Google Spreadsheet ID that backs the app.",
+      "value": "13CQrRUXhfB2Ceq8p7HXPhx2Fj31DSN3AwvtuNKpg08o"
+    },
+    "GOOGLE_SERVICE_ACCOUNT_JSON": {
+      "description": "Service-account JSON (whole file as one line) for Google Sheets access. REQUIRED on Heroku (no key file is committed).",
+      "required": true
+    },
+    "REDIS_URL": {
+      "description": "Optional shared cache (recommended so the cache survives dyno restarts).",
+      "required": false
+    }
+  }
+}

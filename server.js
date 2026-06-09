@@ -63,6 +63,84 @@ const pool = new Pool({
 // take down the whole server.
 pool.on('error', err => console.error('[pg pool] idle client error:', err.message));
 
+// ── Data source dispatch ─────────────────────────────────────────────
+// DATA_SOURCE=sheets routes all reads/writes through the Google Sheets
+// backing store (lib/sheetsStore.js) instead of Neon PostgreSQL. The Neon
+// path is the default and remains fully intact as a fallback.
+// A single dyno can serve BOTH production (Neon) and a staging subdomain
+// (Google Sheets) with NO extra dyno. The data source is chosen PER REQUEST
+// from the hostname:
+//   host starts with STAGING_HOST_PREFIX (default "staging.") → STAGING_DATA_SOURCE
+//   otherwise                                                 → DATA_SOURCE
+// Env on the single Heroku app:
+//   DATA_SOURCE=neon · STAGING_DATA_SOURCE=sheets · STAGING_HOST_PREFIX=staging.
+//   STAGING_HOSTS=host1,host2  (optional exact hostnames instead of a prefix)
+const { AsyncLocalStorage } = require('async_hooks');
+// Default data source is Google Sheets — Neon has been fully detached. Set
+// DATA_SOURCE=neon explicitly only if you ever need the legacy Postgres path.
+const DATA_SOURCE         = (process.env.DATA_SOURCE || 'sheets').toLowerCase();
+const STAGING_ENABLED     = !!(process.env.STAGING_HOST_PREFIX || process.env.STAGING_HOSTS || process.env.STAGING_DATA_SOURCE);
+const STAGING_DATA_SOURCE = (process.env.STAGING_DATA_SOURCE || 'sheets').toLowerCase();
+const STAGING_HOST_PREFIX = (process.env.STAGING_HOST_PREFIX || 'staging.').toLowerCase();
+const STAGING_HOSTS       = (process.env.STAGING_HOSTS || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+
+const store    = require('./lib/sheetsStore');
+const insights = require('./lib/insights');
+
+// Boot-time aggregate flags: which backends might be touched by SOME request.
+const BOOT_DEFAULT_SHEETS = DATA_SOURCE === 'sheets';
+const ANY_SHEETS = DATA_SOURCE === 'sheets' || (STAGING_ENABLED && STAGING_DATA_SOURCE === 'sheets');
+const ANY_NEON   = DATA_SOURCE !== 'sheets' || (STAGING_ENABLED && STAGING_DATA_SOURCE !== 'sheets');
+
+const _srcCtx = new AsyncLocalStorage();
+function hostUsesSheets(req) {
+  if (!STAGING_ENABLED) return DATA_SOURCE === 'sheets';
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || req.hostname || '')
+    .toLowerCase().split(',')[0].trim().split(':')[0];
+  const isStaging = STAGING_HOSTS.length
+    ? STAGING_HOSTS.includes(host)
+    : (STAGING_HOST_PREFIX && host.startsWith(STAGING_HOST_PREFIX));
+  return (isStaging ? STAGING_DATA_SOURCE : DATA_SOURCE) === 'sheets';
+}
+// Per-request source flag (set by middleware); falls back to process default
+// for non-request contexts (boot reconciles, prewarm).
+function inSheets() { const c = _srcCtx.getStore(); return c ? c.sheets : BOOT_DEFAULT_SHEETS; }
+
+console.log(`[data] default=${DATA_SOURCE}` + (STAGING_ENABLED ? ` · staging "${STAGING_HOST_PREFIX}*"=${STAGING_DATA_SOURCE}` : '') + ` (sheet ${store.SHEET_ID})`);
+
+// Neon fully detached when no request path uses it: stub the pool so the
+// boot reconcile IIFEs and any stray query can NEVER open a Postgres
+// connection. The legacy Neon code stays in place but is inert.
+if (!ANY_NEON) {
+  pool.query   = async () => ({ rows: [], rowCount: 0 });
+  pool.connect = async () => { throw new Error('Neon disabled (DATA_SOURCE=sheets)'); };
+  console.log('[data] Neon detached — Postgres pool is inert');
+}
+
+// Load the raw row-arrays the analytics engine needs, from whichever source
+// is active. Shapes are normalised so lib/insights stays source-agnostic.
+async function loadAnalyticsTables() {
+  if (inSheets()) {
+    const [companies, cycles, cycleProducts, stats, revisions, lots, realizations, aliases, products] = await Promise.all([
+      store.table('companies'), store.table('cycles'), store.table('cycle_products'),
+      store.table('company_product_stats'), store.table('revision_changes'),
+      store.table('utilization_lots'), store.table('realizations'),
+      store.table('product_aliases'), store.table('products'),
+    ]);
+    return { companies, cycles, cycleProducts, stats, revisions, lots, realizations, aliases, products };
+  }
+  const q = s => pool.query(s).then(r => r.rows);
+  const [companies, cycles, cycleProducts, stats, revisions, ship, realizations, aliases, products] = await Promise.all([
+    q('SELECT * FROM companies'), q('SELECT * FROM cycles'), q('SELECT * FROM cycle_products'),
+    q('SELECT * FROM company_product_stats'), q('SELECT * FROM revision_changes'),
+    q('SELECT company_code, product, util_mt, pib_date FROM company_shipments'),
+    q('SELECT * FROM realizations'), q('SELECT alias, canonical FROM product_aliases').catch(() => []),
+    q('SELECT * FROM products'),
+  ]);
+  const lots = ship.map(s => ({ company_code: s.company_code, product: s.product, util_mt: s.util_mt, util_date: s.pib_date }));
+  return { companies, cycles, cycleProducts, stats, revisions, lots, realizations, aliases, products };
+}
+
 // ── Middleware ───────────────────────────────────────────────────
 // gzip compression — JSON responses (notably /api/data, ~100KB+) drop
 // to ~15-25% of original size. Big win on slow connections / Heroku.
@@ -80,6 +158,15 @@ app.use(express.static(path.join(__dirname, 'public'), {
   etag:   true,
   lastModified: true,
 }));
+
+// Per-request data-source context: pick Neon vs Sheets from the hostname
+// (subdomain-based staging on a single dyno) and expose it to all handlers
+// via inSheets(). Must run before any route so the whole async chain sees it.
+app.use((req, res, next) => {
+  const sheets = hostUsesSheets(req);
+  res.set('X-Data-Source', sheets ? 'sheets' : 'neon');
+  _srcCtx.run({ sheets }, next);
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // SCHEMA INIT  (PgBouncer-safe: one statement at a time)
@@ -121,7 +208,49 @@ async function initDB() {
     dedups by cycle_type (`canonicalObtained` etc.), so we just push that
     same logic down to SQL — keeping the row with the smallest sort_order
     matches the frontend's "first occurrence wins" rule. */
+// Sheets-backed equivalent of getCyclesFor: same dedup ("first occurrence
+// wins" per company_code+cycle_type, smallest sort_order) + cycle_products join.
+async function getCyclesForSheets(codes) {
+  if (!codes.length) return {};
+  const codeSet = new Set(codes);
+  const all = (await store.table('cycles')).filter(c => codeSet.has(c.company_code));
+  const seen = new Map();
+  all.slice()
+     .sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0))
+     .forEach(c => { const k = c.company_code + '|' + c.cycle_type; if (!seen.has(k)) seen.set(k, c); });
+  const cRows = [...seen.values()].sort((a, b) =>
+    a.company_code !== b.company_code
+      ? (a.company_code < b.company_code ? -1 : 1)
+      : (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
+  const idSet = new Set(cRows.map(r => String(r.id)));
+  const cpMap = {};
+  (await store.table('cycle_products')).forEach(r => {
+    if (!idSet.has(String(r.cycle_id))) return;
+    if (!cpMap[r.cycle_id]) cpMap[r.cycle_id] = {};
+    cpMap[r.cycle_id][r.product] = isNaN(r.mt) ? r.mt : Number(r.mt);
+  });
+  const byCode = {};
+  cRows.forEach(c => {
+    if (!byCode[c.company_code]) byCode[c.company_code] = [];
+    byCode[c.company_code].push({
+      type:        c.cycle_type,
+      mt:          isNaN(c.mt) ? c.mt : Number(c.mt),
+      submitType:  c.submit_type,
+      submitDate:  c.submit_date,
+      releaseType: c.release_type,
+      releaseDate: c.release_date,
+      status:      c.status,
+      products:    cpMap[c.id] || {},
+      pertekDate:  c.pertek_date || '',
+      spiDate:     c.spi_date    || '',
+      _fromRevReq: c.from_rev_req || false,
+    });
+  });
+  return byCode;
+}
+
 async function getCyclesFor(codes) {
+  if (inSheets()) return getCyclesForSheets(codes);
   if (!codes.length) return {};
   const { rows: cRows } = await pool.query(
     `SELECT id, company_code, cycle_type, mt, submit_type, submit_date,
@@ -798,7 +927,7 @@ const KPI_RECONCILE = [
 //     payload build cost independently.
 //   - Singleflight de-dup prevents stampedes when several concurrent
 //     requests arrive during a cold cache.
-//   - PATCH endpoints call cache.invalidate() which clears both tiers
+//   - PATCH endpoints call dcache.invalidate() which clears both tiers
 //     AND publishes on iq_dash:invalidate so other instances flush their
 //     L1 — writes become visible immediately on next read everywhere.
 // If REDIS_URL is unset, cache.js silently degrades to pure in-memory
@@ -811,6 +940,20 @@ const CACHE_TTL_DATA_SEC           = 60;
 const CACHE_TTL_REALIZATIONS_SEC   = 60;
 const CACHE_TTL_RA_SEC             = 60;
 
+// Source-namespaced cache. When staging routing is on, prod (Neon) and the
+// staging subdomain (Sheets) serve different data through the SAME process,
+// so their cache entries MUST be separated by source or one would serve the
+// other's payload. No suffix when staging is disabled (backward compatible).
+const _rawCache = cache;
+// Namespace is a PREFIX so prefix-based invalidation (realization list) still
+// matches the per-company keys built as PFX + code.
+const _ns = () => STAGING_ENABLED ? (inSheets() ? 's::' : 'n::') : '';
+const dcache = {
+  getOrBuild:       (k, ttl, fn) => _rawCache.getOrBuild(_ns() + k, ttl, fn),
+  invalidate:       (k)          => _rawCache.invalidate(_ns() + k),
+  invalidatePrefix: (k)          => _rawCache.invalidatePrefix(_ns() + k),
+};
+
 // Kick off Redis connection in the background — server keeps booting
 // even if Redis is slow/unreachable. Reads return false → in-memory
 // path is used until connection succeeds.
@@ -820,16 +963,30 @@ async function _buildDataPayload() {
   // Product master metadata (HS codes + colors). Always returned, even
   // when no companies exist yet, so the frontend can hydrate its
   // PRODUCT_META cache before rendering empty states.
-  const [{ rows: productMeta }, { rows: aliasRows }, { rows: dirRows }] = await Promise.all([
-    pool.query(
-      `SELECT name, hs_code, color_solid, color_light, color_text, sort_order
-       FROM products ORDER BY sort_order, name`
-    ),
-    pool.query(`SELECT alias, canonical FROM product_aliases`).catch(() => ({ rows: [] })),
-    pool.query(
-      `SELECT full_name, abbreviation, sort_order FROM company_directory ORDER BY sort_order, full_name`
-    ).catch(() => ({ rows: [] })),
-  ]);
+  const numSort = (arr, key) => arr.slice().sort((a, b) => (Number(a[key]) || 0) - (Number(b[key]) || 0));
+  let productMeta, aliasRows, dirRows, companies;
+  if (inSheets()) {
+    [productMeta, aliasRows, dirRows] = await Promise.all([
+      store.table('products'), store.table('product_aliases'), store.table('company_directory'),
+    ]);
+    productMeta = numSort(productMeta, 'sort_order');
+    dirRows     = numSort(dirRows, 'sort_order');
+    companies   = (await store.table('companies')).slice().sort((a, b) =>
+      a.section !== b.section ? (String(a.section) < String(b.section) ? -1 : 1)
+                              : (String(a.code) < String(b.code) ? -1 : 1));
+  } else {
+    [{ rows: productMeta }, { rows: aliasRows }, { rows: dirRows }] = await Promise.all([
+      pool.query(
+        `SELECT name, hs_code, color_solid, color_light, color_text, sort_order
+         FROM products ORDER BY sort_order, name`
+      ),
+      pool.query(`SELECT alias, canonical FROM product_aliases`).catch(() => ({ rows: [] })),
+      pool.query(
+        `SELECT full_name, abbreviation, sort_order FROM company_directory ORDER BY sort_order, full_name`
+      ).catch(() => ({ rows: [] })),
+    ]);
+    ({ rows: companies } = await pool.query(`SELECT * FROM companies ORDER BY section, code`));
+  }
   const productsList = productMeta.map(p => ({
     name:       p.name,
     hsCode:     p.hs_code     || '',
@@ -846,31 +1003,44 @@ async function _buildDataPayload() {
     sortOrder:    Number(r.sort_order) || 0,
   }));
 
-  const { rows: companies } = await pool.query(
-    `SELECT * FROM companies ORDER BY section, code`
-  );
   const codes = companies.map(c => c.code);
   if (!codes.length) return { spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory };
 
-  const [
-    { rows: products },
-    { rows: stats },
-    { rows: revChanges },
-    { rows: pendMetas },
-    { rows: raRows },
-    { rows: shipRows },
-    { rows: reapplyRows },
-    cyclesMap,
-  ] = await Promise.all([
-    pool.query(`SELECT * FROM company_products WHERE company_code = ANY($1) ORDER BY company_code, sort_order`, [codes]),
-    pool.query(`SELECT * FROM company_product_stats WHERE company_code = ANY($1)`, [codes]),
-    pool.query(`SELECT * FROM revision_changes WHERE company_code = ANY($1) ORDER BY company_code, direction, sort_order`, [codes]),
-    pool.query(`SELECT * FROM pending_meta WHERE company_code = ANY($1)`, [codes]),
-    pool.query(`SELECT * FROM ra_records WHERE company_code = ANY($1) ORDER BY company_code`, [codes]),
-    pool.query(`SELECT * FROM company_shipments WHERE company_code = ANY($1) ORDER BY company_code, product, lot_no`, [codes]),
-    pool.query(`SELECT * FROM company_reapply_targets WHERE company_code = ANY($1)`, [codes]),
-    getCyclesFor(codes),
-  ]);
+  let products, stats, revChanges, pendMetas, raRows, shipRows, reapplyRows, cyclesMap;
+  if (inSheets()) {
+    const inCodes = new Set(codes);
+    const f = name => store.where(name, r => inCodes.has(r.company_code));
+    [products, stats, revChanges, pendMetas, raRows, shipRows, reapplyRows, cyclesMap] = await Promise.all([
+      f('company_products').then(a => a.sort((x, y) => x.company_code !== y.company_code ? (x.company_code < y.company_code ? -1 : 1) : (Number(x.sort_order) || 0) - (Number(y.sort_order) || 0))),
+      f('company_product_stats'),
+      f('revision_changes'),
+      f('pending_meta'),
+      f('ra_records'),
+      f('company_shipments').then(a => a.sort((x, y) => x.company_code !== y.company_code ? (x.company_code < y.company_code ? -1 : 1) : x.product !== y.product ? (String(x.product) < String(y.product) ? -1 : 1) : (Number(x.lot_no) || 0) - (Number(y.lot_no) || 0))),
+      f('company_reapply_targets'),
+      getCyclesFor(codes),
+    ]);
+  } else {
+    [
+      { rows: products },
+      { rows: stats },
+      { rows: revChanges },
+      { rows: pendMetas },
+      { rows: raRows },
+      { rows: shipRows },
+      { rows: reapplyRows },
+      cyclesMap,
+    ] = await Promise.all([
+      pool.query(`SELECT * FROM company_products WHERE company_code = ANY($1) ORDER BY company_code, sort_order`, [codes]),
+      pool.query(`SELECT * FROM company_product_stats WHERE company_code = ANY($1)`, [codes]),
+      pool.query(`SELECT * FROM revision_changes WHERE company_code = ANY($1) ORDER BY company_code, direction, sort_order`, [codes]),
+      pool.query(`SELECT * FROM pending_meta WHERE company_code = ANY($1)`, [codes]),
+      pool.query(`SELECT * FROM ra_records WHERE company_code = ANY($1) ORDER BY company_code`, [codes]),
+      pool.query(`SELECT * FROM company_shipments WHERE company_code = ANY($1) ORDER BY company_code, product, lot_no`, [codes]),
+      pool.query(`SELECT * FROM company_reapply_targets WHERE company_code = ANY($1)`, [codes]),
+      getCyclesFor(codes),
+    ]);
+  }
 
   const byCode = (arr, key='company_code') => {
     const m = {};
@@ -959,7 +1129,7 @@ app.get('/api/data', async (req, res) => {
 
   try {
     const t0 = Date.now();
-    const { value, source } = await cache.getOrBuild(
+    const { value, source } = await dcache.getOrBuild(
       CACHE_KEY_DATA, CACHE_TTL_DATA_SEC, _buildDataPayload
     );
     res.set('X-Cache', source);
@@ -973,12 +1143,141 @@ app.get('/api/data', async (req, res) => {
   }
 });
 
+// Sheets-backed equivalent of the PATCH /api/company transaction. Persists
+// scalar fields + products + pending_meta + shipments (with util recompute)
+// + reapplyTargets + ra into the store. Mirrors the Neon handler's semantics.
+async function patchCompanySheets(code, body) {
+  const nowISO = () => new Date().toISOString();
+  const companies = (await store.table('companies')).slice();
+  const idx = companies.findIndex(c => c.code === code);
+  if (idx < 0) return { error: 'company not found', status: 404 };
+  const co = { ...companies[idx] };
+  const cols = Object.keys(co);
+
+  // ── scalar fields (same allow-list as Neon; util/avail excluded) ──
+  const allowed = ['submit1','obtained','rev_type','rev_note','rev_submit_date','rev_status','rev_mt','remarks','spi_ref','status_update','pertek_no','spi_no','updated_by','updated_date'];
+  for (const f of allowed) {
+    const camel = f.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    if (body[camel] !== undefined) co[f] = body[camel];
+    else if (body[f] !== undefined) co[f] = body[f];
+  }
+  co.updated_at = nowISO();
+  const changed = {};
+
+  // ── products: full replace company_products ──
+  if (Array.isArray(body.products)) {
+    let cp = (await store.table('company_products')).filter(r => r.company_code !== code);
+    let maxId = cp.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+    [...new Set(body.products.filter(Boolean))].forEach((p, i) => cp.push({ id: ++maxId, company_code: code, product: p, sort_order: i, source_program: 'B' }));
+    changed.company_products = cp;
+  }
+
+  // ── pending_meta (PENDING companies only) ──
+  if ((body.pendingMt !== undefined || body.pendingStatus !== undefined || body.pendingDate !== undefined) && co.section === 'PENDING') {
+    const pm = (await store.table('pending_meta')).slice();
+    const pi = pm.findIndex(r => r.company_code === code);
+    const cur = pi >= 0 ? pm[pi] : { company_code: code, mt: 0, status: '', date: '', source_program: 'B' };
+    const upd = { ...cur, mt: body.pendingMt ?? cur.mt, status: body.pendingStatus ?? cur.status, date: body.pendingDate ?? cur.date };
+    if (pi >= 0) pm[pi] = upd; else pm.push(upd);
+    changed.pending_meta = pm;
+  }
+
+  // ── shipments (lots) upsert per product ──
+  let shipmentsTouched = false;
+  if (body.shipments && typeof body.shipments === 'object') {
+    shipmentsTouched = true;
+    let ship = (await store.table('company_shipments')).slice();
+    let maxId = ship.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+    for (const [product, lots] of Object.entries(body.shipments)) {
+      const keep = new Set(lots.map(l => String(l.lotNo)));
+      ship = ship.filter(r => !(r.company_code === code && r.product === product && !keep.has(String(r.lot_no))));
+      for (const lot of lots) {
+        const ex = ship.find(r => r.company_code === code && r.product === product && String(r.lot_no) === String(lot.lotNo));
+        const row = { company_code: code, product, lot_no: lot.lotNo, util_mt: lot.utilMT || 0, eta_jkt: lot.etaJKT || '', note: lot.note || '', real_mt: lot.realMT || 0, pib_date: lot.pibDate || '', cargo_arrived: !!lot.cargoArrived, updated_at: nowISO() };
+        if (ex) Object.assign(ex, row); else ship.push({ id: ++maxId, created_at: nowISO(), source_program: 'B', ...row });
+      }
+    }
+    changed.company_shipments = ship;
+  }
+
+  // ── recompute utilization from lots (mirror recomputeUtilizationFromLots) ──
+  if (shipmentsTouched) {
+    const lotSums = {};
+    changed.company_shipments.filter(r => r.company_code === code).forEach(r => { lotSums[r.product] = (lotSums[r.product] || 0) + (Number(r.util_mt) || 0); });
+    if (Object.keys(lotSums).length) {
+      let stats = (await store.table('company_product_stats')).slice();
+      let maxSid = stats.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+      for (const [product, util] of Object.entries(lotSums)) {
+        const ex = stats.find(s => s.company_code === code && s.product === product);
+        const prevUtil = ex ? Number(ex.utilization_mt) || 0 : 0;
+        const prevAvail = ex && ex.available_mt != null ? Number(ex.available_mt) : 0;
+        const obtained = ex ? prevUtil + prevAvail : util;
+        const newAvail = Math.max(0, obtained - util);
+        if (ex) { ex.utilization_mt = util; ex.available_mt = newAvail; }
+        else stats.push({ id: ++maxSid, company_code: code, product, utilization_mt: util, available_mt: newAvail, realization_mt: '', eta_jkt: '', arrived: false, source_program: 'B' });
+      }
+      changed.company_product_stats = stats;
+      const coUtil = stats.filter(s => s.company_code === code).reduce((a, s) => a + (Number(s.utilization_mt) || 0), 0);
+      const coObt = co.obtained != null && co.obtained !== '' ? Number(co.obtained) : coUtil;
+      co.utilization_mt = coUtil;
+      co.available_quota = Math.max(0, coObt - coUtil);
+    }
+  }
+
+  // ── reapply targets upsert ──
+  if (Array.isArray(body.reapplyTargets)) {
+    let rt = (await store.table('company_reapply_targets')).slice();
+    let maxId = rt.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+    for (const t of body.reapplyTargets) {
+      const ex = rt.find(r => r.company_code === code && r.product === t.product);
+      const row = { company_code: code, product: t.product, target_mt: t.targetMT ?? '', submitted: !!t.submitted, submit_date: t.submitDate || '', notes: t.notes || '', source_program: 'B' };
+      if (ex) Object.assign(ex, row); else rt.push({ id: ++maxId, created_at: nowISO(), ...row });
+    }
+    changed.company_reapply_targets = rt;
+  }
+
+  // ── ra record update (UPDATE-only, like Neon) ──
+  let raTouched = false;
+  if (body.ra) {
+    const r = body.ra;
+    const ra = (await store.table('ra_records')).slice();
+    const ex = ra.find(x => x.company_code === code);
+    if (ex) {
+      Object.assign(ex, { berat: r.berat, obtained: r.obtained, cargo_arrived: !!r.cargoArrived, real_pct: r.realPct, util_pct: r.utilPct ?? '', arrival_date: r.arrivalDate || '', eta_jkt: r.etaJKT || '', reapply_est: r.reapplyEst || '', reapply_stage: r.reapplyStage || 1, reapply_submit_date: r.reapplySubmitDate || '', reapply_status: r.reapplyStatus || '', target: r.target ?? '', pertek: r.pertek || '', spi: r.spi || '', catatan: r.catatan || '', updated_at: nowISO() });
+      changed.ra_records = ra;
+      raTouched = true;
+    }
+  }
+
+  companies[idx] = co;
+  changed.companies = companies;
+  for (const [tab, rows] of Object.entries(changed)) await store.rewriteTable(tab, rows);
+  await store.logChange({ sheet: 'companies', record_id: code, field: Object.keys(body).filter(k => k !== '_ifUpdatedAt').join(','), new_value: '(patch)', changed_by: body.updatedBy || 'api', note: 'company patch' });
+  return { ok: true, updatedAt: co.updated_at, ra: raTouched };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // PATCH /api/company/:code  — update editable fields
 // ═══════════════════════════════════════════════════════════════════
 app.patch('/api/company/:code', async (req, res) => {
   const { code } = req.params;
   const body = req.body;
+
+  // Sheets mode: full company patch (scalars + products + pending_meta +
+  // shipments/util recompute + reapplyTargets + ra) persisted to the store.
+  if (inSheets()) {
+    try {
+      const result = await patchCompanySheets(code, body);
+      if (result.error) return res.status(result.status || 500).json({ error: result.error });
+      if (result.ra) await dcache.invalidate(CACHE_KEY_RA_ALL);
+      await dcache.invalidate(CACHE_KEY_DATA);
+      return res.json({ ok: true, code, updatedAt: result.updatedAt });
+    } catch (err) {
+      console.error('PATCH /api/company (sheets) error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -1170,8 +1469,8 @@ app.patch('/api/company/:code', async (req, res) => {
     // write happened — next GET /api/data must re-read DB. If body.ra was
     // touched, the dedicated /api/ra cache is also stale.
     await Promise.all([
-      cache.invalidate(CACHE_KEY_DATA),
-      body.ra ? cache.invalidate(CACHE_KEY_RA_ALL) : Promise.resolve(),
+      dcache.invalidate(CACHE_KEY_DATA),
+      body.ra ? dcache.invalidate(CACHE_KEY_RA_ALL) : Promise.resolve(),
     ]);
     // Return the new updated_at so client can refresh its concurrency token
     // without needing a full re-fetch.
@@ -1201,6 +1500,44 @@ app.post('/api/company', async (req, res) => {
   const { code, grp, products, mt, status, date, remarks, statusUpdate,
           submitDate, updatedBy } = req.body || {};
   if (!code) return res.status(400).json({ error: 'code is required' });
+
+  if (inSheets()) {
+    try {
+      const companies = await store.table('companies');
+      if (companies.some(c => c.code === code)) return res.status(409).json({ error: `Company ${code} already exists` });
+      const dir = (await store.table('company_directory')).find(d => d.abbreviation === code);
+      const fullName = req.body.fullName || (dir && dir.full_name) || '';
+      const now = new Date().toISOString();
+      const updatedDate = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+      await store.appendRows('companies', [{
+        code, full_name: fullName, grp: grp || 'CD', section: 'PENDING',
+        submit1: mt || 0, obtained: 0, utilization_mt: 0, available_quota: '',
+        rev_type: 'none', rev_note: '', rev_submit_date: '', rev_status: '', rev_mt: 0,
+        remarks: remarks || '', spi_ref: '', status_update: statusUpdate || '',
+        pertek_no: '', spi_no: '', updated_by: updatedBy || '', updated_date: updatedDate,
+        created_at: now, updated_at: now, source_program: 'B',
+      }]);
+      const prodList = Array.isArray(products) ? products.filter(Boolean) : [];
+      if (prodList.length) {
+        let cpId = (await store.table('company_products')).reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+        await store.appendRows('company_products', prodList.map((p, i) => ({ id: ++cpId, company_code: code, product: p, sort_order: i, source_program: 'B' })));
+      }
+      await store.appendRows('pending_meta', [{ company_code: code, mt: mt || 0, status: status || '', date: date || '', source_program: 'B' }]);
+      // Seed Submit #1 cycle. release_date left BLANK (not 'TBA') = pending.
+      const cyId = (await store.table('cycles')).reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
+      await store.appendRows('cycles', [{ id: cyId, company_code: code, cycle_type: 'Submit #1', mt: String(mt || 0), submit_type: 'Submit MOI', submit_date: submitDate || '', release_type: 'PERTEK', release_date: '', status: statusUpdate || '', sort_order: 0, pertek_date: '', spi_date: '', from_rev_req: false, source_program: 'B' }]);
+      if (prodList.length) {
+        let cpiId = (await store.table('cycle_products')).reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+        await store.appendRows('cycle_products', prodList.map(p => ({ id: ++cpiId, cycle_id: cyId, product: p, mt: String(mt || 0), source_program: 'B' })));
+      }
+      await store.logChange({ sheet: 'companies', record_id: code, field: '(create)', new_value: fullName, changed_by: updatedBy || 'api', note: 'company create' });
+      await dcache.invalidate(CACHE_KEY_DATA);
+      return res.json({ ok: true, code, fullName });
+    } catch (err) {
+      console.error('POST /api/company (sheets) error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
 
   const client = await pool.connect();
   try {
@@ -1269,7 +1606,7 @@ app.post('/api/company', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    await cache.invalidate(CACHE_KEY_DATA); // new company created — refresh cache
+    await dcache.invalidate(CACHE_KEY_DATA); // new company created — refresh cache
     res.json({ ok: true, code, fullName });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1291,6 +1628,36 @@ app.patch('/api/company/:code/cycles', async (req, res) => {
   const { code } = req.params;
   const { cycles } = req.body;
   if (!Array.isArray(cycles)) return res.status(400).json({ error: 'cycles must be array' });
+
+  if (inSheets()) {
+    try {
+      // TBA dates are stored BLANK (= pending) per business rule.
+      const norm = d => /^tba$/i.test(String(d || '').trim()) ? '' : (d || '');
+      const allCycles = await store.table('cycles');
+      const allCp = await store.table('cycle_products');
+      const removedIds = new Set(allCycles.filter(c => c.company_code === code).map(c => String(c.id)));
+      const keepCycles = allCycles.filter(c => c.company_code !== code);
+      const keepCp = allCp.filter(cp => !removedIds.has(String(cp.cycle_id)));
+      let cyId = allCycles.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+      let cpId = allCp.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+      const newCycles = [], newCp = [];
+      cycles.forEach((c, i) => {
+        const id = ++cyId;
+        newCycles.push({ id, company_code: code, cycle_type: c.type || '', mt: c.mt == null ? '' : c.mt, submit_type: c.submitType || '', submit_date: norm(c.submitDate), release_type: c.releaseType || '', release_date: norm(c.releaseDate), status: c.status || '', sort_order: i, pertek_date: c.pertekDate || '', spi_date: c.spiDate || '', from_rev_req: c._fromRevReq || false, source_program: 'B' });
+        if (c.products && typeof c.products === 'object') {
+          for (const [product, mt] of Object.entries(c.products)) newCp.push({ id: ++cpId, cycle_id: id, product, mt: mt == null ? '' : String(mt), source_program: 'B' });
+        }
+      });
+      await store.rewriteTable('cycles', keepCycles.concat(newCycles));
+      await store.rewriteTable('cycle_products', keepCp.concat(newCp));
+      await store.logChange({ sheet: 'cycles', record_id: code, field: '(replace)', new_value: `${cycles.length} cycles`, changed_by: 'api', note: 'cycle editor' });
+      await dcache.invalidate(CACHE_KEY_DATA);
+      return res.json({ ok: true, cycles: cycles.length });
+    } catch (err) {
+      console.error('PATCH /api/company/:code/cycles (sheets) error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
 
   const client = await pool.connect();
   try {
@@ -1329,7 +1696,7 @@ app.patch('/api/company/:code/cycles', async (req, res) => {
     }
 
     await client.query('COMMIT');
-    await cache.invalidate(CACHE_KEY_DATA); // cycles changed — refresh cache
+    await dcache.invalidate(CACHE_KEY_DATA); // cycles changed — refresh cache
     res.json({ ok: true, cycles: cycles.length });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -1343,24 +1710,37 @@ app.patch('/api/company/:code/cycles', async (req, res) => {
 app.get('/api/company/:code', async (req, res) => {
   const { code } = req.params;
   try {
-    const { rows } = await pool.query(`SELECT * FROM companies WHERE code=$1`, [code]);
+    let rows, products, stats, revChanges, pendMetas, shipRows, reapplyRows;
+    if (inSheets()) {
+      const byCode = name => store.where(name, r => r.company_code === code);
+      [rows, products, stats, revChanges, pendMetas, shipRows, reapplyRows] = await Promise.all([
+        store.where('companies', r => r.code === code),
+        byCode('company_products'), byCode('company_product_stats'),
+        byCode('revision_changes'), byCode('pending_meta'),
+        byCode('company_shipments'), byCode('company_reapply_targets'),
+      ]);
+    } else {
+      ({ rows } = await pool.query(`SELECT * FROM companies WHERE code=$1`, [code]));
+    }
     if (!rows.length) return res.status(404).json({ error: 'Not found' });
     const co = rows[0];
-    const [
-      { rows: products },
-      { rows: stats },
-      { rows: revChanges },
-      { rows: pendMetas },
-      { rows: shipRows },
-      { rows: reapplyRows },
-    ] = await Promise.all([
-      pool.query(`SELECT * FROM company_products WHERE company_code=$1 ORDER BY sort_order`, [code]),
-      pool.query(`SELECT * FROM company_product_stats WHERE company_code=$1`, [code]),
-      pool.query(`SELECT * FROM revision_changes WHERE company_code=$1 ORDER BY direction, sort_order`, [code]),
-      pool.query(`SELECT * FROM pending_meta WHERE company_code=$1`, [code]),
-      pool.query(`SELECT * FROM company_shipments WHERE company_code=$1 ORDER BY product, lot_no`, [code]),
-      pool.query(`SELECT * FROM company_reapply_targets WHERE company_code=$1`, [code]),
-    ]);
+    if (!inSheets()) {
+      [
+        { rows: products },
+        { rows: stats },
+        { rows: revChanges },
+        { rows: pendMetas },
+        { rows: shipRows },
+        { rows: reapplyRows },
+      ] = await Promise.all([
+        pool.query(`SELECT * FROM company_products WHERE company_code=$1 ORDER BY sort_order`, [code]),
+        pool.query(`SELECT * FROM company_product_stats WHERE company_code=$1`, [code]),
+        pool.query(`SELECT * FROM revision_changes WHERE company_code=$1 ORDER BY direction, sort_order`, [code]),
+        pool.query(`SELECT * FROM pending_meta WHERE company_code=$1`, [code]),
+        pool.query(`SELECT * FROM company_shipments WHERE company_code=$1 ORDER BY product, lot_no`, [code]),
+        pool.query(`SELECT * FROM company_reapply_targets WHERE company_code=$1`, [code]),
+      ]);
+    }
     const cyclesMap = await getCyclesFor([code]);
     const shipMap = {};
     shipRows.forEach(s => {
@@ -1380,10 +1760,12 @@ app.get('/api/company/:code', async (req, res) => {
 app.get('/api/ra', async (req, res) => {
   res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
   try {
-    const { value, source } = await cache.getOrBuild(
+    const { value, source } = await dcache.getOrBuild(
       CACHE_KEY_RA_ALL, CACHE_TTL_RA_SEC,
       async () => {
-        const { rows } = await pool.query(`SELECT * FROM ra_records ORDER BY company_code`);
+        const rows = inSheets()
+          ? (await store.table('ra_records')).slice().sort((a, b) => String(a.company_code).localeCompare(String(b.company_code)))
+          : (await pool.query(`SELECT * FROM ra_records ORDER BY company_code`)).rows;
         return rows.map(r => ({
           code: r.company_code, product: r.product,
           berat: Number(r.berat)||0, obtained: Number(r.obtained)||0,
@@ -1482,6 +1864,32 @@ async function insertRealization(client, code, row, defaults) {
   );
 }
 
+// ── Sheets-backed realization writes (mirror of insertRealization) ──────────
+function buildRealizationObj(code, row, defaults, id) {
+  const now = new Date().toISOString();
+  return {
+    id, company_code: code,
+    product: row.product || '', line_no: _num(row.lineNo) ?? 1,
+    description: row.description || '', hs_code: row.hsCode || '',
+    volume: _num(row.volume), unit: row.unit || 'TNE', value_usd: _num(row.valueUSD),
+    unit_price: _num(row.unitPrice), kurs: _num(row.kurs),
+    country_origin: row.countryOrigin || '', port_destination: row.portDestination || '',
+    port_loading: row.portLoading || '', ls_no: row.lsNo || '', ls_date: row.lsDate || '',
+    pib_no: row.pibNo || '', pib_date: row.pibDate || '', invoice_no: row.invoiceNo || '',
+    invoice_date: row.invoiceDate || '', pengajuan_no: row.pengajuanNo || '', pengajuan_date: row.pengajuanDate || '',
+    source: defaults.source || row.source || 'manual', source_file: defaults.sourceFile || '',
+    imported_by: defaults.importedBy || '', created_at: now, updated_at: now, source_program: 'B',
+  };
+}
+async function insertRealizationsSheets(code, rows, defaults) {
+  const all = await store.table('realizations');
+  let maxId = all.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+  const objs = rows.map(row => buildRealizationObj(code, row, defaults, ++maxId));
+  await store.appendRows('realizations', objs);
+  await store.logChange({ sheet: 'realizations', record_id: objs.map(o => o.id).join(','), field: '(insert)', new_value: `${code} × ${objs.length}`, changed_by: defaults.importedBy || 'api', note: 'realization insert' });
+  return objs.map(o => o.id);
+}
+
 // GET /api/realizations?company_code=CODE  — list realizations (optionally filtered)
 // GET /api/realizations/summary  — lightweight count per company
 // Used by the dashboard drawer to decide whether to show the "Detail
@@ -1491,24 +1899,39 @@ async function insertRealization(client, code, row, defaults) {
 app.get('/api/realizations/summary', async (req, res) => {
   res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
   try {
-    const { value, source } = await cache.getOrBuild(
+    const { value, source } = await dcache.getOrBuild(
       CACHE_KEY_REALIZATIONS_SUM, CACHE_TTL_REALIZATIONS_SEC,
       async () => {
-        const { rows } = await pool.query(
-          `SELECT company_code,
-                  COUNT(DISTINCT pib_no)::int AS pibs,
-                  COUNT(*)::int              AS lines
-           FROM realizations
-           WHERE company_code IS NOT NULL
-           GROUP BY company_code`
-        );
         const counts = {};
         let totalPibs = 0, totalLines = 0;
-        rows.forEach(r => {
-          counts[r.company_code] = { pibs: r.pibs, lines: r.lines };
-          totalPibs  += r.pibs;
-          totalLines += r.lines;
-        });
+        if (inSheets()) {
+          const byCo = {};
+          (await store.table('realizations'))
+            .filter(r => r.company_code)
+            .forEach(r => {
+              const c = (byCo[r.company_code] = byCo[r.company_code] || { pibs: new Set(), lines: 0 });
+              if (r.pib_no) c.pibs.add(r.pib_no);
+              c.lines += 1;
+            });
+          Object.entries(byCo).forEach(([code, c]) => {
+            counts[code] = { pibs: c.pibs.size, lines: c.lines };
+            totalPibs += c.pibs.size; totalLines += c.lines;
+          });
+        } else {
+          const { rows } = await pool.query(
+            `SELECT company_code,
+                    COUNT(DISTINCT pib_no)::int AS pibs,
+                    COUNT(*)::int              AS lines
+             FROM realizations
+             WHERE company_code IS NOT NULL
+             GROUP BY company_code`
+          );
+          rows.forEach(r => {
+            counts[r.company_code] = { pibs: r.pibs, lines: r.lines };
+            totalPibs  += r.pibs;
+            totalLines += r.lines;
+          });
+        }
         return { counts, totalPibs, totalLines };
       }
     );
@@ -1528,9 +1951,21 @@ app.get('/api/realizations', async (req, res) => {
   const cacheKey = CACHE_KEY_REALIZATIONS_PFX + (company_code || '_all');
   res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
   try {
-    const { value, source } = await cache.getOrBuild(
+    const { value, source } = await dcache.getOrBuild(
       cacheKey, CACHE_TTL_REALIZATIONS_SEC,
       async () => {
+        if (inSheets()) {
+          let rows = await store.table('realizations');
+          if (company_code) rows = rows.filter(r => r.company_code === company_code);
+          // pib_date is DD/MM/YYYY (or ''); sort DESC by parsed date
+          const ts = s => { const m = String(s || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : 0; };
+          rows = rows.slice().sort((a, b) =>
+            ts(b.pib_date) - ts(a.pib_date)
+            || String(a.company_code).localeCompare(String(b.company_code))
+            || String(a.pib_no).localeCompare(String(b.pib_no))
+            || (Number(a.line_no) || 0) - (Number(b.line_no) || 0));
+          return { realizations: rows };
+        }
         const sql = company_code
           ? `SELECT * FROM realizations WHERE company_code = $1 ORDER BY pib_date DESC, pib_no, line_no`
           : `SELECT * FROM realizations ORDER BY pib_date DESC, company_code, pib_no, line_no`;
@@ -1547,12 +1982,76 @@ app.get('/api/realizations', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// GET /api/insights — analytics answering the business questions
+//   /api/insights                → all answers (item/company via ?item= ?company=)
+//   /api/insights/:q             → single answer (q1..q8 | realization)
+// Reads from the active data source (Google Sheets when DATA_SOURCE=sheets).
+// ═══════════════════════════════════════════════════════════════════
+const _insightFns = {
+  q1: (t, o) => insights.obtainedByPeriod(t, o.today),
+  q2: (t, o) => insights.latestProgress(t, o.company),
+  q3: (t)    => insights.topQuotaItems(t),
+  q4: (t)    => insights.leadTime(t),
+  q5: (t, o) => insights.remainingForItem(t, o.item),
+  q6: (t, o) => insights.companiesWithItem(t, o.item),
+  q7: (t, o) => insights.utilizationTiming(t, o.company),
+  q8: (t, o) => insights.reallocations(t, o.item),
+  realization: (t, o) => insights.realizationMetrics(t, o.today),
+};
+async function _insightOpts(req, t) {
+  return {
+    today: new Date(),
+    item: req.query.item || 'GI ALLOY',
+    company: req.query.company || (t.companies[0] && t.companies[0].code),
+  };
+}
+app.get('/api/insights', async (req, res) => {
+  try {
+    const t = await loadAnalyticsTables();
+    res.set('X-Data-Source', inSheets() ? 'sheets' : 'neon');
+    res.json({ source: inSheets() ? 'sheets' : 'neon', ...insights.all(t, await _insightOpts(req, t)) });
+  } catch (err) {
+    console.error('GET /api/insights error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+app.get('/api/insights/:q', async (req, res) => {
+  const fn = _insightFns[req.params.q];
+  if (!fn) return res.status(404).json({ error: `unknown insight '${req.params.q}'` });
+  try {
+    const t = await loadAnalyticsTables();
+    res.set('X-Data-Source', inSheets() ? 'sheets' : 'neon');
+    res.json(fn(t, await _insightOpts(req, t)));
+  } catch (err) {
+    console.error(`GET /api/insights/${req.params.q} error:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/realizations  — bulk insert (Excel upload result, or any batch)
 // Body: { companyCode, source: 'excel'|'manual', sourceFile, importedBy, rows: [...] }
 app.post('/api/realizations', async (req, res) => {
   const { companyCode, source, sourceFile, importedBy, rows } = req.body || {};
   if (!companyCode || !Array.isArray(rows) || !rows.length) {
     return res.status(400).json({ error: 'companyCode and non-empty rows array are required' });
+  }
+
+  if (inSheets()) {
+    try {
+      const exists = (await store.table('companies')).some(c => c.code === companyCode);
+      if (!exists) return res.status(404).json({ error: `Unknown company code: ${companyCode}` });
+      const ids = await insertRealizationsSheets(companyCode, rows, { source: source || 'excel', sourceFile: sourceFile || '', importedBy: importedBy || '' });
+      await Promise.all([
+        dcache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+        dcache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+        dcache.invalidate(CACHE_KEY_DATA),
+      ]);
+      return res.json({ ok: true, inserted: ids.length, ids });
+    } catch (err) {
+      console.error('POST /api/realizations (sheets) error:', err);
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   const client = await pool.connect();
@@ -1574,9 +2073,9 @@ app.post('/api/realizations', async (req, res) => {
     // (utilization vs realization is shown side-by-side), so invalidate
     // that too — cheap because the prewarm refills it within seconds.
     await Promise.all([
-      cache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
-      cache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
-      cache.invalidate(CACHE_KEY_DATA),
+      dcache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+      dcache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+      dcache.invalidate(CACHE_KEY_DATA),
     ]);
     res.json({ ok: true, inserted: ids.length, ids });
   } catch (err) {
@@ -1592,6 +2091,24 @@ app.post('/api/realizations', async (req, res) => {
 app.post('/api/realizations/single', async (req, res) => {
   const { companyCode, importedBy, ...row } = req.body || {};
   if (!companyCode) return res.status(400).json({ error: 'companyCode is required' });
+
+  if (inSheets()) {
+    try {
+      const exists = (await store.table('companies')).some(c => c.code === companyCode);
+      if (!exists) return res.status(404).json({ error: `Unknown company code: ${companyCode}` });
+      const [id] = await insertRealizationsSheets(companyCode, [row], { source: 'manual', sourceFile: '', importedBy: importedBy || '' });
+      await Promise.all([
+        dcache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+        dcache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+        dcache.invalidate(CACHE_KEY_DATA),
+      ]);
+      return res.json({ ok: true, id });
+    } catch (err) {
+      console.error('POST /api/realizations/single (sheets) error:', err);
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   const client = await pool.connect();
   try {
     const { rowCount } = await client.query(`SELECT 1 FROM companies WHERE code = $1`, [companyCode]);
@@ -1601,9 +2118,9 @@ app.post('/api/realizations/single', async (req, res) => {
       source: 'manual', sourceFile: '', importedBy: importedBy || '',
     });
     await Promise.all([
-      cache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
-      cache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
-      cache.invalidate(CACHE_KEY_DATA),
+      dcache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+      dcache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+      dcache.invalidate(CACHE_KEY_DATA),
     ]);
     res.json({ ok: true, id: r.rows[0].id });
   } catch (err) {
@@ -1619,12 +2136,25 @@ app.delete('/api/realizations/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: 'invalid id' });
   try {
+    if (inSheets()) {
+      const all = await store.table('realizations');
+      const kept = all.filter(r => String(r.id) !== String(id));
+      if (kept.length === all.length) return res.status(404).json({ error: 'not found' });
+      await store.rewriteTable('realizations', kept);
+      await store.logChange({ sheet: 'realizations', record_id: String(id), field: '(delete)', old_value: id, changed_by: 'api', note: 'realization delete' });
+      await Promise.all([
+        dcache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+        dcache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+        dcache.invalidate(CACHE_KEY_DATA),
+      ]);
+      return res.json({ ok: true });
+    }
     const { rowCount } = await pool.query(`DELETE FROM realizations WHERE id = $1`, [id]);
     if (!rowCount) return res.status(404).json({ error: 'not found' });
     await Promise.all([
-      cache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
-      cache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
-      cache.invalidate(CACHE_KEY_DATA),
+      dcache.invalidate(CACHE_KEY_REALIZATIONS_SUM),
+      dcache.invalidatePrefix(CACHE_KEY_REALIZATIONS_PFX),
+      dcache.invalidate(CACHE_KEY_DATA),
     ]);
     res.json({ ok: true });
   } catch (err) {
@@ -1662,21 +2192,29 @@ app.get('*', (req, res) => {
 //      dyno restart. The schema is already there.
 app.listen(PORT, async () => {
   console.log(`🚀 IQ Dash listening on http://localhost:${PORT}`);
-  // Background schema check — non-blocking
-  if (process.env.SKIP_INIT_DB === '1') {
+  // Warm the Google Sheets store if ANY request path may use it.
+  if (ANY_SHEETS) {
+    store.load(true).then(() => console.log('[data] Google Sheets store warmed'))
+                    .catch(err => console.error('[data] sheets warm error:', err.message));
+  }
+  // Background schema check — only when Neon is a live backend.
+  if (!ANY_NEON) {
+    console.log('⏩ Skipping initDB (no Neon backend active)');
+  } else if (process.env.SKIP_INIT_DB === '1') {
     console.log('⏩ Skipping initDB (SKIP_INIT_DB=1)');
   } else {
     initDB().catch(err => console.error('initDB background error:', err));
   }
-  // Pre-warm pool: open one connection so the first user request doesn't
-  // pay the ~8-roundtrip TCP+SSL handshake cost. Neon docs explicitly
-  // recommend this for serverless functions.
-  try {
-    const t0 = Date.now();
-    await pool.query('SELECT 1');
-    console.log(`🔥 Pool warmed in ${Date.now() - t0}ms`);
-  } catch (e) {
-    console.warn('Pool warmup failed (will retry on first request):', e.message);
+  // Pre-warm pool only when Neon is a live backend (skipped for pure-sheets
+  // deploys so the app never touches Neon).
+  if (ANY_NEON) {
+    try {
+      const t0 = Date.now();
+      await pool.query('SELECT 1');
+      console.log(`🔥 Pool warmed in ${Date.now() - t0}ms`);
+    } catch (e) {
+      console.warn('Pool warmup failed (will retry on first request):', e.message);
+    }
   }
 
   // ── Background cache pre-warm (Plan A bonus) ─────────────────────
@@ -1686,7 +2224,7 @@ app.listen(PORT, async () => {
   // cost. With this, the cache is continuously kept fresh.
   //
   // Set CACHE_PREWARM=0 to disable. Pre-warm runs every 25s (well
-  // inside the 60s TTL); cache.getOrBuild's own singleflight prevents
+  // inside the 60s TTL); dcache.getOrBuild's own singleflight prevents
   // duplicate builds when the prewarm tick and a real request collide.
   if (process.env.CACHE_PREWARM !== '0') {
     const PREWARM_MS = 25_000;
@@ -1698,8 +2236,8 @@ app.listen(PORT, async () => {
         // benefits from any one prewarm tick. With Redis active and N
         // dynos prewarming, in steady state only ONE rebuild per ~25s
         // hits Postgres; the rest serve from L2.
-        await cache.invalidate(CACHE_KEY_DATA);
-        await cache.getOrBuild(CACHE_KEY_DATA, CACHE_TTL_DATA_SEC, _buildDataPayload);
+        await dcache.invalidate(CACHE_KEY_DATA);
+        await dcache.getOrBuild(CACHE_KEY_DATA, CACHE_TTL_DATA_SEC, _buildDataPayload);
         // Quiet log — only print every ~5 minutes
         if (Math.random() < 0.08) {
           console.log(`🔄 Cache prewarm: ${Date.now()-t0}ms (redis=${cache.isRedisReady()})`);

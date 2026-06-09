@@ -235,11 +235,13 @@ function updateOverviewKPIs() {
   const pTblSubt = document.getElementById('pendingTableSubtitle');
   if (pTblSubt) pTblSubt.textContent = `${pendCoSet.size} companies · awaiting PERTEK / SPI`;
 
-  // All Companies page filter pills — update by stable IDs
+  // All Companies page filter pills — update by stable IDs.
+  // Use PERIOD-FILTERED counts so the badges match the rows actually shown
+  // when a period filter is active (consistent with renderMain()).
   const s = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
-  s('pillMAll',     SPI.length + PENDING.length);
-  s('pillMSPI',     SPI.length);
-  s('pillMPending', PENDING.length);
+  s('pillMAll',     filteredSPI().length + filteredPending().length);
+  s('pillMSPI',     filteredSPI().length);
+  s('pillMPending', filteredPending().length);
 
   // ── Active Revisions insight (dynamic from live data) ──────────────────
   const revRevision = filteredSPI().filter(d => revisionStatus(d) === 'active');
@@ -268,8 +270,9 @@ function updateOverviewKPIs() {
   s('pillMEligible', eligCountAll);
 
   // ── Nav tab counts (PERTEK & SPI / All Companies) ─────────────────────
-  s('navCountSPI', SPI.length);
-  s('navCountAll', SPI.length + PENDING.length);
+  // Period-filtered so the nav badges reflect the active period.
+  s('navCountSPI', filteredSPI().length);
+  s('navCountAll', filteredSPI().length + filteredPending().length);
 
   // ── Top Obtained Quota insight (dynamic — replaces hardcoded BTS) ─────
   // Pick the company with the highest canonicalObtained value across SPI.
