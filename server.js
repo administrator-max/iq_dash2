@@ -1251,7 +1251,9 @@ async function patchCompanySheets(code, body) {
 
   companies[idx] = co;
   changed.companies = companies;
-  for (const [tab, rows] of Object.entries(changed)) await store.rewriteTable(tab, rows);
+  // One batched write for ALL touched tabs (2 API calls total) — avoids the
+  // 60-writes/min Sheets quota a per-tab rewrite would burn through.
+  await store.batchRewrite(changed);
   await store.logChange({ sheet: 'companies', record_id: code, field: Object.keys(body).filter(k => k !== '_ifUpdatedAt').join(','), new_value: '(patch)', changed_by: body.updatedBy || 'api', note: 'company patch' });
   return { ok: true, updatedAt: co.updated_at, ra: raTouched };
 }
@@ -1648,8 +1650,7 @@ app.patch('/api/company/:code/cycles', async (req, res) => {
           for (const [product, mt] of Object.entries(c.products)) newCp.push({ id: ++cpId, cycle_id: id, product, mt: mt == null ? '' : String(mt), source_program: 'B' });
         }
       });
-      await store.rewriteTable('cycles', keepCycles.concat(newCycles));
-      await store.rewriteTable('cycle_products', keepCp.concat(newCp));
+      await store.batchRewrite({ cycles: keepCycles.concat(newCycles), cycle_products: keepCp.concat(newCp) });
       await store.logChange({ sheet: 'cycles', record_id: code, field: '(replace)', new_value: `${cycles.length} cycles`, changed_by: 'api', note: 'cycle editor' });
       await dcache.invalidate(CACHE_KEY_DATA);
       return res.json({ ok: true, cycles: cycles.length });
