@@ -9,3 +9,6 @@ explain.js
 
 # Phase 4 backups (DB snapshots)
 backups/
+
+# secrets
+service-account.json
