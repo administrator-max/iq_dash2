@@ -1270,6 +1270,12 @@ async function patchCompanySheets(code, body) {
 
   companies[idx] = co;
   changed.companies = companies;
+  // Anti-wipe guard: a single-company patch must never shrink the master list.
+  // (idx>=0 already implies >=1 row; this catches any future regression that
+  // would otherwise blank the companies tab — see the 2026-06-12 incident.)
+  if (!Array.isArray(changed.companies) || changed.companies.length === 0) {
+    return { error: 'refusing to write empty companies tab', status: 500 };
+  }
   // One batched write for ALL touched tabs (2 API calls total) — avoids the
   // 60-writes/min Sheets quota a per-tab rewrite would burn through.
   await store.batchRewrite(changed);
