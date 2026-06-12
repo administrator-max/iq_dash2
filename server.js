@@ -1023,7 +1023,7 @@ async function _buildDataPayload() {
   }));
 
   const codes = companies.map(c => c.code);
-  if (!codes.length) return { spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory };
+  if (!codes.length) return { spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory, lastUpdate: null };
 
   let products, stats, revChanges, pendMetas, raRows, shipRows, reapplyRows, cyclesMap;
   if (inSheets()) {
@@ -1131,7 +1131,14 @@ async function _buildDataPayload() {
     });
   });
 
-  return { spi, pending, ra, products: productsList, productAliases: aliasMap, companyDirectory };
+  // ── lastUpdate: when the DATA was last edited (server-side, same for every
+  // device) — replaces the old client-side wall clock. Max updated_at across
+  // the tables that company/lot/RA edits touch. ──
+  const _maxTs = arr => arr.reduce((m, r) => { const t = Date.parse(r && r.updated_at); return (!isNaN(t) && t > m) ? t : m; }, 0);
+  const _lastMs = Math.max(_maxTs(companies), _maxTs(shipRows), _maxTs(raRows));
+  const lastUpdate = _lastMs > 0 ? new Date(_lastMs).toISOString() : null;
+
+  return { spi, pending, ra, products: productsList, productAliases: aliasMap, companyDirectory, lastUpdate };
 }
 
 app.get('/api/data', async (req, res) => {

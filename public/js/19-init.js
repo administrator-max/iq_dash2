@@ -146,23 +146,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 });
 
-/* ── LAST UPDATE CLOCK ──────────────────────────────────────────── */
-(function initLastUpdateClock() {
-  function formatDT(d) {
-    const dd = String(d.getDate()).padStart(2,'0');
-    const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
-    const yy = d.getFullYear();
-    const hh = String(d.getHours()).padStart(2,'0');
-    const mm = String(d.getMinutes()).padStart(2,'0');
-    const ss = String(d.getSeconds()).padStart(2,'0');
-    return `Last update: ${dd} ${mo} ${yy}  ${hh}:${mm}:${ss}`;
-  }
+/* ── LAST UPDATE (data-edit time from server) ───────────────────────
+   Shows when the DATA was last edited (server-provided, identical on every
+   device) — NOT a per-device wall clock. Re-rendered by loadData() each fetch.
+   The instant is the same for all viewers; it's formatted in local time. */
+function renderLastUpdate() {
   const el = document.getElementById('tbDateTime');
   if (!el) return;
-  function tick() { el.textContent = formatDT(new Date()); }
-  tick();
-  setInterval(tick, 1000);
-})();
+  const iso = window.LAST_DATA_UPDATE;
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d)) { el.textContent = 'Last update: —'; return; }
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  const yy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  el.textContent = `Last update: ${dd} ${mo} ${yy}  ${hh}:${mm}`;
+}
+renderLastUpdate();
 
 /* ══════════════════════════════════════════════════
    AVAILABLE QUOTA PAGE — TAB CONTROLLER

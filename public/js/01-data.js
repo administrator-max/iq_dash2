@@ -79,6 +79,10 @@ async function loadData() {
     SPI     = _dedup(data.spi     || []);
     PENDING = _dedup(data.pending || []);
     RA      = data.ra      || [];
+    // Server-provided data-edit time (same for every device). Rendered as the
+    // "Last update" label — replaces the old per-device wall clock.
+    window.LAST_DATA_UPDATE = data.lastUpdate || null;
+    if (typeof renderLastUpdate === 'function') renderLastUpdate();
     // Capture concurrency token (server's updated_at). Used by patchToServer
     // as `_ifUpdatedAt` so server can reject stale writes (HTTP 409) when
     // another user has modified the row since this fetch.
