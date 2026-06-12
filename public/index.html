@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Import Quota Monitor 2026</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Self-hosted (same-origin) so a slow/blocked cdnjs route can't hang the page.
+     defer = non-render-blocking; executes before the deferred /js app modules. -->
+<script defer src="/vendor/chart.umd.min.js?v=4.4.1"></script>
 <!-- SheetJS — client-side .xlsx parsing for the Realization Import feature -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="/vendor/xlsx.full.min.js?v=0.18.5"></script>
 <link rel="stylesheet" href="/css/style.css?v=5">
 </head>
 <body>
