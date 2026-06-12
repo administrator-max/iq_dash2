@@ -683,8 +683,9 @@ function closeRealizationDetail() {
 
 /* Export current realization rows to XLSX. Uses SheetJS already loaded
    in index.html (CDN). Falls back to CSV blob if XLSX is unavailable. */
-function exportRealizationDetail(code, companyName) {
+async function exportRealizationDetail(code, companyName) {
   if (!_raDetailRows.length) return;
+  try { await ensureXLSX(); } catch (e) { /* falls back to CSV below */ }
   const rows = _raDetailRows.map(r => ({
     'Company':           companyName || code,
     'PIB / SPPB':        r.pib_no || '',

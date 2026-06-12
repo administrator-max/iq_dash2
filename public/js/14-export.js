@@ -1008,7 +1008,8 @@ function doExportJSON() { const d={metadata:{date:'2026-02-26',note:'Realization
      3. SPI & Real.  — one row per SPI company
      4. Pending      — one row per pending company
 ══════════════════════════════════════════════════ */
-function doExportXLSX() {
+async function doExportXLSX() {
+  try { await ensureXLSX(); } catch (e) {}
   if (typeof XLSX === 'undefined') {
     alert('SheetJS library not loaded yet. Please wait a moment and try again.'); return;
   }

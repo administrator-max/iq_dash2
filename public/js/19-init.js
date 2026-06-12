@@ -5,7 +5,7 @@
    Last-update clock
 ═══════════════════════════════════════ */
 
-window.onload = async () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // ── Disable Chart.js animations globally ──────────────────
   // Boot creates ~10 charts back-to-back; each default-animated chart
   // costs ~200-400ms of main-thread time. Killing animations cuts
@@ -144,7 +144,7 @@ window.onload = async () => {
       buildLeadTimeAnalytics();
     });
   });
-};
+});
 
 /* ── LAST UPDATE CLOCK ──────────────────────────────────────────── */
 (function initLastUpdateClock() {

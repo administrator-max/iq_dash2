@@ -8,8 +8,22 @@
 <!-- Self-hosted (same-origin) so a slow/blocked cdnjs route can't hang the page.
      defer = non-render-blocking; executes before the deferred /js app modules. -->
 <script defer src="/vendor/chart.umd.min.js?v=4.4.1"></script>
-<!-- SheetJS — client-side .xlsx parsing for the Realization Import feature -->
-<script defer src="/vendor/xlsx.full.min.js?v=0.18.5"></script>
+<!-- SheetJS (881KB) is ONLY used by Export/Import — lazy-load it on first use
+     via ensureXLSX() so it never sits on the page-load critical path. -->
+<script>
+window.ensureXLSX = function () {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (window._xlsxPromise) return window._xlsxPromise;
+  window._xlsxPromise = new Promise(function (resolve, reject) {
+    var s = document.createElement('script');
+    s.src = '/vendor/xlsx.full.min.js?v=0.18.5';
+    s.onload = function () { resolve(window.XLSX); };
+    s.onerror = function () { window._xlsxPromise = null; reject(new Error('Gagal memuat SheetJS')); };
+    document.head.appendChild(s);
+  });
+  return window._xlsxPromise;
+};
+</script>
 <link rel="stylesheet" href="/css/style.css?v=5">
 </head>
 <body>
@@ -1532,18 +1546,18 @@
 <script defer src="/js/05-tables-spi.js?v=5"></script>
 <script defer src="/js/06-tables-util-ra.js?v=5"></script>
 <script defer src="/js/07-tables-main.js?v=3"></script>
-<script defer src="/js/08-drawer.js?v=10"></script>
+<script defer src="/js/08-drawer.js?v=11"></script>
 <script defer src="/js/09-nav-import.js?v=2"></script>
 <script defer src="/js/10-edit-form.js?v=3"></script>
 <script defer src="/js/11-shipment.js?v=7"></script>
 <script defer src="/js/12-product-mt.js?v=4"></script>
 <script defer src="/js/13-rev-mgmt.js?v=5"></script>
-<script defer src="/js/14-export.js?v=2"></script>
+<script defer src="/js/14-export.js?v=3"></script>
 <script defer src="/js/15-leadtime.js"></script>
 <script defer src="/js/16-storage.js?v=6"></script>
 <script defer src="/js/17-ou-chart.js?v=3"></script>
 <script defer src="/js/18-sales-priority.js"></script>
-<script defer src="/js/19-init.js?v=11"></script>
-<script defer src="/js/20-realization-import.js?v=3"></script>
+<script defer src="/js/19-init.js?v=12"></script>
+<script defer src="/js/20-realization-import.js?v=4"></script>
 </body>
 </html>

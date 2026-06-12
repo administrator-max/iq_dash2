@@ -147,7 +147,8 @@ function handleRealizFile(ev) {
 }
 
 /* ── Parse the xlsx in-browser via SheetJS ───────────────────────── */
-function parseRealizFile(file) {
+async function parseRealizFile(file) {
+  try { await ensureXLSX(); } catch (e) {}
   if (typeof XLSX === 'undefined') {
     showToast('Excel parser (SheetJS) not loaded — refresh the page', 'error');
     return;
