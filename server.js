@@ -441,6 +441,11 @@ async function recomputeUtilizationFromLots(client, code) {
 
   for (const r of lotSums) {
     const newUtil  = Number(r.util) || 0;
+    // A lot-set carrying no utilization (e.g. a realization-only lot with
+    // util_mt=0) gives no utilization signal — never let it CLEAR the
+    // authoritative company_product_stats.utilization. Only (re)compute util
+    // when the lots actually carry it. (Fixes the 2026-06-12 util-zeroing bug.)
+    if (newUtil <= 0) continue;
     const prev     = statBy[r.product];
     const obtained = prev ? (prev.util + prev.avail) : newUtil; // preserve obtained
     const newAvail = Math.max(0, obtained - newUtil);
@@ -1234,6 +1239,11 @@ async function patchCompanySheets(code, body) {
       let stats = (await store.table('company_product_stats')).slice();
       let maxSid = stats.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
       for (const [product, util] of Object.entries(lotSums)) {
+        // A lot-set carrying no utilization (e.g. a realization-only lot with
+        // util_mt=0) gives no utilization signal — never let it CLEAR the
+        // authoritative company_product_stats.utilization. Only (re)compute
+        // util when the lots actually carry it. (Fixes 2026-06-12 util-zeroing.)
+        if (!(util > 0)) continue;
         const ex = stats.find(s => s.company_code === code && s.product === product);
         const prevUtil = ex ? Number(ex.utilization_mt) || 0 : 0;
         const prevAvail = ex && ex.available_mt != null ? Number(ex.available_mt) : 0;
