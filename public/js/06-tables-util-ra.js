@@ -290,13 +290,19 @@ function renderUtilTable() {
   [...waitingFlat, ...inShipRows, ...arrivedRows].forEach(r => { (byCo[r.code] = byCo[r.code] || []).push(r); });
   let coRecs = Object.keys(byCo).map(code => {
     const rs = byCo[code];
-    let ph = 'WAITING'; rs.forEach(r => { const p = phaseOf(r); if (phaseRank[p] > phaseRank[ph]) ph = p; });
+    const ra = raMap[code];
+    const sumUtil = rs.reduce((s, r) => s + (Number(r.utilMT) || 0), 0);
+    const sumReal = rs.reduce((s, r) => s + (Number(r.realMT) || 0), 0);
+    // Company-level "arrived/realized" from the RA record (same source as the
+    // Total Realized KPI) so multi-product PTs (whose per-product realMT can't
+    // distribute) still land in Arrived. Realized MT = RA berat when arrived.
+    const arrived = (ra && ra.cargoArrived) || sumReal > 0;
+    const real = arrived ? ((ra && Number(ra.berat) > 0) ? Number(ra.berat) : sumReal) : 0;
+    const phase = arrived ? 'ARRIVED' : (sumUtil > 0 ? 'INSHIP' : 'WAITING');
     return {
       code, rows: rs,
       obtained: rs.reduce((s, r) => s + (r.obtained || 0), 0),
-      util:     rs.reduce((s, r) => s + (r.utilMT   || 0), 0),
-      real:     rs.reduce((s, r) => s + (r.realMT   || 0), 0),
-      phase: ph, isReapply: reapplyCodes.has(code),
+      util: sumUtil, real, phase, isReapply: reapplyCodes.has(code),
     };
   });
   coRecs.sort((a, b) => (phaseRank[b.phase] - phaseRank[a.phase]) || a.code.localeCompare(b.code));
