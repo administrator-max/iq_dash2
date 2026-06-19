@@ -81,6 +81,11 @@ function goPage(id, el) {
     // reset tab to chart view
     setAvqTab('chart', document.getElementById('avqTabChart'));
   }
+  // Render the unified Utilization & Realization table fresh on navigate
+  // (data-dependent; the init render can race the data load → empty table).
+  if (id === 'utilization' && typeof renderUtilTable === 'function') {
+    renderUtilTable();
+  }
 }
 function navFilter(f) {
   const tabs = document.querySelectorAll('.nav-tab');
