@@ -282,7 +282,48 @@ function openDrawer(code) {
       </button>
     </div>`;
 
-  document.getElementById('d-body').innerHTML = statRow + buildCycleTimeline(co) + spiInfo + revInfo + utilInfo + reapplyInfo + raDetailBlock;
+  // ── Lot-based realization (Berat Realized per shipment, entered by Ops) ──
+  // Independent of PIB import — so realization recorded via shipments still has
+  // a visible per-PT/per-lot detail (the PIB block above only covers imports).
+  let lotRealRows = '', lotRealTotal = 0;
+  if (co.shipments && typeof co.shipments === 'object') {
+    Object.entries(co.shipments).forEach(([product, lots]) => {
+      (lots || []).forEach(l => {
+        const rm = Number(l.realMT) || 0;
+        if (rm <= 0) return;
+        lotRealTotal += rm;
+        const arrived = l.cargoArrived || l.arrived;
+        lotRealRows += `<tr>
+          <td style="padding:4px 8px;font-size:11px">${product}</td>
+          <td style="padding:4px 8px;font-size:11px;text-align:center">${l.lotNo != null ? l.lotNo : '-'}</td>
+          <td style="padding:4px 8px;font-size:11px;text-align:right;font-family:'DM Mono',monospace;font-weight:700">${rm.toLocaleString()}</td>
+          <td style="padding:4px 8px;font-size:11px;text-align:center">${l.pibDate || '—'}</td>
+          <td style="padding:4px 8px;font-size:10.5px;text-align:center">${arrived ? '<span style="color:var(--green);font-weight:700">✓ Tiba</span>' : '<span style="color:var(--orange)">🚢 In-ship</span>'}</td>
+        </tr>`;
+      });
+    });
+  }
+  const lotRealBlock = lotRealRows ? `
+    <div class="d-sec">Realization — per Shipment / Lot</div>
+    <div style="border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:10px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr style="background:var(--bg2)">
+          <th style="padding:5px 8px;font-size:9.5px;text-align:left;color:var(--txt3)">PRODUK</th>
+          <th style="padding:5px 8px;font-size:9.5px;text-align:center;color:var(--txt3)">LOT</th>
+          <th style="padding:5px 8px;font-size:9.5px;text-align:right;color:var(--txt3)">REALIZED MT</th>
+          <th style="padding:5px 8px;font-size:9.5px;text-align:center;color:var(--txt3)">PIB DATE</th>
+          <th style="padding:5px 8px;font-size:9.5px;text-align:center;color:var(--txt3)">STATUS</th>
+        </tr></thead>
+        <tbody>${lotRealRows}</tbody>
+        <tfoot><tr style="background:var(--teal-bg)">
+          <td colspan="2" style="padding:5px 8px;font-size:11px;font-weight:700">Total Realized</td>
+          <td style="padding:5px 8px;font-size:11px;text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--teal)">${lotRealTotal.toLocaleString()}</td>
+          <td colspan="2"></td>
+        </tr></tfoot>
+      </table>
+    </div>` : '';
+
+  document.getElementById('d-body').innerHTML = statRow + buildCycleTimeline(co) + spiInfo + revInfo + utilInfo + reapplyInfo + lotRealBlock + raDetailBlock;
   document.getElementById('overlay').classList.add('open');
 }
 
