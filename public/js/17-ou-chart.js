@@ -254,19 +254,17 @@ function buildOUChart() {
   const filtered    = getFilteredOUData(allRecords);
 
   /* ── KPI Summary Strip ── */
-  // Use canonicalObtained — single source of truth matching Overview KPI2 exactly.
-  // CRITICAL: do NOT use coObt || co.obtained fallback — co.obtained (DB raw)
-  // may include in-process cycles and inflates the total.
-  const totalObtained = filteredSPI().reduce((s, co) => s + canonicalObtainedFiltered(co), 0);
-  const totalUtilized = allRecords.reduce((s, r) => s + r.utilized, 0);
-  // REMAINING: canonical obtained − utilization (consistent formula)
-  const totalRemain   = filteredSPI().reduce((s, co) => {
-    const obt   = canonicalObtainedFiltered(co);
-    const util  = scopedUtilTotal(co);   // period-aware (rule #3)
-    const avail = PERIOD.active ? Math.max(0, obt - util)
-                                : (co.availableQuota != null ? co.availableQuota : Math.max(0, obt - util));
-    return s + Math.max(0, avail);
-  }, 0);
+  // Derive ALL three totals from the SAME records the chart plots (allRecords)
+  // so the strip can never contradict the bars / "Obtained (line)" it sits over.
+  // obtained/utilized/remaining are the per-product values from
+  // company_product_stats + lots (getObtainedByProd / scopedUtil / scopedAvail).
+  // Stats are kept in sync with the cycles-based KPI2 via the record-obtained
+  // flow, so this also matches the Overview "SPI/PERTEK Obtained" card.
+  // (Previously the strip summed canonicalObtained (cycles) while the bars used
+  // stats — same number only by coincidence, drifted whenever the two diverged.)
+  const totalObtained = allRecords.reduce((s, r) => s + (Number(r.obtained)  || 0), 0);
+  const totalUtilized = allRecords.reduce((s, r) => s + (Number(r.utilized)  || 0), 0);
+  const totalRemain   = allRecords.reduce((s, r) => s + Math.max(0, Number(r.remaining) || 0), 0);
   const overdueCount  = allRecords.filter(r => r.leadStatus === 'overdue').length;
   const normalCount   = allRecords.filter(r => r.leadStatus === 'normal').length;
   const avgUtilPct    = totalObtained > 0 ? Math.round(totalUtilized / totalObtained * 100) : 0;
