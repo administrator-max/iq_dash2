@@ -277,7 +277,9 @@ function renderUtilTable() {
   // Reuses the already-correct per-product rows (waitingFlat/inShipRows/arrivedRows);
   // groups by company, picks the furthest-along phase, and dims metrics that don't
   // apply to that phase. Phase filter chips replace the old 4 tabs.
-  const phaseOf = r => r._isWaiting ? 'WAITING' : (r.cargoArrived ? 'ARRIVED' : 'INSHIP');
+  // Arrived = realization recorded (realMT>0 or cargo arrived) — same source as
+  // the Total Realized KPI, so a realized PT can't show as merely in-shipment.
+  const phaseOf = r => r._isWaiting ? 'WAITING' : ((Number(r.realMT) > 0 || r.cargoArrived) ? 'ARRIVED' : 'INSHIP');
   const phaseRank = { WAITING:1, INSHIP:2, ARRIVED:3 };
   const reapplyCodes = new Set((filteredRA() || []).filter(r =>
     (typeof isEligible === 'function' && isEligible(r)) ||
