@@ -1285,6 +1285,36 @@ async function patchCompanySheets(code, body) {
     }
   }
 
+  // ── Obtained stats reconcile (Manual Update "Obtained MT per product") ──
+  // The obtained-per-product table edits obtained but the cycle path never
+  // touched company_product_stats → KPI (cycles) and the per-product breakdown
+  // (stats) drifted (the SJH/LCP/BBB class). Caller sends the per-product
+  // obtained totals it set; we PRESERVE each product's utilization and set
+  // available = max(0, obtained − util) — declarative + idempotent, no cycle
+  // derivation, no revision logic (Obtained #2 / revisions route through
+  // record-obtained instead). Then recompute company totals so KPI = breakdown.
+  if (Array.isArray(body.obtainedStats) && body.obtainedStats.length) {
+    let stats = changed.company_product_stats || (await store.table('company_product_stats')).slice();
+    let maxSid = stats.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+    for (const it of body.obtainedStats) {
+      const product  = String((it && it.product) || '').trim();
+      const obtained = Number(it && it.obtained);
+      if (!product || !Number.isFinite(obtained) || obtained < 0) continue;
+      const ex = stats.find(s => s.company_code === code && s.product === product);
+      const util = ex ? Number(ex.utilization_mt) || 0 : 0;
+      const avail = Math.max(0, obtained - util);
+      if (ex) { ex.available_mt = avail; /* utilization preserved */ }
+      else stats.push({ id: ++maxSid, company_code: code, product, utilization_mt: 0, available_mt: avail, realization_mt: '', eta_jkt: '', arrived: false, source_program: 'B' });
+    }
+    changed.company_product_stats = stats;
+    const coStats = stats.filter(s => s.company_code === code);
+    const coUtil  = coStats.reduce((a, s) => a + (Number(s.utilization_mt) || 0), 0);
+    const coAvail = coStats.reduce((a, s) => a + (Number(s.available_mt) || 0), 0);
+    co.utilization_mt  = coUtil;
+    co.available_quota = coAvail;
+    co.obtained        = coUtil + coAvail;
+  }
+
   companies[idx] = co;
   changed.companies = companies;
   // Anti-wipe guard: a single-company patch must never shrink the master list.

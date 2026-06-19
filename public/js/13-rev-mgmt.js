@@ -1185,6 +1185,21 @@ function saveEdit() {
   saveToStorage(); // localStorage backup
   updateStorageStatus();
 
+  // Sync per-product Obtained into company_product_stats so the cycles-based KPI
+  // and the stats-based breakdown can't drift (the SJH/LCP/BBB class). Only for
+  // NON-revision direct edits — revisions/Obtained #2 route through the
+  // record-obtained endpoint ("Catat Terbit"), which the obtained table locks to.
+  if (co) {
+    const _revActive = co.revType && !['none', 'clean', ''].includes(String(co.revType));
+    if (canObtained && !_revActive && newObtainedProds && Object.keys(newObtainedProds).length) {
+      co._obtainedStats = Object.entries(newObtainedProds)
+        .filter(([, mt]) => Number(mt) > 0)
+        .map(([product, mt]) => ({ product, obtained: Number(mt) }));
+    } else {
+      delete co._obtainedStats;
+    }
+  }
+
   // PATCH to server so data survives page refresh.
   // - Data is buffered in localStorage first so transient errors don't lose input.
   // - fetchWithRetry retries 5× (~18s) on 5xx/network errors.

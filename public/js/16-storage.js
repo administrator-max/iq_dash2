@@ -479,6 +479,10 @@ async function patchToServer(co) {
     updatedDate:   co.updatedDate   || '',
     shipments:     shipPayload,
     reapplyTargets,
+    // Per-product Obtained → reconcile company_product_stats server-side so the
+    // KPI (cycles) and the per-product breakdown (stats) stay equal. Set only by
+    // saveEdit for non-revision Obtained edits; absent otherwise.
+    obtainedStats: Array.isArray(co._obtainedStats) && co._obtainedStats.length ? co._obtainedStats : undefined,
     // Sync the canonical company_products list. Without this, adding a
     // new product via "+Add Product" only writes to cycle_products via
     // patchCyclesToServer — the master products table stays stale and
@@ -517,6 +521,8 @@ async function patchToServer(co) {
   // Refresh local concurrency token from server response so subsequent
   // saves don't trip the 409 check.
   if (result && result.updatedAt) co._updatedAt = result.updatedAt;
+  // One-shot payload — clear so it isn't re-sent on unrelated later saves.
+  if (co._obtainedStats) delete co._obtainedStats;
   // Also persist cycles array (Submit #1, Obtained #1, Obtained #2, etc.)
   if (co.cycles && co.cycles.length) {
     await patchCyclesToServer(co);
