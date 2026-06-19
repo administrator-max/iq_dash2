@@ -1096,12 +1096,11 @@ function saveEdit() {
       // Already computed by collectShipmentData() above — just ensure availableQuota is updated
       co.availableQuota = Math.max(0, (co.obtained || 0) - (co.utilizationMT || 0));
     } else {
-      // Legacy fallback: read from hidden input (SuperAdmin only)
-      const newUtilMT = can('eUtilMT') ? parseMTField('eUtilMT') : null;
-      if (newUtilMT != null) {
-        co.utilizationMT  = newUtilMT;
-        co.availableQuota = Math.max(0, co.obtained - newUtilMT);
-      } else if (co.obtained != null && co.utilizationMT != null) {
+      // Utilization is lot/stats-derived (server-reconciled via company_shipments
+      // → company_product_stats). Do NOT overwrite it from the legacy manual
+      // eUtilMT input — that could clobber the canonical value (corruption path).
+      // Just keep availableQuota consistent with the existing figures.
+      if (co.obtained != null && co.utilizationMT != null) {
         co.availableQuota = Math.max(0, co.obtained - co.utilizationMT);
       }
     }
