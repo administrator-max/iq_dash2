@@ -366,12 +366,21 @@ function buildRevMgmtSection(co) {
           <div class="fl" style="color:var(--teal);margin-bottom:0">Obtained MT — Per Produk
             <span class="tti" data-tip="Isi Obtained MT yang resmi diterbitkan dalam PERTEK/SPI revision ini. Pre-filled dari revisi request — edit sesuai dokumen resmi.">i</span>
           </div>
-          <button onclick="rrApplyObtained('${code}')"
-            style="font-size:10.5px;font-weight:700;padding:4px 12px;border-radius:5px;border:none;
-              background:var(--teal);color:#fff;cursor:pointer;transition:background .13s;white-space:nowrap"
-            onmouseover="this.style.background='#0a6670'" onmouseout="this.style.background='var(--teal)'">
-            ✓ Terapkan ke Obtained #2
-          </button>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button onclick="rrApplyObtained('${code}')"
+              title="Simpan nilai Obtained #2 ke cycle (belum dihitung sebagai kuota baru)"
+              style="font-size:10.5px;font-weight:700;padding:4px 12px;border-radius:5px;border:none;
+                background:var(--teal);color:#fff;cursor:pointer;transition:background .13s;white-space:nowrap"
+              onmouseover="this.style.background='#0a6670'" onmouseout="this.style.background='var(--teal)'">
+              ✓ Terapkan
+            </button>
+            <button onclick="rrRecordObtainedTerbit('${code}')"
+              title="Catat sebagai Obtained TERBIT (kuota baru) → otomatis masuk Total Obtained (overview) + Available"
+              style="font-size:10.5px;font-weight:700;padding:4px 12px;border-radius:5px;border:1px solid var(--teal-bd);
+                background:#fff;color:var(--teal);cursor:pointer;white-space:nowrap">
+              📌 Catat Terbit
+            </button>
+          </div>
         </div>
         ${prodRows}
         <div style="display:flex;justify-content:flex-end;margin-top:6px;font-size:10px;color:var(--txt3);gap:4px;align-items:center">
@@ -623,6 +632,39 @@ function rrApplyObtained(code) {
   patchToServer(co).catch(err => notifySaveError('rrApplyObtained', err));
 
   nsShowToast(`✓ Obtained #2 updated — ${obtTotal.toLocaleString()} MT`);
+}
+
+/* ── Record obtained as TERBIT new quota ──────────────────────────────
+   Unlike rrApplyObtained (which only writes the cycle, flagged as a
+   revision artifact), this calls POST /record-obtained so the obtained
+   counts in the overview KPI AND lands in Available — no manual fix-up.
+   Idempotent server-side; safe to re-run. */
+async function rrRecordObtainedTerbit(code) {
+  const co = getSPI(code); if (!co) return;
+  const { byProd } = rrReadObtainedFromForm(co);
+  const prods = Object.entries(byProd).filter(([, mt]) => Number(mt) > 0);
+  if (!prods.length) { alert('Isi Obtained MT per produk dulu sebelum mencatat terbit.'); return; }
+  let terbit = ((g('rrRevSpiDate') || {}).value || '').trim();
+  if (!terbit) terbit = (prompt('Tanggal SPI terbit untuk Obtained ini (DD/MM/YYYY):') || '').trim();
+  if (!terbit) return;
+  if (!confirm(`Catat sebagai Obtained TERBIT (kuota baru) — ${code}\n` +
+      prods.map(([p, m]) => `• ${p}: ${Number(m).toLocaleString()} MT`).join('\n') +
+      `\nTerbit: ${terbit}\n\nAkan masuk ke Total Obtained (overview) + Available.`)) return;
+  try {
+    for (const [product, mt] of prods) {
+      const res = await fetch(`/api/company/${encodeURIComponent(code)}/record-obtained`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cycleType: 'Obtained #2', product, mt: Number(mt), terbitDate: terbit, updatedBy: co.updatedBy || '' }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || ('HTTP ' + res.status)); }
+    }
+    if (typeof nsShowToast === 'function') nsShowToast(`✓ ${code} — Obtained terbit dicatat · Total Obtained & Available diperbarui`);
+    if (typeof loadData === 'function') await loadData();
+    const co2 = getSPI(code) || co;
+    if (typeof buildRevMgmtSection === 'function') buildRevMgmtSection(co2);
+  } catch (err) {
+    alert('Gagal mencatat Obtained terbit: ' + (err && err.message ? err.message : err));
+  }
 }
 
 /* ── Update obtained total display ── */

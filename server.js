@@ -1750,6 +1750,99 @@ app.patch('/api/company/:code/cycles', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// POST /api/company/:code/record-obtained
+// Atomically record a "new quota" obtained (e.g. Obtained #2 from a
+// re-apply) so it shows EVERYWHERE without the manual fix-ups we kept
+// doing (SJH/LCP/BBB). It:
+//   1. marks the cycle terbit (release_date/spi_date) + clears from_rev_req
+//      → the cycles-based KPI counts it as new MT,
+//   2. adds the MT to the product's company_product_stats AVAILABLE
+//      → the breakdown + Available card update,
+//   3. recomputes the company's obtained/util/avail from its stats.
+// Declarative & idempotent: re-recording the same cycle replaces (not
+// double-adds) by netting out the cycle's prior counted contribution.
+// Sheets-only (production). Body: { cycleType?, product, mt, terbitDate }.
+// ═══════════════════════════════════════════════════════════════════
+app.post('/api/company/:code/record-obtained', async (req, res) => {
+  const { code } = req.params;
+  const b = req.body || {};
+  const cycleType  = String(b.cycleType || 'Obtained #2').trim();
+  const product    = String(b.product || '').trim();
+  const terbitDate = String(b.terbitDate || '').trim();
+  const mt         = Number(b.mt);
+  if (!product)    return res.status(400).json({ error: 'product required' });
+  if (!terbitDate) return res.status(400).json({ error: 'terbitDate required' });
+  if (!Number.isFinite(mt) || mt <= 0) return res.status(400).json({ error: 'mt must be a positive number' });
+  if (!inSheets()) return res.status(501).json({ error: 'record-obtained is Sheets-only' });
+  try {
+    const nowISO = new Date().toISOString();
+    const companies = (await store.table('companies')).slice();
+    const co = companies.find(c => c.code === code);
+    if (!co) return res.status(404).json({ error: 'company not found' });
+
+    // Find (or create) the obtained cycle for this company + type.
+    const cycles = (await store.table('cycles')).slice();
+    let cyc = cycles.find(c => c.company_code === code && c.cycle_type === cycleType);
+    if (!cyc) {
+      const maxCyId = cycles.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+      cyc = { id: String(maxCyId + 1), company_code: code, cycle_type: cycleType, mt,
+        submit_type: 'Submit MOT (Submit #2) Perubahan', submit_date: '', release_type: 'SPI Perubahan',
+        release_date: '', status: '', sort_order: cycles.filter(c => c.company_code === code).length,
+        pertek_date: '', spi_date: '', from_rev_req: false, source_program: 'B' };
+      cycles.push(cyc);
+    }
+    // Was this obtained already counted (terbit AND not a rev-req artifact)?
+    // If so, net out its prior MT so re-recording is idempotent.
+    const rd = String(cyc.release_date || '').trim();
+    const wasCounted = cyc.from_rev_req === false && rd && !/^tba$/i.test(rd);
+    const prevContribution = wasCounted ? (Number(cyc.mt) || 0) : 0;
+
+    cyc.release_date = terbitDate;
+    cyc.spi_date     = terbitDate;
+    cyc.status       = `SPI TERBIT ${terbitDate}`;
+    cyc.from_rev_req = false;
+    cyc.mt           = mt;
+
+    // cycle_products: set this cycle's breakdown to the single product.
+    let cp = (await store.table('cycle_products')).slice();
+    let maxCpId = cp.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+    cp = cp.filter(r => String(r.cycle_id) !== String(cyc.id));
+    cp.push({ id: ++maxCpId, cycle_id: cyc.id, product, mt: String(mt), source_program: 'B' });
+
+    // stats: add the new MT to AVAILABLE (new obtained, not yet utilized),
+    // netting out any prior counted contribution. Utilization untouched.
+    let stats = (await store.table('company_product_stats')).slice();
+    let maxSid = stats.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+    const st = stats.find(s => s.company_code === code && s.product === product);
+    if (st) {
+      st.available_mt = Math.max(0, (Number(st.available_mt) || 0) - prevContribution + mt);
+    } else {
+      stats.push({ id: ++maxSid, company_code: code, product, utilization_mt: 0,
+        available_mt: mt, realization_mt: '', eta_jkt: '', arrived: false, source_program: 'B' });
+    }
+
+    // Recompute company-level from its stats (keeps it consistent with breakdown).
+    const coStats = stats.filter(s => s.company_code === code);
+    const coUtil  = coStats.reduce((a, s) => a + (Number(s.utilization_mt) || 0), 0);
+    const coAvail = coStats.reduce((a, s) => a + (Number(s.available_mt) || 0), 0);
+    co.utilization_mt  = coUtil;
+    co.available_quota = coAvail;
+    co.obtained        = coUtil + coAvail;
+    co.updated_at      = nowISO;
+
+    await store.batchRewrite({ cycles, cycle_products: cp, company_product_stats: stats, companies });
+    await store.logChange({ sheet: 'cycles', record_id: code, field: 'record-obtained',
+      old_value: `${cycleType} prevCounted=${prevContribution}`, new_value: `${product} +${mt}→avail terbit ${terbitDate}`,
+      changed_by: b.updatedBy || 'api', note: 'record new obtained (auto)' });
+    await dcache.invalidate(CACHE_KEY_DATA);
+    return res.json({ ok: true, code, product, obtained: co.obtained, utilization: coUtil, available: coAvail });
+  } catch (err) {
+    console.error('record-obtained error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/company/:code', async (req, res) => {
   const { code } = req.params;
   try {
