@@ -134,6 +134,28 @@ async function loadData() {
       }
     }));
 
+    // ── Read-only drift guard (observes only — no data change, no rewiring) ──
+    // "Obtained" is computed two ways: cycles (canonicalObtained → KPI totals)
+    // vs stats (getObtainedByProdAgg = util+avail → per-product breakdowns).
+    // They must agree; they silently diverged before (SJH/LCP/BBB) when an
+    // obtained cycle was added without syncing company_product_stats. This only
+    // detects + warns so drift is caught early. Run __auditObtained() in the
+    // console anytime for the list. Re-sync via "📌 Catat Terbit" (record-obtained).
+    try {
+      const _drift = [];
+      [SPI, PENDING].forEach(arr => arr.forEach(co => {
+        const cyc = Number(canonicalObtained(co)) || 0;
+        const agg = getObtainedByProdAgg(co) || {};
+        let st = 0; Object.values(agg).forEach(v => st += Number(v) || 0);
+        if (Math.abs(cyc - st) > 0.5) _drift.push({ code: co.code, cycles: Math.round(cyc), stats: Math.round(st), diff: Math.round(cyc - st) });
+      }));
+      window.__obtainedDrift = _drift;
+      if (_drift.length) {
+        console.warn(`[obtained-drift] ${_drift.length} company(ies): cycles-obtained ≠ stats-obtained — KPI total won't match the per-product breakdown. Re-sync via "Catat Terbit":`, _drift);
+      }
+    } catch (e) { /* a guard must never break data loading */ }
+    window.__auditObtained = () => (typeof window.__obtainedDrift !== 'undefined' ? window.__obtainedDrift : []);
+
     _dataLoaded = true;
   } catch(err) {
     console.error('Failed to load data from API:', err);
