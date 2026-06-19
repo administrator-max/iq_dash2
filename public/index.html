@@ -822,29 +822,16 @@ window.ensureXLSX = function () {
       </div>
     </div>
 
-    <!-- Tab bar -->
-    <div style="display:flex;gap:0;border-bottom:2px solid var(--border);background:var(--bg);padding:0 12px">
-      <button id="utilTab1" onclick="setUtilTab('INSHIP',this)"
-        style="padding:10px 16px;font-size:11px;font-weight:700;border:none;border-bottom:3px solid var(--orange);background:transparent;color:var(--orange);cursor:pointer;margin-bottom:-2px;transition:all .15s">
-        🚢 In Shipment
-      </button>
-      <button id="utilTab2" onclick="setUtilTab('ARRIVED',this)"
-        style="padding:10px 16px;font-size:11px;font-weight:600;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--txt2);cursor:pointer;margin-bottom:-2px;transition:all .15s">
-        ✓ Arrived at JKT
-      </button>
-      <button id="utilTab3" onclick="setUtilTab('WAITING',this)"
-        style="padding:10px 16px;font-size:11px;font-weight:600;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--txt2);cursor:pointer;margin-bottom:-2px;transition:all .15s">
-        ⏳ Waiting Utilization &amp; Shipment
-      </button>
-      <button id="utilTab4" onclick="setUtilTab('REAPPLY',this)"
-        style="padding:10px 16px;font-size:11px;font-weight:600;border:none;border-bottom:3px solid transparent;background:transparent;color:var(--txt2);cursor:pointer;margin-bottom:-2px;transition:all .15s">
-        🔵 Re-Apply Monitoring
-      </button>
+    <!-- Phase filter chips (unified table — replaces the old 4 tabs) -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border)">
+      <button class="uph-chip" onclick="setUtilTab('ALL',this)" style="font-size:11px;font-weight:700;padding:5px 12px;border-radius:14px;border:1px solid transparent;background:var(--navy);color:#fff;cursor:pointer">Semua Fase</button>
+      <button class="uph-chip" onclick="setUtilTab('WAITING',this)" style="font-size:11px;font-weight:700;padding:5px 12px;border-radius:14px;border:1px solid var(--border2);background:transparent;color:var(--txt2);cursor:pointer">⏳ Waiting</button>
+      <button class="uph-chip" onclick="setUtilTab('INSHIP',this)" style="font-size:11px;font-weight:700;padding:5px 12px;border-radius:14px;border:1px solid var(--border2);background:transparent;color:var(--txt2);cursor:pointer">🚢 In-shipment</button>
+      <button class="uph-chip" onclick="setUtilTab('ARRIVED',this)" style="font-size:11px;font-weight:700;padding:5px 12px;border-radius:14px;border:1px solid var(--border2);background:transparent;color:var(--txt2);cursor:pointer">⚓ Arrived</button>
+      <button class="uph-chip" onclick="setUtilTab('REAPPLY',this)" style="font-size:11px;font-weight:700;padding:5px 12px;border-radius:14px;border:1px solid var(--border2);background:transparent;color:var(--txt2);cursor:pointer">🔄 Re-apply</button>
     </div>
-
-    <!-- Tab label strip -->
-    <div id="utilTabLabel" style="padding:5px 14px;font-size:10px;font-weight:700;color:var(--orange);background:var(--orange-bg);border-bottom:1px solid var(--orange-bd);letter-spacing:.3px">
-      🚢 In Shipment — Cargo NOT Yet at JKT · Utilization counted · Realization pending
+    <div style="padding:6px 14px;font-size:10.5px;color:var(--txt3);border-bottom:1px solid var(--border);background:var(--bg2)">
+      1 baris per PT · klik baris untuk rincian per-produk · klik "detail ↗" buka drawer · <span style="color:var(--orange);font-weight:700">Utilized</span> aktif saat in-shipment, <span style="color:var(--green);font-weight:700">Realized</span> saat arrived
     </div>
 
     <!-- Table: In Shipment / Arrived / Waiting (tabs 1-3) -->
@@ -852,14 +839,13 @@ window.ensureXLSX = function () {
       <div class="tbl-wrap">
         <table class="util-mon-tbl">
           <thead><tr>
-            <th>Company</th>
-            <th>Product</th>
-            <th class="t-r has-tip">Obtained (MT)<span class="tip">Total PERTEK-approved quota tonnage</span></th>
-            <th class="t-r has-tip">Utilization (MT)<span class="tip">Quota sold/allocated to customers (in-shipment). Sourced from Sales role data.</span></th>
-            <th class="t-r has-tip">Realization (MT)<span class="tip">Import cargo physically arrived at JKT AND Beacukai-registered.</span></th>
-            <th class="t-c has-tip">Realization (%)<span class="tip">Realization MT ÷ Obtained × 100%. Eligibility threshold: ≥ 60%.</span></th>
-            <th class="t-c has-tip">Shipment ETA JKT<span class="tip">Estimated or confirmed arrival date at Jakarta port.</span></th>
-            <th class="t-c">Shipment Status</th>
+            <th>PT</th>
+            <th>Produk</th>
+            <th>Fase</th>
+            <th class="t-r has-tip">Obtained (MT)<span class="tip">Total kuota disetujui PERTEK</span></th>
+            <th class="t-r has-tip">Utilized (MT)<span class="tip">Kuota terjual/dialokasikan (in-shipment). Dari data Sales. Aktif saat fase In-shipment/Arrived.</span></th>
+            <th class="t-r has-tip">Realized (MT)<span class="tip">Cargo tiba di JKT &amp; terdaftar Beacukai. Aktif saat fase Arrived.</span></th>
+            <th class="t-c">Detail</th>
           </tr></thead>
           <tbody id="utilBody"></tbody>
         </table>
@@ -1544,7 +1530,7 @@ window.ensureXLSX = function () {
 <script defer src="/js/03-kpis.js?v=9"></script>
 <script defer src="/js/04-charts.js?v=11"></script>
 <script defer src="/js/05-tables-spi.js?v=5"></script>
-<script defer src="/js/06-tables-util-ra.js?v=5"></script>
+<script defer src="/js/06-tables-util-ra.js?v=6"></script>
 <script defer src="/js/07-tables-main.js?v=3"></script>
 <script defer src="/js/08-drawer.js?v=12"></script>
 <script defer src="/js/09-nav-import.js?v=2"></script>

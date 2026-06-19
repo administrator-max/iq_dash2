@@ -3,48 +3,31 @@
    + Comparison List + Pending Table
 ═══════════════════════════════════════ */
 
+/* Phase filter for the unified Util & Realization table.
+   ALL | WAITING | INSHIP | ARRIVED | REAPPLY (chips replace the old 4 tabs). */
+var utilPhase = (typeof utilPhase !== 'undefined') ? utilPhase : 'ALL';
 function setUtilTab(mode, el) {
-  utilTabMode = mode;
-  // Reset all 4 tab buttons
-  ['utilTab1','utilTab2','utilTab3','utilTab4'].forEach(id => {
-    const btn = document.getElementById(id);
-    if (!btn) return;
-    btn.style.fontWeight   = '600';
-    btn.style.color        = 'var(--txt2)';
-    btn.style.borderBottom = '3px solid transparent';
+  utilPhase = mode || 'ALL';
+  document.querySelectorAll('.uph-chip').forEach(c => {
+    c.style.background = 'transparent';
+    c.style.color = 'var(--txt2)';
+    c.style.borderColor = 'var(--border2)';
   });
-  const colors = { INSHIP:'var(--orange)', ARRIVED:'var(--green)', WAITING:'#64748b', REAPPLY:'#5b21b6' };
-  el.style.fontWeight   = '700';
-  el.style.color        = colors[mode];
-  el.style.borderBottom = `3px solid ${colors[mode]}`;
-
-  // Show/hide the correct table wrapper
-  const uw = document.getElementById('utilBodyWrap');
-  const rw = document.getElementById('raBodyWrap');
-  if (uw) uw.style.display = mode === 'REAPPLY' ? 'none' : '';
-  if (rw) rw.style.display = mode === 'REAPPLY' ? ''     : 'none';
-
-  // Update label strip
-  const lbl = document.getElementById('utilTabLabel');
-  if (lbl) {
-    const labels = {
-      INSHIP:  { text:'🚢 In Shipment — Cargo NOT Yet at JKT · Utilization counted · Realization pending',                                     bg:'var(--orange-bg)', color:'var(--orange)', bd:'var(--orange-bd)' },
-      ARRIVED: { text:'✓ Arrived at JKT — Beacukai Registered · Realization counted',                                                          bg:'var(--green-bg)',  color:'var(--green)',  bd:'var(--green-bd)'  },
-      WAITING: { text:'⏳ Waiting Utilization &amp; Shipment — PERTEK quota obtained · No shipment scheduled · Utilization not yet recorded',   bg:'#f8fafc',          color:'#64748b',       bd:'#e2e8f0'          },
-      REAPPLY: { text:'🔵 Re-Apply Monitoring &amp; Submission Plan — Realization performance · Eligibility · Re-Apply planning',               bg:'#f5f3ff',          color:'#5b21b6',       bd:'#c4b5fd'          },
-    };
-    const l = labels[mode];
-    lbl.innerHTML            = l.text;
-    lbl.style.background     = l.bg;
-    lbl.style.color          = l.color;
-    lbl.style.borderBottom   = `1px solid ${l.bd}`;
+  if (el) {
+    const colors = { ALL:'var(--navy)', INSHIP:'var(--orange)', ARRIVED:'var(--green)', WAITING:'#64748b', REAPPLY:'#5b21b6' };
+    el.style.background  = colors[utilPhase] || 'var(--navy)';
+    el.style.color       = '#fff';
+    el.style.borderColor = 'transparent';
   }
-
-  if (mode === 'REAPPLY') {
-    renderRATable();
-  } else {
-    renderUtilTable();
-  }
+  // The unified table always lives in utilBodyWrap; re-apply is now a filter.
+  const rw = document.getElementById('raBodyWrap'); if (rw) rw.style.display = 'none';
+  const uw = document.getElementById('utilBodyWrap'); if (uw) uw.style.display = '';
+  renderUtilTable();
+}
+function toggleUtilCo(code) {
+  document.querySelectorAll('.uph-sub-' + code).forEach(el => {
+    el.style.display = el.style.display === 'none' ? '' : 'none';
+  });
 }
 
 /* Realization Monitoring — flat per-product rows, one row per product per company */
@@ -290,23 +273,81 @@ function renderUtilTable() {
     </tr>`;
   }
 
-  // ── Render active tab ────────────────────────────────────────────────────────
-  const mode = utilTabMode || 'INSHIP';
-  const rows = mode === 'INSHIP' ? inShipRows : mode === 'ARRIVED' ? arrivedRows : waitingFlat;
+  // ── UNIFIED per-PT table (one summary row per company, expandable) ───────────
+  // Reuses the already-correct per-product rows (waitingFlat/inShipRows/arrivedRows);
+  // groups by company, picks the furthest-along phase, and dims metrics that don't
+  // apply to that phase. Phase filter chips replace the old 4 tabs.
+  const phaseOf = r => r._isWaiting ? 'WAITING' : (r.cargoArrived ? 'ARRIVED' : 'INSHIP');
+  const phaseRank = { WAITING:1, INSHIP:2, ARRIVED:3 };
+  const reapplyCodes = new Set((filteredRA() || []).filter(r =>
+    (typeof isEligible === 'function' && isEligible(r)) ||
+    (typeof isReapplySubmitted === 'function' && isReapplySubmitted(r))
+  ).map(r => r.code));
 
-  if (!rows.length) {
-    const msgs = { INSHIP:'No in-shipment records.', ARRIVED:'No arrived records.', WAITING:'No companies awaiting utilization &amp; shipment.' };
-    tbody.innerHTML = `<tr><td colspan='8' style='padding:24px;text-align:center;color:var(--txt3);font-size:12px'>${msgs[mode]||''}</td></tr>`;
+  const byCo = {};
+  [...waitingFlat, ...inShipRows, ...arrivedRows].forEach(r => { (byCo[r.code] = byCo[r.code] || []).push(r); });
+  let coRecs = Object.keys(byCo).map(code => {
+    const rs = byCo[code];
+    let ph = 'WAITING'; rs.forEach(r => { const p = phaseOf(r); if (phaseRank[p] > phaseRank[ph]) ph = p; });
+    return {
+      code, rows: rs,
+      obtained: rs.reduce((s, r) => s + (r.obtained || 0), 0),
+      util:     rs.reduce((s, r) => s + (r.utilMT   || 0), 0),
+      real:     rs.reduce((s, r) => s + (r.realMT   || 0), 0),
+      phase: ph, isReapply: reapplyCodes.has(code),
+    };
+  });
+  coRecs.sort((a, b) => (phaseRank[b.phase] - phaseRank[a.phase]) || a.code.localeCompare(b.code));
+
+  let shown = coRecs;
+  if (utilPhase === 'REAPPLY')      shown = coRecs.filter(c => c.isReapply);
+  else if (utilPhase && utilPhase !== 'ALL') shown = coRecs.filter(c => c.phase === utilPhase);
+
+  const phaseBadge = ph => {
+    const m = { WAITING:['Waiting','#64748b','#f1f5f9','#e2e8f0'], INSHIP:['In-shipment','var(--orange)','var(--orange-bg)','var(--orange-bd)'], ARRIVED:['Arrived','var(--green)','var(--green-bg)','var(--green-bd)'] };
+    const x = m[ph] || m.WAITING;
+    return `<span style="font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:10px;background:${x[2]};color:${x[1]};border:1px solid ${x[3]}">${x[0]}</span>`;
+  };
+  const grey = `<span style="color:var(--txt3)">—</span>`;
+
+  tbody.innerHTML = '';
+  if (!shown.length) {
+    tbody.innerHTML = `<tr><td colspan='7' style='padding:24px;text-align:center;color:var(--txt3);font-size:12px'>Tidak ada PT untuk fase ini.</td></tr>`;
   } else {
-    rows.forEach(r => { tbody.innerHTML += renderRow(r); });
+    shown.forEach(c => {
+      const multi = c.rows.length > 1;
+      const utilDisp = (c.phase !== 'WAITING' && c.util > 0)
+        ? `<span class="t-mono" style="font-weight:700;color:var(--blue)">${c.util.toLocaleString()}</span>` : grey;
+      const realDisp = c.phase === 'ARRIVED'
+        ? `<span class="t-mono" style="font-weight:700;color:var(--green)">${c.real.toLocaleString()}</span>`
+        : (c.phase === 'INSHIP' ? `<span style="font-size:10px;color:var(--txt3);font-style:italic">pending</span>` : grey);
+      const reBadge = c.isReapply ? ` <span style="font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;background:#f5f3ff;color:#5b21b6;border:1px solid #c4b5fd">Re-apply</span>` : '';
+      tbody.innerHTML += `<tr style="cursor:pointer;border-top:1px solid var(--border)" onclick="toggleUtilCo('${c.code}')">
+        <td style="padding:8px 10px"><span style="display:inline-flex;align-items:center;gap:5px"><span class="t-code">${c.code}</span>${multi ? `<span style="font-size:9px;color:var(--txt3)">${c.rows.length}p ▸</span>` : ''}</span></td>
+        <td style="padding:8px 10px;font-size:11.5px;color:var(--txt2)">${c.rows.map(r => r.product).join(', ')}</td>
+        <td style="padding:8px 10px">${phaseBadge(c.phase)}${reBadge}</td>
+        <td class="t-r" style="padding:8px 10px"><span class="t-mono" style="font-weight:700">${c.obtained.toLocaleString()}</span></td>
+        <td class="t-r" style="padding:8px 10px">${utilDisp}</td>
+        <td class="t-r" style="padding:8px 10px">${realDisp}</td>
+        <td class="t-c" style="padding:8px 10px"><span onclick="openDrawer('${c.code}');event.stopPropagation()" style="font-size:10px;font-weight:600;color:var(--blue);cursor:pointer">detail ↗</span></td>
+      </tr>`;
+      if (multi) c.rows.forEach(r => {
+        const sp = phaseOf(r);
+        tbody.innerHTML += `<tr class="uph-sub-${c.code}" style="display:none;background:var(--bg2)">
+          <td style="padding:5px 10px"></td>
+          <td style="padding:5px 10px 5px 20px;font-size:11px;color:var(--txt2)">↳ ${r.product}</td>
+          <td style="padding:5px 10px">${phaseBadge(sp)}</td>
+          <td class="t-r" style="padding:5px 10px;font-size:11px">${(r.obtained || 0).toLocaleString()}</td>
+          <td class="t-r" style="padding:5px 10px;font-size:11px">${r.utilMT > 0 ? r.utilMT.toLocaleString() : '—'}</td>
+          <td class="t-r" style="padding:5px 10px;font-size:11px">${(r.cargoArrived && r.realMT > 0) ? r.realMT.toLocaleString() : '—'}</td>
+          <td></td>
+        </tr>`;
+      });
+    });
   }
 
-  // Count
   const countEl = document.getElementById('utilBodyCount');
-  if (countEl) {
-    const n = [...new Set(rows.map(r => r.code))].length;
-    countEl.textContent = `${n} compan${n===1?'y':'ies'}`;
-  }
+  if (countEl) countEl.textContent = `${shown.length} PT`;
 
   updateGaugeCounts();
 }
