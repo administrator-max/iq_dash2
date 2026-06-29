@@ -415,7 +415,8 @@ document.addEventListener('click', e => { if (!e.target.closest('.g-search') && 
      • Table:  line items (NO, URAIAN BARANG, HS, VOLUME, ...)
    Plus Export XLSX of all line items for this company.
 ══════════════════════════════════════════════════ */
-let _raDetailRows = []; // cached for export
+let _raDetailRows = []; // cached PIB rows for export
+let _raLotRows   = []; // cached lot-based realization rows for export (fallback)
 
 async function openRealizationDetail(code) {
   if (!code) return;
@@ -463,6 +464,7 @@ async function openRealizationDetail(code) {
     }
     const _raHidden = _raTotalCount - rows.length;
     _raDetailRows = rows;
+    _raLotRows = [];   // PIB path active — clear any stale lot-export rows
 
     if (!rows.length) {
       // Escape any data-derived text before it enters markup (note/vessel is
@@ -475,6 +477,7 @@ async function openRealizationDetail(code) {
       // Mirrors the drawer's "Realization — per Shipment / Lot". Display-only —
       // does NOT touch the PIB realizations table or any KPI.
       let lotRows = '', lotTotal = 0;
+      _raLotRows = [];
       if (co && co.shipments && typeof co.shipments === 'object') {
         Object.entries(co.shipments).forEach(([product, lots]) => {
           (lots || []).forEach(l => {
@@ -484,6 +487,17 @@ async function openRealizationDetail(code) {
             lotTotal += rm;
             const arrived = l.cargoArrived || l.arrived;
             const vessel  = (l.note && String(l.note).trim()) || (vesselHint !== '—' ? vesselHint : '—');
+            _raLotRows.push({
+              'Company':     headerName || code,
+              'Code':        code,
+              'Produk':      product,
+              'Lot':         l.lotNo != null ? l.lotNo : '',
+              'Realized MT': rm,
+              'PIB Date':    l.pibDate || '',
+              'Vessel/Note': (l.note && String(l.note).trim()) || '',
+              'Status':      arrived ? 'Tiba JKT' : 'In-shipment',
+              'Source':      'Operations (lot)',
+            });
             lotRows += `<tr>
               <td style="padding:6px 10px;font-size:12px">${esc(product)}</td>
               <td style="padding:6px 10px;font-size:12px;text-align:center">${esc(l.lotNo != null ? l.lotNo : '-')}</td>
@@ -532,6 +546,9 @@ async function openRealizationDetail(code) {
         </div>`;
       }
       body.innerHTML = content;
+      // Wire export so the lot-based realization (when present) is exportable too.
+      const exportBtnLot = document.getElementById('raDetailExportBtn');
+      if (exportBtnLot) exportBtnLot.onclick = () => exportRealizationDetail(code, headerName);
       return;
     }
 
@@ -780,12 +797,40 @@ function closeRealizationDetail() {
   const m = document.getElementById('raDetailModal');
   if (m) m.style.display = 'none';
   _raDetailRows = [];
+  _raLotRows = [];
 }
 
 /* Export current realization rows to XLSX. Uses SheetJS already loaded
    in index.html (CDN). Falls back to CSV blob if XLSX is unavailable. */
 async function exportRealizationDetail(code, companyName) {
-  if (!_raDetailRows.length) return;
+  // Lot-based realization fallback: when there are no PIB rows but the modal is
+  // showing Operations/lot realization, export those instead (same data shown).
+  if (!_raDetailRows.length) {
+    if (!_raLotRows.length) return;
+    try { await ensureXLSX(); } catch (e) { /* falls back to CSV below */ }
+    const lotRows = _raLotRows.map(r => ({ ...r }));
+    const fnameLot = `Realization_${code}_lot_${new Date().toISOString().slice(0,10)}.xlsx`;
+    if (typeof XLSX !== 'undefined') {
+      const ws = XLSX.utils.json_to_sheet(lotRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Realization');
+      XLSX.writeFile(wb, fnameLot);
+    } else {
+      const headers = Object.keys(lotRows[0]);
+      const csv = [headers.join(',')]
+        .concat(lotRows.map(r => headers.map(h => {
+          const v = r[h]; const s = v == null ? '' : String(v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+        }).join(',')))
+        .join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fnameLot.replace('.xlsx', '.csv'); a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    return;
+  }
   try { await ensureXLSX(); } catch (e) { /* falls back to CSV below */ }
   const rows = _raDetailRows.map(r => ({
     'Company':           companyName || code,
