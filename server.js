@@ -1215,9 +1215,16 @@ async function patchCompanySheets(code, body) {
 
   // ── shipments (lots) upsert per product ──
   let shipmentsTouched = false;
+  const oldLotSums = {};   // pre-patch Σ util_mt per product (baseline preservation)
   if (body.shipments && typeof body.shipments === 'object') {
     shipmentsTouched = true;
     let ship = (await store.table('company_shipments')).slice();
+    // Snapshot existing lot utilization BEFORE mutating (numbers copied now, so
+    // later in-place edits don't affect these sums). Used to derive the non-lot
+    // baseline so a new lot ADDS to stats utilization instead of replacing it.
+    ship.filter(r => r.company_code === code).forEach(r => {
+      oldLotSums[r.product] = (oldLotSums[r.product] || 0) + (Number(r.util_mt) || 0);
+    });
     let maxId = ship.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
     for (const [product, lots] of Object.entries(body.shipments)) {
       const keep = new Set(lots.map(l => String(l.lotNo)));
@@ -1248,9 +1255,15 @@ async function patchCompanySheets(code, body) {
         const prevUtil = ex ? Number(ex.utilization_mt) || 0 : 0;
         const prevAvail = ex && ex.available_mt != null ? Number(ex.available_mt) : 0;
         const obtained = ex ? prevUtil + prevAvail : util;
-        const newAvail = Math.max(0, obtained - util);
-        if (ex) { ex.utilization_mt = util; ex.available_mt = newAvail; }
-        else stats.push({ id: ++maxSid, company_code: code, product, utilization_mt: util, available_mt: newAvail, realization_mt: '', eta_jkt: '', arrived: false, source_program: 'B' });
+        // Baseline = utilization recorded in stats but NOT represented by lots
+        // (lots were historically empty while util lived in stats). A new lot must
+        // ADD to it, not replace it. effUtil = baseline + Σ(new lots). Without this,
+        // saving one lot wiped the existing utilization (2026-06-26 "record terhapus").
+        const baseline = Math.max(0, prevUtil - (oldLotSums[product] || 0));
+        const effUtil  = baseline + util;
+        const newAvail = Math.max(0, obtained - effUtil);
+        if (ex) { ex.utilization_mt = effUtil; ex.available_mt = newAvail; }
+        else stats.push({ id: ++maxSid, company_code: code, product, utilization_mt: effUtil, available_mt: newAvail, realization_mt: '', eta_jkt: '', arrived: false, source_program: 'B' });
       }
       changed.company_product_stats = stats;
       const coUtil = stats.filter(s => s.company_code === code).reduce((a, s) => a + (Number(s.utilization_mt) || 0), 0);

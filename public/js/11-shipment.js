@@ -34,7 +34,9 @@ function buildSalesOpsForm(co) {
   products.forEach(prod => {
     const obtMT   = obtByProd[prod] || 0;
     const lots    = shipments[prod] || [];
-    const usedMT  = lots.reduce((s, l) => s + (l.utilMT || 0), 0);
+    // used = non-lot baseline (existing stats util) + Σ lot utilMT, so the form
+    // reflects already-recorded utilization instead of showing 0 (2026-06-26 fix).
+    const usedMT  = effectiveUtilForProd(co, prod);
     const availMT = obtMT - usedMT;
     const dot     = prodDot(prod);
 
@@ -78,7 +80,7 @@ function buildSalesOpsForm(co) {
   });
 
   // Grand total bar
-  const grandUtil = products.reduce((s, p) => s + totalUtilForProd(shipments, p), 0);
+  const grandUtil = products.reduce((s, p) => s + effectiveUtilForProd(co, p), 0);
   const grandObt  = products.reduce((s, p) => s + (obtByProd[p] || 0), 0);
   salesHTML += `
   <div class="grand-total-bar">
@@ -371,7 +373,9 @@ function onSalesDirectChange(inp) {
   const obtMT  = (getObtainedByProd(co))[prod] || 0;
   const curMT  = (co.shipments[prod] && co.shipments[prod][idx])
                  ? (co.shipments[prod][idx].utilMT || 0) : 0;
-  const otherMT = totalUtilForProd(co.shipments, prod) - curMT;
+  // otherMT = non-lot baseline + all OTHER lots (exclude this lot's current value),
+  // so the quota check accounts for utilization already recorded in stats.
+  const otherMT = utilBaselineForProd(co, prod) + (totalUtilForProd(co.shipments, prod) - curMT);
   const available = obtMT - otherMT - newMT;
 
   const errEl  = g(`util-err-${pid}-${idx}`);
@@ -528,7 +532,8 @@ function saveSalesUtil(prod, idx) {
 
   const curMT   = lot.utilMT || 0;
   const obtMT   = (getObtainedByProd(co))[prod] || 0;
-  const otherMT = totalUtilForProd(co.shipments, prod) - curMT;
+  // Include non-lot baseline so the quota cap accounts for already-recorded util.
+  const otherMT = utilBaselineForProd(co, prod) + (totalUtilForProd(co.shipments, prod) - curMT);
 
   if (otherMT + newMT > obtMT) {
     alert(`Nilai ${newMT.toLocaleString()} MT melebihi kuota PERTEK ${obtMT.toLocaleString()} MT untuk ${prod}.`);
@@ -566,8 +571,8 @@ function saveSalesUtil(prod, idx) {
   // Update input to formatted value
   directInp.value = newMT > 0 ? newMT.toLocaleString() : '';
 
-  // Recompute totals & badges
-  const usedMT  = totalUtilForProd(co.shipments, prod);
+  // Recompute totals & badges (baseline + Σlots so already-recorded util counts)
+  const usedMT  = effectiveUtilForProd(co, prod);
   const availMT = obtMT - usedMT;
 
   const badge = g(`sales-avail-${pid}`);
@@ -581,7 +586,7 @@ function saveSalesUtil(prod, idx) {
   const grandEl = g('sales-grand-total');
   if (grandEl && co.shipments) {
     const obtByProd = getObtainedByProd(co);
-    const gt = Object.keys(co.shipments).reduce((s, p) => s + totalUtilForProd(co.shipments, p), 0);
+    const gt = Object.keys(co.shipments).reduce((s, p) => s + effectiveUtilForProd(co, p), 0);
     const go = Object.values(obtByProd).reduce((s, v) => s + v, 0);
     grandEl.textContent = `${gt.toLocaleString()} / ${go.toLocaleString()} MT`;
   }
@@ -604,17 +609,18 @@ function saveSalesUtil(prod, idx) {
 
   // Sync co-level totals so Available Quota KPI updates immediately
   const _obtByProd2 = getObtainedByProd(co);
-  co.utilizationMT  = Object.keys(_obtByProd2).reduce((s, p) => s + totalUtilForProd(co.shipments, p), 0);
+  co.utilizationMT  = Object.keys(_obtByProd2).reduce((s, p) => s + effectiveUtilForProd(co, p), 0);
   co.availableQuota = Math.max(0, (co.obtained || 0) - co.utilizationMT);
 
   // β-2 lot-driven: re-split THIS product's per-product util/avail in-memory so
   // the AVQ cards / obtained drill update live to match what the server will
-  // persist (util = Σlots, OBTAINED preserved so getObtainedByProdAgg = util+avail
-  // stays correct). Mirrors recomputeUtilizationFromLots() on the server.
+  // persist. util = non-lot baseline + Σlots (NOT just Σlots) so existing stats
+  // utilization is preserved, OBTAINED kept (getObtainedByProdAgg = util+avail
+  // stays correct). Mirrors the baseline recompute in patchCompanySheets.
   co.utilizationByProd = co.utilizationByProd || {};
   co.availableByProd   = co.availableByProd   || {};
-  const _prodUtil = totalUtilForProd(co.shipments, prod);
   const _prodObt  = (Number(co.utilizationByProd[prod]) || 0) + (Number(co.availableByProd[prod]) || 0);
+  const _prodUtil = effectiveUtilForProd(co, prod);
   const _obtBase  = _prodObt > 0 ? _prodObt : _prodUtil; // new product → avail 0
   co.utilizationByProd[prod] = _prodUtil;
   co.availableByProd[prod]   = Math.max(0, _obtBase - _prodUtil);

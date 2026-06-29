@@ -369,10 +369,34 @@ function totalUtilForProd(shipments, prod) {
   return (shipments[prod] || []).reduce((s, lot) => s + (lot.utilMT || 0), 0);
 }
 
+/* ── Non-lot baseline utilization for a product ───────────────────────────
+   The authoritative utilization (company_product_stats → co.utilizationByProd)
+   that is NOT yet broken out into shipment lots. Historically utilization lived
+   only in stats while lots were empty; the lot form then recomputed util = Σlots
+   and WIPED that stats value (the 2026-06-26 "record terhapus" bug). We capture
+   the non-lot portion ONCE per loaded company so adding a lot ADDS to existing
+   utilization instead of replacing it. Cleared when fresh server data lands
+   (openDrawer refresh). Mirrors the server-side baseline in patchCompanySheets. */
+function utilBaselineForProd(co, prod) {
+  if (!co) return 0;
+  if (!co._utilBaseline) co._utilBaseline = {};
+  if (co._utilBaseline[prod] == null) {
+    const statUtil = Number((co.utilizationByProd || {})[prod]) || 0;
+    const lotUtil  = totalUtilForProd(co.shipments || {}, prod);
+    co._utilBaseline[prod] = Math.max(0, statUtil - lotUtil);
+  }
+  return co._utilBaseline[prod];
+}
+
+/* ── Effective utilization used for a product = baseline + Σ lot utilMT ── */
+function effectiveUtilForProd(co, prod) {
+  return utilBaselineForProd(co, prod) + totalUtilForProd(co.shipments || {}, prod);
+}
+
 /* ── Remaining quota for a product (obtained - all lots utilMT) ── */
 function remainingQuota(co, prod) {
   const obtained = (getObtainedByProd(co))[prod] || 0;
-  const used     = totalUtilForProd(co.shipments || {}, prod);
+  const used     = effectiveUtilForProd(co, prod);
   return obtained - used;
 }
 

@@ -95,6 +95,8 @@ function openDrawer(code) {
     if (fresh.shipments) co.shipments = fresh.shipments;
     if (fresh.utilizationByProd) co.utilizationByProd = fresh.utilizationByProd;
     if (fresh.availableByProd)   co.availableByProd   = fresh.availableByProd;
+    // Fresh authoritative util/lots → recapture non-lot baseline (2026-06-26 fix).
+    co._utilBaseline = {};
   }).catch(()=>{/* fallback to cached data — no-op */});
 
   document.getElementById('d-code').textContent = code;
