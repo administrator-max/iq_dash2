@@ -465,15 +465,73 @@ async function openRealizationDetail(code) {
     _raDetailRows = rows;
 
     if (!rows.length) {
-      const periodMsg = (_raHidden > 0)
-        ? `Tidak ada PIB pada periode <strong>${PERIOD.label}</strong> untuk <strong>${headerName}</strong>.<br>
-           <span style="font-size:11px">${_raHidden} PIB di luar periode disembunyikan — ubah atau clear filter periode untuk melihatnya.</span>`
-        : `Belum ada data realisasi PIB untuk <strong>${headerName}</strong>.<br>
-           <span style="font-size:11px">Import via menu Realization Import atau tambah manual.</span>`;
-      body.innerHTML = `<div style="padding:40px;text-align:center;color:var(--txt3);font-size:13px">
-        <div style="font-size:32px;margin-bottom:8px">📦</div>
-        ${periodMsg}
-      </div>`;
+      // Escape any data-derived text before it enters markup (note/vessel is
+      // user-typed). Keeps the same render path as the rest of the modal.
+      const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+      // ── Fallback: lot-based realization (entered by Ops via shipments) ──────
+      // No PIB import rows, but realization may still exist on shipment lots
+      // (realMT). Show that detail instead of an empty modal so PTs realized via
+      // Operations input (e.g. the 19/06 batch) aren't shown as "no data".
+      // Mirrors the drawer's "Realization — per Shipment / Lot". Display-only —
+      // does NOT touch the PIB realizations table or any KPI.
+      let lotRows = '', lotTotal = 0;
+      if (co && co.shipments && typeof co.shipments === 'object') {
+        Object.entries(co.shipments).forEach(([product, lots]) => {
+          (lots || []).forEach(l => {
+            const rm = Number(l.realMT) || 0;
+            if (rm <= 0) return;
+            if (typeof PERIOD !== 'undefined' && PERIOD.active && !inPd(pDate(l.pibDate))) return;
+            lotTotal += rm;
+            const arrived = l.cargoArrived || l.arrived;
+            const vessel  = (l.note && String(l.note).trim()) || (vesselHint !== '—' ? vesselHint : '—');
+            lotRows += `<tr>
+              <td style="padding:6px 10px;font-size:12px">${esc(product)}</td>
+              <td style="padding:6px 10px;font-size:12px;text-align:center">${esc(l.lotNo != null ? l.lotNo : '-')}</td>
+              <td style="padding:6px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace;font-weight:700">${rm.toLocaleString()}</td>
+              <td style="padding:6px 10px;font-size:12px;text-align:center">${esc(l.pibDate || '—')}</td>
+              <td style="padding:6px 10px;font-size:12px;text-align:center">${esc(vessel)}</td>
+              <td style="padding:6px 10px;font-size:11px;text-align:center">${arrived ? '<span style="color:var(--green);font-weight:700">✓ Tiba JKT</span>' : '<span style="color:var(--orange)">🚢 In-shipment</span>'}</td>
+            </tr>`;
+          });
+        });
+      }
+      let content;
+      if (lotRows) {
+        _raDetailRows = [];   // PIB export has nothing; this is lot-sourced
+        content = `
+          <div style="background:#fff7ed;border:1px solid var(--orange-bd);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:var(--txt2)">
+            ℹ️ Realisasi <strong>${esc(headerName)}</strong> dicatat via <strong>input Operations (per lot)</strong>, bukan import PIB. Detail customs PIB (HS code, nilai, kurs, pelabuhan) akan muncul di sini bila dokumen PIB diimport.
+          </div>
+          <div style="border:1px solid var(--border);border-radius:10px;overflow:hidden">
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr style="background:var(--bg2)">
+                <th style="padding:8px 10px;font-size:10px;text-align:left;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px">Produk</th>
+                <th style="padding:8px 10px;font-size:10px;text-align:center;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px">Lot</th>
+                <th style="padding:8px 10px;font-size:10px;text-align:right;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px">Realized MT</th>
+                <th style="padding:8px 10px;font-size:10px;text-align:center;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px">PIB Date</th>
+                <th style="padding:8px 10px;font-size:10px;text-align:center;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px">Vessel / Note</th>
+                <th style="padding:8px 10px;font-size:10px;text-align:center;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px">Status</th>
+              </tr></thead>
+              <tbody>${lotRows}</tbody>
+              <tfoot><tr style="background:var(--teal-bg)">
+                <td colspan="2" style="padding:8px 10px;font-size:12px;font-weight:700">Total Realized</td>
+                <td style="padding:8px 10px;font-size:12px;text-align:right;font-family:'DM Mono',monospace;font-weight:700;color:var(--teal)">${lotTotal.toLocaleString()}</td>
+                <td colspan="3"></td>
+              </tr></tfoot>
+            </table>
+          </div>`;
+      } else {
+        const periodMsg = (_raHidden > 0)
+          ? `Tidak ada PIB pada periode <strong>${esc(PERIOD.label)}</strong> untuk <strong>${esc(headerName)}</strong>.<br>
+             <span style="font-size:11px">${_raHidden} PIB di luar periode disembunyikan — ubah atau clear filter periode untuk melihatnya.</span>`
+          : `Belum ada data realisasi PIB untuk <strong>${esc(headerName)}</strong>.<br>
+             <span style="font-size:11px">Import via menu Realization Import atau tambah manual.</span>`;
+        content = `<div style="padding:40px;text-align:center;color:var(--txt3);font-size:13px">
+          <div style="font-size:32px;margin-bottom:8px">📦</div>
+          ${periodMsg}
+        </div>`;
+      }
+      body.innerHTML = content;
       return;
     }
 
