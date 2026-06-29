@@ -808,8 +808,32 @@ async function exportRealizationDetail(code, companyName) {
   if (!_raDetailRows.length) {
     if (!_raLotRows.length) return;
     try { await ensureXLSX(); } catch (e) { /* falls back to CSV below */ }
-    const lotRows = _raLotRows.map(r => ({ ...r }));
-    const fnameLot = `Realization_${code}_lot_${new Date().toISOString().slice(0,10)}.xlsx`;
+    // Same 20-column schema as the PIB export so both files are structurally
+    // identical. Lot realization has no customs detail (HS/value/kurs/ports/
+    // L-S/invoice/pengajuan) → those columns stay blank; what we have maps in.
+    const lotRows = _raLotRows.map(r => ({
+      'Company':           r.Company || code,
+      'PIB / SPPB':        '',
+      'PIB Date':          r['PIB Date'] || '',
+      'Line No':           r.Lot != null ? r.Lot : '',
+      'Uraian Barang':     [r.Produk, r['Vessel/Note'], r.Status].filter(Boolean).join(' · '),
+      'HS Code':           '',
+      'Volume':            r['Realized MT'] != null ? Number(r['Realized MT']) : '',
+      'Satuan':            'TNE',
+      'Nilai':             '',
+      'Harga Satuan':      '',
+      'Kurs':              '',
+      'Negara Asal':       '',
+      'Pelabuhan Tujuan':  '',
+      'Pelabuhan Muat':    '',
+      'No. L/S':           '',
+      'Tgl L/S':           '',
+      'No. Invoice':       '',
+      'Tgl Invoice':       '',
+      'No. Pengajuan':     '',
+      'Tgl Pengajuan':     '',
+    }));
+    const fnameLot = `Realization_${code}_${new Date().toISOString().slice(0,10)}.xlsx`;
     if (typeof XLSX !== 'undefined') {
       const ws = XLSX.utils.json_to_sheet(lotRows);
       const wb = XLSX.utils.book_new();
