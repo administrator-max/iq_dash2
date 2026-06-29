@@ -1030,11 +1030,11 @@ async function _buildDataPayload() {
   const codes = companies.map(c => c.code);
   if (!codes.length) return { spi: [], pending: [], ra: [], products: productsList, productAliases: aliasMap, companyDirectory, lastUpdate: null };
 
-  let products, stats, revChanges, pendMetas, raRows, shipRows, reapplyRows, cyclesMap;
+  let products, stats, revChanges, pendMetas, raRows, shipRows, reapplyRows, cyclesMap, realzRows;
   if (inSheets()) {
     const inCodes = new Set(codes);
     const f = name => store.where(name, r => inCodes.has(r.company_code));
-    [products, stats, revChanges, pendMetas, raRows, shipRows, reapplyRows, cyclesMap] = await Promise.all([
+    [products, stats, revChanges, pendMetas, raRows, shipRows, reapplyRows, cyclesMap, realzRows] = await Promise.all([
       f('company_products').then(a => a.sort((x, y) => x.company_code !== y.company_code ? (x.company_code < y.company_code ? -1 : 1) : (Number(x.sort_order) || 0) - (Number(y.sort_order) || 0))),
       f('company_product_stats'),
       f('revision_changes'),
@@ -1043,6 +1043,7 @@ async function _buildDataPayload() {
       f('company_shipments').then(a => a.sort((x, y) => x.company_code !== y.company_code ? (x.company_code < y.company_code ? -1 : 1) : x.product !== y.product ? (String(x.product) < String(y.product) ? -1 : 1) : (Number(x.lot_no) || 0) - (Number(y.lot_no) || 0))),
       f('company_reapply_targets'),
       getCyclesFor(codes),
+      f('realizations'),
     ]);
   } else {
     [
@@ -1054,6 +1055,7 @@ async function _buildDataPayload() {
       { rows: shipRows },
       { rows: reapplyRows },
       cyclesMap,
+      { rows: realzRows },
     ] = await Promise.all([
       pool.query(`SELECT * FROM company_products WHERE company_code = ANY($1) ORDER BY company_code, sort_order`, [codes]),
       pool.query(`SELECT * FROM company_product_stats WHERE company_code = ANY($1)`, [codes]),
@@ -1063,6 +1065,7 @@ async function _buildDataPayload() {
       pool.query(`SELECT * FROM company_shipments WHERE company_code = ANY($1) ORDER BY company_code, product, lot_no`, [codes]),
       pool.query(`SELECT * FROM company_reapply_targets WHERE company_code = ANY($1)`, [codes]),
       getCyclesFor(codes),
+      pool.query(`SELECT * FROM realizations WHERE company_code = ANY($1)`, [codes]),
     ]);
   }
 
@@ -1135,6 +1138,48 @@ async function _buildDataPayload() {
       catatan:             r.catatan||null,
     });
   });
+
+  // ── Realized = single source of truth: PIB realizations (deduped) ─────────
+  // Override each RA record's realized (berat/cargoArrived/realPct) with the
+  // company's total realized volume from the `realizations` table, deduped by
+  // (pib_no, line_no) so a duplicate import never inflates the total. Synthesize
+  // an RA entry for companies that have PIB realizations but no ra_records row.
+  // This keeps every realized display (KPI, Util&Realization, drawer) in sync
+  // with the authoritative customs (PIB) data. (2026-06-29 Option A.)
+  {
+    const pibRealized = {};   // code -> mt (deduped)
+    const seen = new Set();
+    for (const r of (realzRows || [])) {
+      const code = r.company_code; if (!code) continue;
+      const key = code + '|' + (r.pib_no || '') + '|' + (r.line_no || '');
+      if (seen.has(key)) continue; seen.add(key);
+      pibRealized[code] = (pibRealized[code] || 0) + (Number(r.volume) || 0);
+    }
+    const spiObtained = {};
+    spi.forEach(c => { spiObtained[c.code] = Number(c.obtained) || 0; });
+    const raIdx = {};
+    ra.forEach(r => { raIdx[r.code] = r; });
+    for (const [code, mtRaw] of Object.entries(pibRealized)) {
+      const mt = Math.round(mtRaw * 1000) / 1000;
+      if (!(mt > 0)) continue;
+      const ex = raIdx[code];
+      if (ex) {
+        ex.berat = mt;
+        ex.cargoArrived = true;
+        const obt = ex.obtained || spiObtained[code] || 0;
+        ex.realPct = obt > 0 ? mt / obt : 0;
+      } else {
+        const obt = spiObtained[code] || 0;
+        ra.push({
+          code, product: '', berat: mt, obtained: obt, cargoArrived: true,
+          realPct: obt > 0 ? mt / obt : 0, utilPct: null, arrivalDate: null, etaJKT: null,
+          reapplyEst: '', reapplyStage: 1, reapplyProduct: null, reapplyNewTotal: null,
+          reapplyPrevObtained: null, reapplyAdditional: null, reapplySubmitDate: null,
+          reapplyStatus: null, target: null, pertek: null, spi: null, catatan: null,
+        });
+      }
+    }
+  }
 
   // ── lastUpdate: when the DATA was last edited (server-side, same for every
   // device) — replaces the old client-side wall clock. Max updated_at across
@@ -2060,6 +2105,19 @@ function buildRealizationObj(code, row, defaults, id) {
     imported_by: defaults.importedBy || '', created_at: now, updated_at: now, source_program: 'B',
   };
 }
+// Collapse duplicate PIB lines (same company+pib_no+line_no) that an earlier
+// double-import created. Prefer the non-'migrationA' copy. Read-side dedup so
+// the modal/export never show doubled lines without deleting Sheet rows.
+function dedupeRealizations(rows) {
+  const byKey = new Map();
+  for (const r of rows) {
+    const k = (r.company_code || '') + '|' + (r.pib_no || '') + '|' + (r.line_no || '');
+    const cur = byKey.get(k);
+    if (!cur) { byKey.set(k, r); continue; }
+    if (cur.imported_by === 'migrationA' && r.imported_by !== 'migrationA') byKey.set(k, r);
+  }
+  return Array.from(byKey.values());
+}
 async function insertRealizationsSheets(code, rows, defaults) {
   const all = await store.table('realizations');
   let maxId = all.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
@@ -2085,7 +2143,7 @@ app.get('/api/realizations/summary', async (req, res) => {
         let totalPibs = 0, totalLines = 0;
         if (inSheets()) {
           const byCo = {};
-          (await store.table('realizations'))
+          dedupeRealizations(await store.table('realizations'))
             .filter(r => r.company_code)
             .forEach(r => {
               const c = (byCo[r.company_code] = byCo[r.company_code] || { pibs: new Set(), lines: 0 });
@@ -2099,8 +2157,8 @@ app.get('/api/realizations/summary', async (req, res) => {
         } else {
           const { rows } = await pool.query(
             `SELECT company_code,
-                    COUNT(DISTINCT pib_no)::int AS pibs,
-                    COUNT(*)::int              AS lines
+                    COUNT(DISTINCT pib_no)::int                AS pibs,
+                    COUNT(DISTINCT (pib_no, line_no))::int     AS lines
              FROM realizations
              WHERE company_code IS NOT NULL
              GROUP BY company_code`
@@ -2136,6 +2194,7 @@ app.get('/api/realizations', async (req, res) => {
         if (inSheets()) {
           let rows = await store.table('realizations');
           if (company_code) rows = rows.filter(r => r.company_code === company_code);
+          rows = dedupeRealizations(rows);   // collapse double-import duplicates
           // pib_date is DD/MM/YYYY (or ''); sort DESC by parsed date
           const ts = s => { const m = String(s || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : 0; };
           rows = rows.slice().sort((a, b) =>
@@ -2150,7 +2209,7 @@ app.get('/api/realizations', async (req, res) => {
           : `SELECT * FROM realizations ORDER BY pib_date DESC, company_code, pib_no, line_no`;
         const args = company_code ? [company_code] : [];
         const { rows } = await pool.query(sql, args);
-        return { realizations: rows };
+        return { realizations: dedupeRealizations(rows) };
       }
     );
     res.set('X-Cache', source);
