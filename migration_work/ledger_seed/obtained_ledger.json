@@ -1,0 +1,692 @@
+[
+ {
+  "id": 1,
+  "company": "EMS",
+  "hs_code": "7301.10.00",
+  "qty": 1600,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 2,
+  "company": "EMS",
+  "hs_code": "7225.92.90",
+  "qty": 500,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 3,
+  "company": "HDP",
+  "hs_code": "7225.99.90",
+  "qty": 800,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 4,
+  "company": "HDP",
+  "hs_code": "7225.99.90",
+  "qty": 100,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 5,
+  "company": "AMP",
+  "hs_code": "7225.99.90",
+  "qty": 400,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 6,
+  "company": "AMP",
+  "hs_code": "7210.70.13",
+  "qty": 400,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 7,
+  "company": "CGK",
+  "hs_code": "7225.92.90",
+  "qty": 800,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 8,
+  "company": "CGK",
+  "hs_code": "7225.92.90",
+  "qty": 220,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 9,
+  "company": "GNG",
+  "hs_code": "7225.99.90",
+  "qty": 250,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 10,
+  "company": "GNG",
+  "hs_code": "7225.99.90",
+  "qty": 150,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 11,
+  "company": "MIN",
+  "hs_code": "7225.40.90",
+  "qty": 600,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 12,
+  "company": "MIN",
+  "hs_code": "7225.40.90",
+  "qty": -353,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOI Perubahan 30/03/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 13,
+  "company": "MIN",
+  "hs_code": "7225.92.90",
+  "qty": 353.3,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOI Perubahan 30/03/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 14,
+  "company": "JKT",
+  "hs_code": "7225.99.90",
+  "qty": 300,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 15,
+  "company": "JKT",
+  "hs_code": "7225.99.90",
+  "qty": 100,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 16,
+  "company": "BHG",
+  "hs_code": "7210.70.13",
+  "qty": 200,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 17,
+  "company": "BHG",
+  "hs_code": "7225.92.90",
+  "qty": 200,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 18,
+  "company": "NCT",
+  "hs_code": "7225.92.90",
+  "qty": 150,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 19,
+  "company": "BBB",
+  "hs_code": "7225.99.90",
+  "qty": 400,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 20,
+  "company": "BBB",
+  "hs_code": "7225.99.90",
+  "qty": 300,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 21,
+  "company": "GKL",
+  "hs_code": "7225.92.90",
+  "qty": 1100,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 22,
+  "company": "GKL",
+  "hs_code": "7306.30.91",
+  "qty": 800,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 23,
+  "company": "GKL",
+  "hs_code": "7306.30.99",
+  "qty": 500,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 24,
+  "company": "GAS",
+  "hs_code": "7225.40.90",
+  "qty": 200,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 25,
+  "company": "GAS",
+  "hs_code": "7225.40.90",
+  "qty": -200,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOI Perubahan 30/03/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 26,
+  "company": "GAS",
+  "hs_code": "7225.92.90",
+  "qty": 200,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOI Perubahan 30/03/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 27,
+  "company": "KJK",
+  "hs_code": "7225.99.90",
+  "qty": 950,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 28,
+  "company": "KJK",
+  "hs_code": "7225.99.90",
+  "qty": 450,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 29,
+  "company": "HKG",
+  "hs_code": "7225.99.90",
+  "qty": 750,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 30,
+  "company": "HKG",
+  "hs_code": "7225.99.90",
+  "qty": 250,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 31,
+  "company": "SPA",
+  "hs_code": "7225.40.90",
+  "qty": 515,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 32,
+  "company": "SPA",
+  "hs_code": "7225.40.90",
+  "qty": -401,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 33,
+  "company": "SPA",
+  "hs_code": "7225.92.90",
+  "qty": 401,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 34,
+  "company": "ADP",
+  "hs_code": "7225.99.90",
+  "qty": 250,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 35,
+  "company": "MSN",
+  "hs_code": "7225.99.90",
+  "qty": 150,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 36,
+  "company": "SPP",
+  "hs_code": "7225.92.90",
+  "qty": 250,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 37,
+  "company": "LCP",
+  "hs_code": "7225.99.90",
+  "qty": 275,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 38,
+  "company": "LCP",
+  "hs_code": "7225.99.90",
+  "qty": 200,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 39,
+  "company": "KAN",
+  "hs_code": "7225.92.90",
+  "qty": 80,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 40,
+  "company": "LSJ",
+  "hs_code": "7225.92.90",
+  "qty": 500,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 41,
+  "company": "DIOR",
+  "hs_code": "7225.40.90",
+  "qty": 100,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 42,
+  "company": "MJU",
+  "hs_code": "7225.40.90",
+  "qty": 200,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 43,
+  "company": "MJU",
+  "hs_code": "7225.40.90",
+  "qty": -200,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOT Perubahan 06/04/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 44,
+  "company": "MJU",
+  "hs_code": "7306.61.90",
+  "qty": 200,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOT Perubahan 06/04/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 45,
+  "company": "MJU",
+  "hs_code": "7225.30.90",
+  "qty": 200,
+  "entry_type": "revision",
+  "cycle": "Revision #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 46,
+  "company": "MJU",
+  "hs_code": "7306.61.90",
+  "qty": -200,
+  "entry_type": "revision",
+  "cycle": "Revision #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 47,
+  "company": "SJH",
+  "hs_code": "7225.99.90",
+  "qty": 300,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 48,
+  "company": "SJH",
+  "hs_code": "7225.99.90",
+  "qty": 90,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 49,
+  "company": "BDG",
+  "hs_code": "7225.40.90",
+  "qty": 1000,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 50,
+  "company": "BDG",
+  "hs_code": "7225.40.90",
+  "qty": -650,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOT Perubahan 6/04/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 51,
+  "company": "BDG",
+  "hs_code": "7225.99.90",
+  "qty": 650,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "SUBMIT MOT Perubahan 6/04/26",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 52,
+  "company": "BDG",
+  "hs_code": "7225.40.90",
+  "qty": -350,
+  "entry_type": "revision",
+  "cycle": "Revision #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 53,
+  "company": "BDG",
+  "hs_code": "7225.92.90",
+  "qty": 350,
+  "entry_type": "revision",
+  "cycle": "Revision #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 54,
+  "company": "SGD",
+  "hs_code": "7301.10.00",
+  "qty": 2000,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 55,
+  "company": "SGD",
+  "hs_code": "7225.92.90",
+  "qty": 500,
+  "entry_type": "obtained",
+  "cycle": "Obtained #2",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 56,
+  "company": "BTS",
+  "hs_code": "7225.40.90",
+  "qty": 900,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 57,
+  "company": "BTS",
+  "hs_code": "7228.30.10",
+  "qty": 900,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 58,
+  "company": "BTS",
+  "hs_code": "7301.10.00",
+  "qty": 3200,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 59,
+  "company": "BTS",
+  "hs_code": "7304.19.00",
+  "qty": 1000,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 60,
+  "company": "SMS",
+  "hs_code": "7301.10.00",
+  "qty": 150,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 61,
+  "company": "SMS",
+  "hs_code": "7225.92.90",
+  "qty": 150,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 62,
+  "company": "SMS",
+  "hs_code": "7301.10.00",
+  "qty": -150,
+  "entry_type": "revision",
+  "cycle": "Revision #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 63,
+  "company": "GIS",
+  "hs_code": "7301.10.00",
+  "qty": 400,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 64,
+  "company": "AADC",
+  "hs_code": "7225.99.90",
+  "qty": 150,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 65,
+  "company": "KARA",
+  "hs_code": "7225.99.90",
+  "qty": 100,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 66,
+  "company": "PPGL",
+  "hs_code": "7225.99.90",
+  "qty": 50,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 67,
+  "company": "IKM",
+  "hs_code": "7225.92.90",
+  "qty": 4150,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 68,
+  "company": "IKM",
+  "hs_code": "7301.10.00",
+  "qty": 1750,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ },
+ {
+  "id": 69,
+  "company": "IKM",
+  "hs_code": "7304.19.00",
+  "qty": 2100,
+  "entry_type": "obtained",
+  "cycle": "Obtained #1",
+  "note": "",
+  "source": "master-120526(6)"
+ }
+]

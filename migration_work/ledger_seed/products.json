@@ -1,0 +1,102 @@
+[
+ {
+  "hs_code": "7225.30.90",
+  "name": "HRPO ALLOY"
+ },
+ {
+  "hs_code": "7225.40.90",
+  "name": "BORDES ALLOY"
+ },
+ {
+  "hs_code": "7225.92.20",
+  "name": "ZAM ALLOY"
+ },
+ {
+  "hs_code": "7228.30.10",
+  "name": "AS STEEL"
+ },
+ {
+  "hs_code": "7228.70.10",
+  "name": "BEAM ALLOY"
+ },
+ {
+  "hs_code": "7210.49.17",
+  "name": "GI CARBON"
+ },
+ {
+  "hs_code": "7210.61.11",
+  "name": "GL CARBON"
+ },
+ {
+  "hs_code": "7210.70.13",
+  "name": "PPGL CARBON"
+ },
+ {
+  "hs_code": "7212.50.24",
+  "name": "GL SLIT"
+ },
+ {
+  "hs_code": "7216.31.90",
+  "name": "CHANNEL"
+ },
+ {
+  "hs_code": "7216.33.11",
+  "name": "BEAM"
+ },
+ {
+  "hs_code": "7216.40.90",
+  "name": "ANGLE"
+ },
+ {
+  "hs_code": "7301.10.00",
+  "name": "SHEET PILE"
+ },
+ {
+  "hs_code": "7301.20.00",
+  "name": "SHEET PILE (INTERLOCKS)"
+ },
+ {
+  "hs_code": "7304.19.00",
+  "name": "SEAMLESS PIPE"
+ },
+ {
+  "hs_code": "7306.30.91",
+  "name": "ERW PIPE (OD ≤ 140 mm)"
+ },
+ {
+  "hs_code": "7306.30.99",
+  "name": "ERW PIPE (OD > 140mm)"
+ },
+ {
+  "hs_code": "7308.90.99",
+  "name": "STRUCTURAL STEEL"
+ },
+ {
+  "hs_code": "7208.38.00",
+  "name": "HRC ≥3 mm to <4.75 mm"
+ },
+ {
+  "hs_code": "7208.39.90",
+  "name": "HRC <3 mm"
+ },
+ {
+  "hs_code": "7210.49.15",
+  "name": "ZAM >1.2 mm to ≤1.5 mm"
+ },
+ {
+  "hs_code": "7210.49.16",
+  "name": "ZAM >1.5 mm"
+ },
+ {
+  "hs_code": "7225.99.90",
+  "name": "GL ALLOY"
+ },
+ {
+  "hs_code": "7225.92.90",
+  "name": "GI ALLOY"
+ },
+ {
+  "hs_code": "7306.61.90",
+  "name": "HOLLOW PIPE"
+ }
+]
