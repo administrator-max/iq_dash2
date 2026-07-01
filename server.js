@@ -86,6 +86,10 @@ const STAGING_HOSTS       = (process.env.STAGING_HOSTS || '').toLowerCase().spli
 
 const store    = require('./lib/sheetsStore');
 const insights = require('./lib/insights');
+// Quota ledger (single source of truth for Obtained/Utilized/Available, keyed by
+// HS, seeded from the authoritative master). See migration_work/ARCHITECTURE_LEDGER.md.
+let QUOTA_LEDGER = null;
+try { QUOTA_LEDGER = require('./lib/quotaLedger.json'); } catch (e) { console.warn('quotaLedger.json not loaded:', e.message); }
 
 // Boot-time aggregate flags: which backends might be touched by SOME request.
 const BOOT_DEFAULT_SHEETS = DATA_SOURCE === 'sheets';
@@ -1178,6 +1182,55 @@ async function _buildDataPayload() {
           reapplyStatus: null, target: null, pertek: null, spi: null, catatan: null,
         });
       }
+    }
+  }
+
+  // ── Quota ledger: single source for Obtained / Utilized / Available ──────
+  // Derive obtained (effective, incl. revisions), utilization, and available
+  // (= obtained − util) per company from the HS-keyed ledger seeded from the
+  // authoritative master. Overrides the divergent cycles/stats so every KPI is
+  // consistent and matches the master (Obtained 33.730 / Util 18.346 / Avail
+  // 15.384). Synthesizes ledger companies missing from SPI (e.g. IKM). Frontend
+  // reads _ledgerObtained for the Obtained KPI; util/avail flow from the
+  // per-product maps. (2026-07-01 — see migration_work/ARCHITECTURE_LEDGER.md)
+  if (QUOTA_LEDGER && QUOTA_LEDGER.companies) {
+    const hsName = QUOTA_LEDGER.products || {};
+    const dirName = {}; companyDirectory.forEach(d => { dirName[d.abbreviation] = d.fullName; });
+    const applyLedger = (co, ent) => {
+      let obt = 0, util = 0;
+      const utilByProd = {}, availByProd = {}, obtByProd = {};
+      for (const [hs, v] of Object.entries(ent)) {
+        const name = hsName[hs] || hs;
+        const o = Number(v.obtained) || 0, u = Number(v.util) || 0;
+        obt += o; util += u;
+        obtByProd[name] = o; utilByProd[name] = u; availByProd[name] = Math.max(0, o - u);
+      }
+      obt = Math.round(obt * 1000) / 1000; util = Math.round(util * 1000) / 1000;
+      co.obtained = obt;
+      co.utilizationMT = util;
+      co.availableQuota = Math.max(0, Math.round((obt - util) * 1000) / 1000);
+      co.utilizationByProd = utilByProd;
+      co.availableByProd = availByProd;
+      co._ledgerObtained = obt;
+      co._ledgerObtainedByProd = obtByProd;
+      co.products = Object.keys(obtByProd);
+    };
+    const spiByCode = {}; spi.forEach(c => { spiByCode[c.code] = c; });
+    for (const co of spi) {
+      const ent = QUOTA_LEDGER.companies[co.code];
+      if (ent) applyLedger(co, ent);
+      else co._ledgerObtained = 0;   // not in current master → contributes 0
+    }
+    // Synthesize ledger companies absent from SPI (e.g. IKM sitting in pending).
+    for (const [code, ent] of Object.entries(QUOTA_LEDGER.companies)) {
+      if (spiByCode[code]) continue;
+      const co = { code, fullName: dirName[code] || code, group: '', section: 'SPI',
+        products: [], submit1: 0, obtained: 0, utilizationMT: 0, availableQuota: 0,
+        cycles: [], shipments: {}, utilizationByProd: {}, availableByProd: {} };
+      applyLedger(co, ent);
+      spi.push(co);
+      const pi = pending.findIndex(p => p.code === code);
+      if (pi >= 0) pending.splice(pi, 1);
     }
   }
 

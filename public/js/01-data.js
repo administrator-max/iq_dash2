@@ -409,6 +409,10 @@ function fmtMt(v) {
    ═══════════════════════════════════════════════════════════════════ */
 function canonicalObtained(co) {
   if (!co) return 0;
+  // Quota-ledger single source (2026-07-01): when the server supplies a
+  // ledger-derived obtained, use it verbatim so every obtained readout
+  // (KPI, charts, AVQ, tables) matches the authoritative master.
+  if (co._ledgerObtained != null) return Number(co._ledgerObtained) || 0;
   const allCycles = co.cycles || [];
   const seen      = new Set();
   let   total     = 0;

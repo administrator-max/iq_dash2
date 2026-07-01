@@ -45,6 +45,13 @@ function updateOverviewKPIs() {
   ────────────────────────────────────────────────────────────────────────── */
   let totalObtainedMT = 0, obtCoSet = new Set();
   allCompanies.forEach(co => {
+    // Quota-ledger single source (2026-07-01): server-derived obtained wins.
+    // (Period filter can't slice the ledger snapshot → full obtained at All Time.)
+    if (co._ledgerObtained != null && !PERIOD.active) {
+      const lo = Number(co._ledgerObtained) || 0;
+      if (lo > 0) { totalObtainedMT += lo; obtCoSet.add(co.code); }
+      return;
+    }
     const allCycles = co.cycles || [];
     const seen = new Set();
     let coObt = 0;
