@@ -10,7 +10,8 @@
     "init": "node initDb.js",
     "import": "node importDb.js",
     "import-realizations": "node importRealizations.js",
-    "import-libraries": "node importLibraries.js"
+    "import-libraries": "node importLibraries.js",
+    "build-ledger": "node buildQuotaLedger.js"
   },
   "dependencies": {
     "compression": "^1.8.1",
