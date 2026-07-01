@@ -1,6 +1,6 @@
 # IQ Dash — Arsitektur Ledger (fix permanen "data selalu kacau")
 
-Status: **Fase 1–2 preview selesai (read-only). Belum wired ke produksi.**
+Status: **Fase 1–4 LIVE (Heroku v99). Obtained/Util/Available diturunkan dari ledger.**
 Tanggal: 2026-07-01
 
 ## Akar masalah (kenapa selalu kacau)
