@@ -1226,7 +1226,11 @@ async function _buildDataPayload() {
       if (spiByCode[code]) continue;
       const co = { code, fullName: dirName[code] || code, group: '', section: 'SPI',
         products: [], submit1: 0, obtained: 0, utilizationMT: 0, availableQuota: 0,
-        cycles: [], shipments: {}, utilizationByProd: {}, availableByProd: {} };
+        cycles: [], shipments: {}, utilizationByProd: {}, availableByProd: {}, arrivedByProd: {},
+        revType: 'none', revNote: '', revSubmitDate: '', revStatus: '', revMT: 0,
+        revFrom: [], revTo: [], salesRevRequest: {}, reapplyTargets: [],
+        remarks: '', spiRef: '', statusUpdate: '', pertekNo: '', spiNo: '',
+        updatedBy: '', updatedDate: '', updatedAt: null, cycleProducts: {} };
       applyLedger(co, ent);
       spi.push(co);
       const pi = pending.findIndex(p => p.code === code);
