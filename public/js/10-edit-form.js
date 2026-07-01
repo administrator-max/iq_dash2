@@ -203,12 +203,19 @@ function applyRolePermissions() {
   });
 
   // ── Revision/Re-Apply active → disable Submission, PERTEK, SPI sections ──
-  // When a company has an active revision or re-apply, CorpSec cannot edit
-  // the original submission data to prevent accidental overwrites.
+  // When a company has a revision or re-apply that is still ON PROCESS, CorpSec
+  // cannot edit the original submission data to prevent accidental overwrites.
   // SuperAdmin remains unrestricted.
+  //
+  // ONLY revType==='active' locks the form. 'complete' (revision approved) and
+  // 'none'/'clean' must stay editable — otherwise a company like AADC, which
+  // carries revType='complete' purely as a status marker ("PERTEK Terbit — SPI
+  // Belum") with no real revision (empty salesRevRequest, only Submit #1 +
+  // Obtained #1), would wrongly lock CorpSec out of issuing its original SPI.
+  // A completed revision's own SPI Perubahan is handled in Revision Management.
   const editCoCode = gv('editCo');
   const editCo     = editCoCode ? (getSPI(editCoCode) || PENDING.find(p => p.code === editCoCode)) : null;
-  const hasActiveRev = editCo && editCo.revType && editCo.revType !== 'none' && editCo.revType !== 'clean';
+  const hasActiveRev = editCo && editCo.revType === 'active';
 
   if (hasActiveRev && currentRole !== 'SuperAdmin') {
     // Disable all fields in Submission, PERTEK, SPI sections

@@ -50,12 +50,21 @@ for (let i = 3; i < rows.length; i++) {
     if (isUtil) e.util += v;
   }
 }
-// round + drop empty companies
+// snap to whole MT + drop empty companies.
+// Import quota is always allocated in whole MT. Any fractional value is a
+// data-entry artifact in the master — e.g. an unbalanced Revision reallocation
+// like -353 / +353.3 that nets a phantom +0.3 MT (MIN / 7225.92.90, master
+// 120526). Snapping to the nearest whole MT kills the phantom; we warn on each
+// snap so the underlying master typo surfaces in build output instead of
+// silently inflating the Obtained total (which fmtMt's ceil then exposes).
 Object.keys(companies).forEach(co => {
   Object.keys(companies[co]).forEach(hs => {
     const v = companies[co][hs];
-    v.obtained = Math.round(v.obtained * 1000) / 1000;
-    v.util = Math.round(v.util * 1000) / 1000;
+    if (v.obtained % 1 !== 0 || v.util % 1 !== 0) {
+      console.warn(`  ⚠ fractional MT snapped ${co}/${hs}: obtained ${v.obtained}→${Math.round(v.obtained)}, util ${v.util}→${Math.round(v.util)} (check master for unbalanced revision)`);
+    }
+    v.obtained = Math.round(v.obtained);
+    v.util = Math.round(v.util);
     if (v.obtained === 0 && v.util === 0) delete companies[co][hs];
   });
   if (!Object.keys(companies[co]).length) delete companies[co];
