@@ -1199,9 +1199,19 @@ async function _buildDataPayload() {
     const applyLedger = (co, ent) => {
       let obt = 0, util = 0;
       const utilByProd = {}, availByProd = {}, obtByProd = {};
+      const ships = co.shipments || {};
       for (const [hs, v] of Object.entries(ent)) {
         const name = hsName[hs] || hs;
-        const o = Number(v.obtained) || 0, u = Number(v.util) || 0;
+        const o = Number(v.obtained) || 0;
+        const ledgerU = Number(v.util) || 0;
+        // Reconcile the master-snapshot util (ledger) with LIVE utilization the
+        // user records via shipment lots in the edit form. Effective util =
+        // max(ledgerUtil, Σ lot.utilMT) — identical to the client's
+        // effectiveUtilForProd (baseline = max(0, ledgerUtil − Σlots);
+        // eff = baseline + Σlots). Without this a saved lot (e.g. SPA GI ALLOY
+        // 400 MT) never reduces Available because the ledger util stays 0.
+        const lotU = (ships[name] || []).reduce((s, l) => s + (Number(l.utilMT) || 0), 0);
+        const u = Math.max(ledgerU, lotU);
         obt += o; util += u;
         obtByProd[name] = o; utilByProd[name] = u; availByProd[name] = Math.max(0, o - u);
       }
