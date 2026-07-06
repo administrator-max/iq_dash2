@@ -1204,14 +1204,19 @@ async function _buildDataPayload() {
         const name = hsName[hs] || hs;
         const o = Number(v.obtained) || 0;
         const ledgerU = Number(v.util) || 0;
-        // Reconcile the master-snapshot util (ledger) with LIVE utilization the
-        // user records via shipment lots in the edit form. Effective util =
-        // max(ledgerUtil, Σ lot.utilMT) — identical to the client's
-        // effectiveUtilForProd (baseline = max(0, ledgerUtil − Σlots);
-        // eff = baseline + Σlots). Without this a saved lot (e.g. SPA GI ALLOY
-        // 400 MT) never reduces Available because the ledger util stays 0.
+        // Reconcile the master-snapshot util (ledger, built from the master xlsx
+        // which contains NO lots) with LIVE utilization the user records via
+        // shipment lots. A lot is NEW utilization on top of the master baseline,
+        // so effective util = ledgerUtil + Σlot.utilMT, CAPPED at obtained (you
+        // can't utilize more than you were granted; the cap also prevents a lot
+        // that merely re-itemizes the master snapshot from double-counting —
+        // e.g. MIN BORDES obtained 247 / ledgerU 247 / lot 250 → 247, not 497).
+        // The old max(ledgerU, Σlot) swallowed any lot smaller than the master
+        // util, so consuming a company's remaining Available (e.g. HKG GL ALLOY
+        // 750 util + 250 lot) never dropped Available. Zero-util products
+        // (SPA GI ALLOY etc.) are unaffected: min(o, 0 + Σlot) == Σlot.
         const lotU = (ships[name] || []).reduce((s, l) => s + (Number(l.utilMT) || 0), 0);
-        const u = Math.max(ledgerU, lotU);
+        const u = Math.min(o, ledgerU + lotU);
         obt += o; util += u;
         obtByProd[name] = o; utilByProd[name] = u; availByProd[name] = Math.max(0, o - u);
       }
