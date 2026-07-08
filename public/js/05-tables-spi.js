@@ -186,7 +186,7 @@ function buildPendingQuick() {
           <div class="pq-sub-meta">
             <span>📅 Submit: <strong>${subDate}</strong></span>
             <span style="color:var(--border)">|</span>
-            <span>Release: <strong>${cy.releaseDate && cy.releaseDate!=='TBA' ? fmtDate(cy.releaseDate) : '⏳ TBA'}</strong></span>
+            <span>Release: <strong>${(()=>{const t=cycleTerbitDate(cy);return t && t!=='TBA' ? fmtDate(t) : '⏳ TBA';})()}</strong></span>
           </div>
           ${cleanStatus ? `<div style="font-size:10.5px;color:var(--red2);margin-top:3px;
             font-style:italic;line-height:1.4">⚠ ${cleanStatus}</div>` : ''}

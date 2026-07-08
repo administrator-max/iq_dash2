@@ -63,7 +63,7 @@ function buildCycleTimeline(co) {
           </div>
           <div style="font-size:10px;color:var(--txt3)">
             <span style="font-weight:700;color:var(--txt2)">${c.releaseType||'Release'}</span>
-            <span style="margin-left:4px;color:${c.releaseDate==='TBA'?'var(--amber)':'var(--green)'};font-weight:${c.releaseDate==='TBA'?'600':'400'}">${c.releaseDate==='TBA'?'TBA':(fmtDateStd(c.releaseDate)||'TBA')}</span>
+            <span style="margin-left:4px;color:${c.releaseDate==='TBA'?'var(--amber)':'var(--green)'};font-weight:${c.releaseDate==='TBA'?'600':'400'}">${c.releaseDate==='TBA'?'TBA':(fmtDateStd(cycleTerbitDate(c))||'TBA')}</span>
           </div>
         </div>
         ${prodStr?`<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:2px">${prodStr}</div>`:''}

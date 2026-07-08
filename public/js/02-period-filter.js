@@ -92,6 +92,23 @@ function pDate(str) {
   return null;
 }
 
+/** Best PERTEK/SPI *terbit date* for display of a cycle.
+ *  release_date SOMETIMES holds a document NUMBER instead of a date (legacy
+ *  data entry, e.g. "1075/ILMATE/PERTEK-SPI-U-Rev.1/VI/2026"); when so, the
+ *  real terbit date lives in pertek_date (Submit/Revision) or spi_date
+ *  (Obtained). Return a display-ready date string, preferring a real date,
+ *  and never surfacing the raw number where a date is expected.
+ *  (Display only — the Sheet is not modified; the number remains as the No.) */
+function cycleTerbitDate(c) {
+  if (!c) return '';
+  const rd = String(c.releaseDate == null ? '' : c.releaseDate).trim();
+  if (/^tba$/i.test(rd)) return 'TBA';
+  if (rd && pDate(rd)) return rd;                 // release_date already a real date
+  const isObt = /^obtained/i.test(c.type || '');
+  const fallback = isObt ? c.spiDate : c.pertekDate;
+  return (fallback && String(fallback).trim()) || rd || '';
+}
+
 /** True if date d falls within the active period (inclusive).
  *  Returns FALSE for null/undefined dates when period is active —
  *  a missing date must never pass the filter. */

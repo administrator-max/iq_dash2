@@ -1151,7 +1151,7 @@ function refreshPendingDrill() {
             <span>📅 Submit: <strong style="color:var(--txt)">${fmtDate(cy.submitDate)}</strong></span>
             <span style="color:var(--border2)">|</span>
             <span>PERTEK Release: <strong style="color:${cy.releaseDate&&cy.releaseDate!=='TBA'?'var(--teal)':'var(--txt3)'}">
-              ${cy.releaseDate&&cy.releaseDate!=='TBA' ? fmtDate(cy.releaseDate) : '⏳ TBA'}
+              ${(()=>{const t=cycleTerbitDate(cy);return t && t!=='TBA' ? fmtDate(t) : '⏳ TBA';})()}
             </strong></span>
           </div>
           ${cleanSt ? `<div style="font-size:10px;color:var(--red2);margin-top:4px;font-style:italic;line-height:1.4;

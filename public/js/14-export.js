@@ -1151,7 +1151,7 @@ async function doExportXLSX() {
         c.submitType  || '',
         fmtD(c.submitDate),
         c.releaseType || '',
-        fmtD(c.releaseDate),
+        fmtD(cycleTerbitDate(c)),
         c.status || '',
         co.revNote         || '',
         co.revSubmitDate   || '',
@@ -1245,7 +1245,7 @@ async function doExportXLSX() {
       co.status || '',
       submitCycle.type || '',
       submitCycle.releaseType || '',
-      fmtD(submitCycle.releaseDate),
+      fmtD(cycleTerbitDate(submitCycle)),
       co.remarks || '',
     ]);
   });

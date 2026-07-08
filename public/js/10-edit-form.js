@@ -455,8 +455,8 @@ function buildRoleHistory() {
     // Obtained / PERTEK cycles
     cycles.filter(c => /^obtained/i.test(c.type)).forEach(c => {
       if (c.submitDate || c.releaseDate) entries.push({
-        date: c.releaseDate || c.submitDate, icon: '📄', section: 'Submission & PERTEK',
-        text: `<strong>${c.type}</strong> — PERTEK/SPI: ${fmtD(c.releaseDate)}${c.mt ? ' · ' + c.mt.toLocaleString() + ' MT' : ''}${c.status ? ' · <em>' + c.status + '</em>' : ''}`,
+        date: cycleTerbitDate(c) || c.submitDate, icon: '📄', section: 'Submission & PERTEK',
+        text: `<strong>${c.type}</strong> — PERTEK/SPI: ${fmtD(cycleTerbitDate(c))}${c.mt ? ' · ' + c.mt.toLocaleString() + ' MT' : ''}${c.status ? ' · <em>' + c.status + '</em>' : ''}`,
         color: 'var(--teal)'
       });
     });
