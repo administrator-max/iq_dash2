@@ -73,7 +73,7 @@ function updateOverviewKPIs() {
         // canonicalObtainedFiltered so the two Obtained paths stay in sync
         // (CLAUDE.md rule). The old PERTEK-only anchor read 0 for June because
         // the paired Submit's release_date is a mis-entered PERTEK number.
-        let anchor = pDate(c.releaseDate);
+        let anchor = pDate(c.releaseDate) || pDate(c.spiDate);
         if (!anchor) anchor = getPertekTerbitForObtained(c, allCycles);
         if (!anchor && c.pertekDate) anchor = pDate(c.pertekDate);
         if (!inPd(anchor)) return;

@@ -199,7 +199,13 @@ function cycleDates(c) {
     submitMOI:   isSubmitRow   ? pDate(c.submitDate)  : null,
     pertekTerbit: isSubmitRow   ? pDate(c.releaseDate) : null,  // PERTEK Terbit
     submitMOT:   isObtainedRow ? pDate(c.submitDate)  : null,
-    spiTerbit:   isObtainedRow ? pDate(c.releaseDate) : null,   // SPI Terbit
+    // SPI Terbit: own release_date, else the dedicated spi_date field. release_date
+    // frequently holds a mis-entered SPI *number* (e.g. "04.PI-05.26.0450.1") while
+    // the real date sits in spi_date — reading it lets companies whose SPI was
+    // actually issued in-period (BBB/KJK/SJH) surface in the period view, matching
+    // the Obtained KPI. (PERTEK Terbit deliberately NOT widened to pertek_date here,
+    // to avoid pulling in Submit-#2-only companies — see 2026-07-08 decision.)
+    spiTerbit:   isObtainedRow ? (pDate(c.releaseDate) || pDate(c.spiDate)) : null,
   };
 }
 

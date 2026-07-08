@@ -453,7 +453,11 @@ function canonicalObtainedFiltered(co) {
       // (Old code anchored SOLELY on PERTEK Terbit — but that field is often a
       // mis-entered PERTEK *number* string, so it parsed to null and silently
       // dropped real in-period obtaineds, e.g. June read 0 instead of 250.)
-      let anchor = pDate(c.releaseDate);                 // SPI Terbit (own release)
+      // SPI Terbit date: prefer the Obtained cycle's own release_date, else the
+      // dedicated spi_date field. (release_date is frequently a mis-entered SPI
+      // *number* like "04.PI-05.26.0450.1", but the real date is in spi_date —
+      // e.g. BBB 26/06, KJK, SJH. Reading spi_date recovers those in-period.)
+      let anchor = pDate(c.releaseDate) || pDate(c.spiDate);
       if (!anchor && typeof getPertekTerbitForObtained === 'function') {
         anchor = getPertekTerbitForObtained(c, allCycles);
       }
