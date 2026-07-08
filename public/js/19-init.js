@@ -191,11 +191,19 @@ function setAvqTab(tab, el) {
 
 /* ── KPI cards on Available Quota page ── */
 function buildAvqPageKPIs() {
-  // Use canonicalObtainedFiltered — single source of truth matching Overview KPI2.
-  // This ensures all pages show identical Obtained figures.
+  // Obtained basis MUST match the AVQ breakdown chart directly below these cards
+  // (buildAvailableQuota uses canonicalObtained). Using the PERTEK-gated
+  // canonicalObtainedFiltered here made the cards read 0 while the breakdown
+  // showed the real balance for the same companies — a page-internal
+  // contradiction. canonicalObtained honours the ledger and, for an active
+  // period, counts every company that companyInPeriod() surfaces (i.e. any
+  // Submit/Obtained/Revision-Request activity in range), showing its balance.
+  // NOTE: this intentionally diverges from Overview KPI2 (quota *issued* in the
+  // period) — the AVQ page answers "balance of companies active this period".
   let totalObt = 0, totalUtil = 0, totalAvq = 0, coSet = new Set();
   [...filteredSPI(), ...filteredPending()].forEach(co => {
-    const coObt = canonicalObtainedFiltered(co);
+    const coObt = (typeof canonicalObtained === 'function')
+      ? canonicalObtained(co) : canonicalObtainedFiltered(co);
     if (coObt <= 0) return;
     const util  = scopedUtilTotal(co);   // period-aware (rule #3): util sliced by lot date
     const avail = PERIOD.active ? Math.max(0, coObt - util)

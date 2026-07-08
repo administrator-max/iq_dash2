@@ -77,6 +77,18 @@ function pDate(str) {
     if (y < 100) y += 2000;
     return new Date(y, +dmy[2]-1, +dmy[1]);
   }
+  // DD-Mon-YY / DD Month YYYY (EN + ID) — e.g. "30-Jun-26", "12 Mei 2026", "29 Apr 2026".
+  // The Sheet stores many Revision-Request (and some other) dates in this text form;
+  // without this branch they parse to null and silently drop out of the period filter.
+  const map = (typeof _MONTH_NAME_MAP !== 'undefined') ? _MONTH_NAME_MAP : null;
+  if (map) {
+    const mon = str.match(/^(\d{1,2})[-\s]([A-Za-z]+)[-\s](\d{2,4})$/);
+    if (mon && map[mon[2].toLowerCase()]) {
+      let y = +mon[3];
+      if (y < 100) y += 2000;
+      return new Date(y, map[mon[2].toLowerCase()] - 1, +mon[1]);
+    }
+  }
   return null;
 }
 
@@ -224,7 +236,17 @@ function companyInPeriod(cycles) {
   // A company matches only if at least one real (non-null) cycle date falls in period
   return cycles.some(c => {
     const { submitMOI, pertekTerbit, submitMOT, spiTerbit } = cycleDates(c);
-    return inPd(submitMOI) || inPd(pertekTerbit) || inPd(submitMOT) || inPd(spiTerbit);
+    if (inPd(submitMOI) || inPd(pertekTerbit) || inPd(submitMOT) || inPd(spiTerbit)) return true;
+    // Revision-Request cycles carry the company's June/period activity (product
+    // re-allocation to CorpSec) but are NOT Submit/Obtained rows, so cycleDates()
+    // returns nulls for them. Include their own date here so a company that was
+    // active only via a revision request still shows in the period view. This is
+    // row-inclusion ONLY — quota math (canonicalObtained etc.) still skips these
+    // via the _fromRevReq / "Revision Request" rules, so no MT is double-counted.
+    if (/^revision request/i.test(c.type || '')) {
+      return inPd(pDate(c.submitDate)) || inPd(pDate(c.releaseDate));
+    }
+    return false;
   });
 }
 
