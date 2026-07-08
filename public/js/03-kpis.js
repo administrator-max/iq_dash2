@@ -67,8 +67,16 @@ function updateOverviewKPIs() {
       // consistent with canonicalObtained. Excludes not-yet-terbit re-applies.
       if (typeof _isObtainedTerbit === 'function' && !_isObtainedTerbit(c)) return;
       if (PERIOD.active) {
-        const pertekTerbit = getPertekTerbitForObtained(c, allCycles);
-        if (!inPd(pertekTerbit)) return;
+        // Anchor the period test on SPI Terbit (this Obtained cycle's OWN
+        // release_date) — the correct, reliably-populated field for "obtained".
+        // Fall back to PERTEK Terbit only when the SPI date is missing. Mirrors
+        // canonicalObtainedFiltered so the two Obtained paths stay in sync
+        // (CLAUDE.md rule). The old PERTEK-only anchor read 0 for June because
+        // the paired Submit's release_date is a mis-entered PERTEK number.
+        let anchor = pDate(c.releaseDate);
+        if (!anchor) anchor = getPertekTerbitForObtained(c, allCycles);
+        if (!anchor && c.pertekDate) anchor = pDate(c.pertekDate);
+        if (!inPd(anchor)) return;
       }
       coObt += mt;
     });

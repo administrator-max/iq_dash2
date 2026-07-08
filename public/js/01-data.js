@@ -446,12 +446,19 @@ function canonicalObtainedFiltered(co) {
     if (c._fromRevReq) return;          // rule #4: revision-request artifact ≠ new obtained
     if (!_isObtainedTerbit(c)) return; // also gate by terbit status
     if (PERIOD.active) {
-      let pertekDate = null;
-      if (typeof getPertekTerbitForObtained === 'function') {
-        pertekDate = getPertekTerbitForObtained(c, allCycles);
+      // "Obtained" = quota granted = SPI Terbit. Anchor the period test on the
+      // Obtained cycle's OWN release_date (its SPI Terbit date), which is the
+      // correct and reliably-populated field. Fall back to PERTEK Terbit (the
+      // paired Submit's release_date) only when the SPI date is missing.
+      // (Old code anchored SOLELY on PERTEK Terbit — but that field is often a
+      // mis-entered PERTEK *number* string, so it parsed to null and silently
+      // dropped real in-period obtaineds, e.g. June read 0 instead of 250.)
+      let anchor = pDate(c.releaseDate);                 // SPI Terbit (own release)
+      if (!anchor && typeof getPertekTerbitForObtained === 'function') {
+        anchor = getPertekTerbitForObtained(c, allCycles);
       }
-      if (!pertekDate && c.pertekDate) pertekDate = pDate(c.pertekDate);
-      if (!inPd(pertekDate)) return;
+      if (!anchor && c.pertekDate) anchor = pDate(c.pertekDate);
+      if (!inPd(anchor)) return;
     }
     total += mt;
   });
