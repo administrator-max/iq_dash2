@@ -1239,9 +1239,22 @@ async function _buildDataPayload() {
     // Synthesize ledger companies absent from SPI (e.g. IKM sitting in pending).
     for (const [code, ent] of Object.entries(QUOTA_LEDGER.companies)) {
       if (spiByCode[code]) continue;
+      // Attach the company's REAL shipment lots so utilization the user records
+      // for a pending-but-ledgered company (e.g. IKM) is reflected in /api/data.
+      // The old hardcoded `shipments: {}` silently dropped every saved lot, so
+      // applyLedger saw lotU=0 and utilization stayed 0 no matter what was saved
+      // (the "utilization tidak ke-save" bug — the write persisted, but this bulk
+      // read discarded it). Uses the same shipRows the SPI/PENDING rows use.
+      const shipMapFor = {};
+      shipRows.filter(s => s.company_code === code).forEach(s => {
+        (shipMapFor[s.product] = shipMapFor[s.product] || []).push({
+          lotNo: s.lot_no, utilMT: Number(s.util_mt) || 0, etaJKT: s.eta_jkt || '',
+          note: s.note || '', realMT: Number(s.real_mt) || 0, pibDate: s.pib_date || '',
+          cargoArrived: s.cargo_arrived || false });
+      });
       const co = { code, fullName: dirName[code] || code, group: '', section: 'SPI',
         products: [], submit1: 0, obtained: 0, utilizationMT: 0, availableQuota: 0,
-        cycles: [], shipments: {}, utilizationByProd: {}, availableByProd: {}, arrivedByProd: {},
+        cycles: [], shipments: shipMapFor, utilizationByProd: {}, availableByProd: {}, arrivedByProd: {},
         revType: 'none', revNote: '', revSubmitDate: '', revStatus: '', revMT: 0,
         revFrom: [], revTo: [], salesRevRequest: {}, reapplyTargets: [],
         remarks: '', spiRef: '', statusUpdate: '', pertekNo: '', spiNo: '',
