@@ -457,7 +457,23 @@ function buildRevMgmtSection(co) {
     html += `<div class="rr-no-active" style="padding:10px 0">✅ No active revision for this company. Use <strong>+ Add New Submission</strong> above to start a new cycle.</div>`;
   }
 
-  
+  // -- PERTEK Perubahan gate — original PERTEK shown until terbit date entered --
+  if (co._pendingRevision) {
+    const pr = co._pendingRevision;
+    html += `<div class="notice" style="margin-top:10px;padding:10px;border:1px solid #d9a441;background:#fff8e6;border-radius:6px">
+      <div style="font-weight:700;color:#8a5a00;font-size:11.5px">⏳ PERTEK Perubahan belum terbit</div>
+      <div style="font-size:11px;color:var(--txt3);margin:4px 0">
+        Menampilkan PERTEK asal: <strong>${pr.from} ${Number(pr.origMT).toLocaleString()} MT</strong>.
+        Split ke <strong>${pr.to} ${Number(pr.mt).toLocaleString()} MT</strong> akan tampil setelah tanggal terbit diisi.
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <input class="fi" id="ppReleaseDate_${code}" type="text" placeholder="DD/MM/YYYY" style="max-width:130px">
+        <button class="btn btn-s btn-p" onclick="rrSavePertekPerubahan('${code}')">💾 Simpan Tanggal Terbit PERTEK Perubahan</button>
+      </div>
+    </div>`;
+  }
+
+
 
   el.innerHTML = html;
 }
@@ -664,6 +680,31 @@ async function rrRecordObtainedTerbit(code) {
     if (typeof buildRevMgmtSection === 'function') buildRevMgmtSection(co2);
   } catch (err) {
     alert('Gagal mencatat Obtained terbit: ' + (err && err.message ? err.message : err));
+  }
+}
+
+/* -- Record PERTEK Perubahan terbit date -> un-gate the split -- */
+async function rrSavePertekPerubahan(code) {
+  const co = getSPI(code); if (!co) return;
+  const pr = co._pendingRevision; if (!pr) return;
+  const input = g('ppReleaseDate_' + code);
+  const releaseDate = ((input || {}).value || '').trim();
+  if (!releaseDate) { alert('Isi Tanggal Terbit PERTEK Perubahan dulu (DD/MM/YYYY).'); return; }
+  if (!confirm(`Catat PERTEK Perubahan TERBIT — ${code}\n` +
+      `${pr.from} → ${pr.to} ${Number(pr.mt).toLocaleString()} MT\n` +
+      `Terbit: ${releaseDate}\n\nSetelah ini split ${pr.to} akan tampil di dashboard.`)) return;
+  try {
+    const res = await fetch(`/api/company/${encodeURIComponent(code)}/pertek-perubahan-release`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ releaseDate, updatedBy: co.updatedBy || '' }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || ('HTTP ' + res.status)); }
+    if (typeof nsShowToast === 'function') nsShowToast(`✓ ${code} — PERTEK Perubahan terbit ${releaseDate} · split ${pr.to} kini tampil`);
+    if (typeof loadData === 'function') await loadData();
+    const co2 = getSPI(code) || co;
+    if (typeof buildRevMgmtSection === 'function') buildRevMgmtSection(co2);
+  } catch (err) {
+    alert('Gagal menyimpan tanggal terbit PERTEK Perubahan: ' + (err && err.message ? err.message : err));
   }
 }
 
