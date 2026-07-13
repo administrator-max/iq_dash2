@@ -2046,6 +2046,37 @@ app.post('/api/company/:code/record-obtained', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// POST /api/company/:code/pertek-perubahan-release
+// Record the PERTEK Perubahan release (terbit) date for a company whose
+// product split is currently gated (see lib/pendingRevisions.json). Once a
+// date is stored, applyLedger stops reversing the split and the revised
+// products show. Upsert (one row per code). Sheets-only. Body: { releaseDate }.
+// ═══════════════════════════════════════════════════════════════════
+app.post('/api/company/:code/pertek-perubahan-release', async (req, res) => {
+  const { code } = req.params;
+  const releaseDate = String((req.body || {}).releaseDate || '').trim();
+  if (!releaseDate) return res.status(400).json({ error: 'releaseDate required' });
+  if (!inSheets()) return res.status(501).json({ error: 'pertek-perubahan-release is Sheets-only' });
+  try {
+    const nowISO = new Date().toISOString();
+    const rows = (await store.table('pertek_perubahan_release')).slice();
+    let row = rows.find(r => String(r.code || '').trim() === code);
+    const old = row ? String(row.release_date || '') : '';
+    if (row) { row.release_date = releaseDate; row.updated_at = nowISO; }
+    else { row = { code, release_date: releaseDate, updated_at: nowISO }; rows.push(row); }
+    await store.batchRewrite({ pertek_perubahan_release: rows });
+    await store.logChange({ sheet: 'pertek_perubahan_release', record_id: code, field: 'release_date',
+      old_value: old, new_value: releaseDate, changed_by: (req.body || {}).updatedBy || 'api',
+      note: 'PERTEK Perubahan terbit → un-gate split' });
+    await dcache.invalidate(CACHE_KEY_DATA);
+    return res.json({ ok: true, code, releaseDate });
+  } catch (err) {
+    console.error('pertek-perubahan-release error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/company/:code', async (req, res) => {
   const { code } = req.params;
   try {
