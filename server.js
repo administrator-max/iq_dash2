@@ -90,6 +90,9 @@ const insights = require('./lib/insights');
 // HS, seeded from the authoritative master). See migration_work/ARCHITECTURE_LEDGER.md.
 let QUOTA_LEDGER = null;
 try { QUOTA_LEDGER = require('./lib/quotaLedger.json'); } catch (e) { console.warn('quotaLedger.json not loaded:', e.message); }
+const { applyPendingRevision } = require('./lib/pendingRevisionGate');
+let PENDING_REVISIONS = {};
+try { PENDING_REVISIONS = require('./lib/pendingRevisions.json'); } catch (_) { PENDING_REVISIONS = {}; }
 
 // Boot-time aggregate flags: which backends might be touched by SOME request.
 const BOOT_DEFAULT_SHEETS = DATA_SOURCE === 'sheets';
@@ -1193,11 +1196,26 @@ async function _buildDataPayload() {
   // 15.384). Synthesizes ledger companies missing from SPI (e.g. IKM). Frontend
   // reads _ledgerObtained for the Obtained KPI; util/avail flow from the
   // per-product maps. (2026-07-01 — see migration_work/ARCHITECTURE_LEDGER.md)
+  // Recorded PERTEK Perubahan release dates (durable). A pending split whose
+  // company has a date here is "released" → not reversed. Sheets-only store;
+  // in Postgres/local dev this stays empty (splits stay gated until seeded
+  // pending entries are removed or the app runs on Sheets). Tab may not exist
+  // yet on a fresh env → treat a read failure as "no releases".
+  const releasedMap = {};
+  if (inSheets()) {
+    try {
+      (await store.table('pertek_perubahan_release')).forEach(r => {
+        const d = String(r.release_date || '').trim();
+        const code = String(r.code || '').trim();
+        if (code && d) releasedMap[code] = d;
+      });
+    } catch (_) { /* no tab yet → no releases */ }
+  }
+
   if (QUOTA_LEDGER && QUOTA_LEDGER.companies) {
     const hsName = QUOTA_LEDGER.products || {};
     const dirName = {}; companyDirectory.forEach(d => { dirName[d.abbreviation] = d.fullName; });
     const applyLedger = (co, ent) => {
-      let obt = 0, util = 0;
       const utilByProd = {}, availByProd = {}, obtByProd = {};
       const ships = co.shipments || {};
       for (const [hs, v] of Object.entries(ent)) {
@@ -1217,9 +1235,21 @@ async function _buildDataPayload() {
         // (SPA GI ALLOY etc.) are unaffected: min(o, 0 + Σlot) == Σlot.
         const lotU = (ships[name] || []).reduce((s, l) => s + (Number(l.utilMT) || 0), 0);
         const u = Math.min(o, ledgerU + lotU);
-        obt += o; util += u;
         obtByProd[name] = o; utilByProd[name] = u; availByProd[name] = Math.max(0, o - u);
       }
+      // PERTEK Perubahan gate: reverse a not-yet-released product split so the
+      // dashboard shows the ORIGINAL PERTEK until the release date is entered.
+      const revDef = PENDING_REVISIONS[co.code];
+      if (revDef) {
+        const res = applyPendingRevision({ obtByProd, utilByProd, availByProd }, revDef, releasedMap[co.code] || '');
+        if (res.reversed) {
+          co._pendingRevision = { from: revDef.from, to: revDef.to, mt: revDef.mt, origMT: obtByProd[revDef.from] || 0 };
+        } else {
+          delete co._pendingRevision;
+        }
+      }
+      let obt = 0, util = 0;
+      for (const name of Object.keys(obtByProd)) { obt += Number(obtByProd[name]) || 0; util += Number(utilByProd[name]) || 0; }
       obt = Math.round(obt * 1000) / 1000; util = Math.round(util * 1000) / 1000;
       co.obtained = obt;
       co.utilizationMT = util;
