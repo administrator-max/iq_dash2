@@ -1280,20 +1280,14 @@ async function _buildDataPayload() {
       // applyLedger saw lotU=0 and utilization stayed 0 no matter what was saved
       // (the "utilization tidak ke-save" bug — the write persisted, but this bulk
       // read discarded it). Uses the same shipRows the SPI/PENDING rows use.
-      const shipMapFor = {};
-      shipRows.filter(s => s.company_code === code).forEach(s => {
-        (shipMapFor[s.product] = shipMapFor[s.product] || []).push({
-          lotNo: s.lot_no, utilMT: Number(s.util_mt) || 0, etaJKT: s.eta_jkt || '',
-          note: s.note || '', realMT: Number(s.real_mt) || 0, pibDate: s.pib_date || '',
-          cargoArrived: s.cargo_arrived || false });
-      });
-      // If we know this ledger-only company's obtained/terbit date, give it a
+      // If we know this ledger-only company's obtained/terbit date, prepare a
       // synthetic "Obtained #1" cycle so the client PERIOD filter can place it in
       // the right month (companyInPeriod keys on cycle dates; no cycle → excluded
       // from every specific-month filter, only shown at All Time). The cycle's
       // per-product MT is derived from the ledger entry, so it stays consistent
       // with the ledger obtained; canonicalObtained still short-circuits to
-      // _ledgerObtained at All Time (no double count).
+      // _ledgerObtained at All Time (no double count). Used ONLY when the company
+      // has no real cycles of its own.
       const obtDate = LEDGER_COMPANY_DATES[code];
       let synthCycles = [];
       if (obtDate) {
@@ -1309,17 +1303,41 @@ async function _buildDataPayload() {
           pertekDate: obtDate, spiDate: obtDate, _fromRevReq: false,
         }];
       }
-      const co = { code, fullName: dirName[code] || code, group: '', section: 'SPI',
-        products: [], submit1: 0, obtained: 0, utilizationMT: 0, availableQuota: 0,
-        cycles: synthCycles, shipments: shipMapFor, utilizationByProd: {}, availableByProd: {}, arrivedByProd: {},
-        revType: 'none', revNote: '', revSubmitDate: '', revStatus: '', revMT: 0,
-        revFrom: [], revTo: [], salesRevRequest: {}, reapplyTargets: [],
-        remarks: '', spiRef: '', statusUpdate: '', pertekNo: '', spiNo: '',
-        updatedBy: '', updatedDate: '', updatedAt: null, cycleProducts: {} };
+      // Reuse the company's REAL, fully-built object if it already exists (IKM
+      // lives in `pending` with section=PENDING, built by buildCompanyObj). This
+      // preserves its persisted scalars (pertekNo/spiNo/status) and real cycles +
+      // cycle_products so CorpSec edits to PERTEK/SPI/Submit actually stick — the
+      // old path rebuilt a fresh object with hard-coded empties and discarded
+      // every saved edit. The ledger still supplies obtained/util/available via
+      // applyLedger (which does NOT touch pertekNo/spiNo/cycles). Only companies
+      // truly absent from the DB (no `companies` row) fall back to a fresh object.
+      const pi = pending.findIndex(p => p.code === code);
+      let co;
+      if (pi >= 0) {
+        co = pending[pi];
+        pending.splice(pi, 1);
+        co.section = 'SPI';
+        // Give it the ledger-derived cycle for period filtering only if it has
+        // none of its own; real saved cycles always take precedence.
+        if ((!co.cycles || !co.cycles.length) && synthCycles.length) co.cycles = synthCycles;
+      } else {
+        const shipMapFor = {};
+        shipRows.filter(s => s.company_code === code).forEach(s => {
+          (shipMapFor[s.product] = shipMapFor[s.product] || []).push({
+            lotNo: s.lot_no, utilMT: Number(s.util_mt) || 0, etaJKT: s.eta_jkt || '',
+            note: s.note || '', realMT: Number(s.real_mt) || 0, pibDate: s.pib_date || '',
+            cargoArrived: s.cargo_arrived || false });
+        });
+        co = { code, fullName: dirName[code] || code, group: '', section: 'SPI',
+          products: [], submit1: 0, obtained: 0, utilizationMT: 0, availableQuota: 0,
+          cycles: synthCycles, shipments: shipMapFor, utilizationByProd: {}, availableByProd: {}, arrivedByProd: {},
+          revType: 'none', revNote: '', revSubmitDate: '', revStatus: '', revMT: 0,
+          revFrom: [], revTo: [], salesRevRequest: {}, reapplyTargets: [],
+          remarks: '', spiRef: '', statusUpdate: '', pertekNo: '', spiNo: '',
+          updatedBy: '', updatedDate: '', updatedAt: null, cycleProducts: {} };
+      }
       applyLedger(co, ent);
       spi.push(co);
-      const pi = pending.findIndex(p => p.code === code);
-      if (pi >= 0) pending.splice(pi, 1);
     }
   }
 
