@@ -2057,6 +2057,13 @@ app.post('/api/company/:code/pertek-perubahan-release', async (req, res) => {
   const { code } = req.params;
   const releaseDate = String((req.body || {}).releaseDate || '').trim();
   if (!releaseDate) return res.status(400).json({ error: 'releaseDate required' });
+  // Only a currently-gated (pending) company can have its Perubahan date recorded —
+  // prevents a stray write / accidental un-gate for an unrelated code.
+  if (!PENDING_REVISIONS[code]) return res.status(400).json({ error: 'company has no pending PERTEK Perubahan' });
+  // Basic date sanity (DD/MM/YYYY or YYYY-MM-DD) so a typo can't permanently un-gate the split.
+  if (!/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(releaseDate) && !/^\d{4}-\d{1,2}-\d{1,2}$/.test(releaseDate)) {
+    return res.status(400).json({ error: 'releaseDate must be DD/MM/YYYY or YYYY-MM-DD' });
+  }
   if (!inSheets()) return res.status(501).json({ error: 'pertek-perubahan-release is Sheets-only' });
   try {
     const nowISO = new Date().toISOString();
