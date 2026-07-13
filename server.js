@@ -93,6 +93,11 @@ try { QUOTA_LEDGER = require('./lib/quotaLedger.json'); } catch (e) { console.wa
 const { applyPendingRevision } = require('./lib/pendingRevisionGate');
 let PENDING_REVISIONS = {};
 try { PENDING_REVISIONS = require('./lib/pendingRevisions.json'); } catch (_) { PENDING_REVISIONS = {}; }
+// Obtained/terbit date (DD/MM/YYYY) for ledger-only companies that have no
+// cycles (e.g. IKM "sitting in pending"). Lets the period filter place them in
+// the right month — without a cycle date they'd only show under "All Time".
+let LEDGER_COMPANY_DATES = {};
+try { LEDGER_COMPANY_DATES = require('./lib/ledgerCompanyDates.json'); } catch (_) { LEDGER_COMPANY_DATES = {}; }
 
 // Boot-time aggregate flags: which backends might be touched by SOME request.
 const BOOT_DEFAULT_SHEETS = DATA_SOURCE === 'sheets';
@@ -1282,9 +1287,31 @@ async function _buildDataPayload() {
           note: s.note || '', realMT: Number(s.real_mt) || 0, pibDate: s.pib_date || '',
           cargoArrived: s.cargo_arrived || false });
       });
+      // If we know this ledger-only company's obtained/terbit date, give it a
+      // synthetic "Obtained #1" cycle so the client PERIOD filter can place it in
+      // the right month (companyInPeriod keys on cycle dates; no cycle → excluded
+      // from every specific-month filter, only shown at All Time). The cycle's
+      // per-product MT is derived from the ledger entry, so it stays consistent
+      // with the ledger obtained; canonicalObtained still short-circuits to
+      // _ledgerObtained at All Time (no double count).
+      const obtDate = LEDGER_COMPANY_DATES[code];
+      let synthCycles = [];
+      if (obtDate) {
+        const prodMap = {}; let totMt = 0;
+        for (const [hs, v] of Object.entries(ent)) {
+          const nm = hsName[hs] || hs; const o = Number(v.obtained) || 0;
+          if (o > 0) { prodMap[nm] = o; totMt += o; }
+        }
+        synthCycles = [{
+          type: 'Obtained #1', mt: totMt, products: prodMap,
+          submitType: '', submitDate: '', releaseType: 'SPI Terbit',
+          releaseDate: obtDate, status: `Obtained (ledger) — terbit ${obtDate}`,
+          pertekDate: obtDate, spiDate: obtDate, _fromRevReq: false,
+        }];
+      }
       const co = { code, fullName: dirName[code] || code, group: '', section: 'SPI',
         products: [], submit1: 0, obtained: 0, utilizationMT: 0, availableQuota: 0,
-        cycles: [], shipments: shipMapFor, utilizationByProd: {}, availableByProd: {}, arrivedByProd: {},
+        cycles: synthCycles, shipments: shipMapFor, utilizationByProd: {}, availableByProd: {}, arrivedByProd: {},
         revType: 'none', revNote: '', revSubmitDate: '', revStatus: '', revMT: 0,
         revFrom: [], revTo: [], salesRevRequest: {}, reapplyTargets: [],
         remarks: '', spiRef: '', statusUpdate: '', pertekNo: '', spiNo: '',
