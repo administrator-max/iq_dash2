@@ -15,7 +15,7 @@
     },
     "SHEETS_DB_ID": {
       "description": "Google Spreadsheet ID that backs the app.",
-      "value": "13CQrRUXhfB2Ceq8p7HXPhx2Fj31DSN3AwvtuNKpg08o"
+      "value": "1t4MbpWLaQIe_NfMjb38gMtNTm27WPXLwpUq0THGMYd0"
     },
     "GOOGLE_SERVICE_ACCOUNT_JSON": {
       "description": "Service-account JSON (whole file as one line) for Google Sheets access. REQUIRED on Heroku (no key file is committed).",

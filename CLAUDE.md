@@ -29,7 +29,8 @@ Format entri yang disarankan:
 ```
 
 ## Konteks penting (jangan dilanggar)
-- **Google Sheets = sumber kebenaran tunggal** (id `13CQrR…`). Master xlsx stale; jangan
+- **Google Sheets = sumber kebenaran tunggal** (id `1t4MbpW…MYd0`, "Mater Data IQ Dash";
+  sejak 2026-07-17 — menggantikan `13CQrR…g08o` "iq dash raw data"). Master xlsx stale; jangan
   menimpa Sheets dari xlsx. Koreksi via dashboard.
 - **Obtained punya 2 jalur**: cycles (`canonicalObtained`, untuk KPI/total) vs stats
   (`getObtainedByProdAgg` = util+avail, untuk breakdown per-produk). Harus tetap sinkron;
