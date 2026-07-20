@@ -206,7 +206,7 @@ function buildSalesRow(prod, idx, lot, obtMT) {
               class="util-add-inp sales-util-direct-inp"
               id="util-direct-${pid}-${idx}"
               data-prod="${prod}" data-idx="${idx}"
-              value="${curMT > 0 ? curMT.toLocaleString() : ''}"
+              value="${curMT > 0 ? curMT.toLocaleString('en-US') : ''}"
               placeholder="0"
               oninput="onSalesDirectChange(this)"
               title="Edit langsung nilai utilisasi MT">
@@ -284,7 +284,7 @@ function buildOpsRow(prod, idx, lot) {
       <input type="text" inputmode="numeric"
         class="ship-inp ops-real-inp"
         data-prod="${prod}" data-idx="${idx}"
-        value="${real !== '' ? Number(real).toLocaleString() : ''}"
+        value="${real !== '' ? Number(real).toLocaleString('en-US') : ''}"
         placeholder="0"
         oninput="onOpsRealChange(this)"
         title="Actual arrived MT for Lot ${lotNo} · Cannot exceed Util MT">
@@ -898,7 +898,7 @@ function buildReapplyTable(co) {
         <input type="text" inputmode="numeric"
           class="pmt-mt-inp reapply-prod-inp"
           data-prod="${p}"
-          value="${val !== '' ? Number(val).toLocaleString() : ''}"
+          value="${val !== '' ? Number(val).toLocaleString('en-US') : ''}"
           placeholder="0"
           oninput="fmtThousandInline(this)"
           title="Re-Apply target MT for ${p} in next cycle">
